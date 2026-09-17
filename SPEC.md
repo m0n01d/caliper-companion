@@ -387,3 +387,26 @@ project folder.
 - [ ] Existing parts migrate as root; nothing else changes for them.
 - [ ] Import skill (v1 line in `docs/fusion/IMPORT-SKILL-SPEC.md`): save the new design into the Fusion project folder named by `path`, creating folders as needed.
 - [ ] Playwright: create two parts in `Miata/Interior` and one at root → two sections in order (root, then `Miata/Interior`) with counts; search `bezel` filters to one; renaming a part's folder moves it between sections; export carries `"path"`; an invalid segment (`a//b`, `?`) is rejected inline.
+
+### A11 — `parameters.csv` in the export bundle (Fusion ParameterIO format, no Claude needed)
+
+Autodesk's free ParameterIO add-in imports user parameters from a CSV. Shipping that file in the
+zip gives a standard, Claude-free import path: export → AirDrop → ParameterIO → Import.
+
+- [ ] The bundle gains `parameters.csv` next to `features.json`: one line per feature, no header,
+  exactly four comma-separated fields `name,unit,expression,comment`, LF line endings, UTF-8, e.g.
+  `overall_l,mm,42.18 mm,±0.10 mm · faces top end · ccpart:norcold_freezer_hinge_pin`.
+  **No commas inside any field** (the add-in splits naively): faces are joined with a space,
+  separators are middle dots. A flagged feature's comment starts with
+  `FLAGGED spread 0.12 > ±0.05 · `. `unit` is `mm` or `in`; `expression` carries the unit.
+- [ ] The format is verified against the add-in's own source (`AutodeskFusion360/ParameterIO_Python`
+  on GitHub: the reader splits each line on commas into name, unit, expression, comment and creates
+  or updates the parameter by name). The verification URL and the observed parsing rules go in the
+  commit body and in a comment at the top of the writer.
+- [ ] Pure writer `ParametersCsv.make(~part, ~faces, ~dimensions) => result<string, Reconcile.error>`
+  in `core/`, same feature order as `features.json`, unit-tested: golden `fixtures/hinge_pin/parameters.csv`
+  byte-for-byte; inch part → `in` and `1.375 in`; flagged prefix; a `KindConflict` propagates.
+- [ ] `Bundle.res` adds the entry; `features.json` is unchanged (no schema change). The export e2e
+  asserts the zip holds `parameters.csv` with N lines of four fields matching the features.
+- [ ] README ("Import into Fusion without Claude"): install ParameterIO from the Fusion App Store,
+  Utilities → ParameterIO → Import → pick `parameters.csv`; canvases stay a manual Insert → Canvas.
