@@ -120,24 +120,6 @@ a:focus-visible {
   min-height: 100dvh;
 }
 
-/* Ternpike's finding (its src/global.css): on Dynamic-Island phones a
-   home-screen web app can report `dvh`/`svh`/`innerHeight` as the *small*
-   viewport (screen minus the top inset), which left a dead strip under the
-   frame at the bottom. `lvh` is the full height. Standalone has no browser
-   chrome, so lvh is safe there; in a browser tab it would push the frame's
-   bottom under Safari's toolbar, hence the media query. */
-@media (display-mode: standalone) {
-  body,
-  #root,
-  .app-frame {
-    min-height: 100lvh;
-  }
-
-  .app-frame {
-    height: 100lvh;
-  }
-}
-
 /* The scroll container. The sticky bar lives inside it, so blur samples the
    content scrolling underneath rather than the document. */
 .shell {

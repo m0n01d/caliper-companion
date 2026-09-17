@@ -208,3 +208,14 @@ let userIsTypingElsewhere = (el: option<Dom.element>): bool =>
     | None => true
     }
   }
+
+// ── Viewport readout (Debug page) ──────────────────────────────────────
+// Live reads at each use site (`@val` externals inline), for the numbers
+// iOS standalone can disagree with itself about.
+@val @scope("window") external innerWidth: float = "innerWidth"
+@val @scope("window") external innerHeight: float = "innerHeight"
+@val @scope("screen") external screenWidth: float = "width"
+@val @scope("screen") external screenHeight: float = "height"
+@get external offsetHeight: Dom.element => float = "offsetHeight"
+@get external scrollHeight: Dom.element => float = "scrollHeight"
+@get external clientHeight: Dom.element => float = "clientHeight"

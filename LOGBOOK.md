@@ -2137,3 +2137,30 @@ that text. Branch `agent/a10-folders`, not pushed.
 - **Verified here.** `npm run build` clean; Chromium e2e 47/47. **Not verifiable here:** the
   effect only exists on a real iPhone (WebKit never runs in this sandbox) — remove and re-add the
   home-screen app after the Pages deploy, since iOS reads the status-bar meta at install time.
+
+## 2026-09-17 — iOS standalone, round 2: `lvh` reverted, viewport readout on Debug
+
+- **Phone report after the previous entry:** "almost worse" — excess scroll on short pages, the
+  bottom cut off on long ones. Screenshots show the status bar now painted by iOS with our bar
+  below it (the `default` meta did its job) and no blur band.
+- **Diagnosis.** The `@media (display-mode: standalone) { … 100lvh }` belt-and-braces was the
+  regression. With `black-translucent` the web view covered the whole screen, so ternpike's
+  "`lvh` = full screen" was right and `dvh` (screen minus the top inset) was the one that fell
+  short. With `default` the web view already *is* screen minus the status bar, so `dvh` is exact
+  and `lvh` (still the full screen) overshoots by the status-bar height: a fixed-height frame
+  that is ~59 px taller than the viewport scrolls the document on short pages and hides the
+  shell's bottom on long ones. Exactly the two symptoms. Reverted; the frame is `100dvh` again.
+- **No more guessing.** `#/debug` now has a "Viewport" group that measures, on the device, every
+  number iOS can disagree with itself about: mode, `screen`, `inner`, `visualViewport.height`,
+  `100vh`/`lvh`/`svh`/`dvh` (hidden fixed probes, `Debug.css`), `position: fixed; inset: 0`,
+  `env(safe-area-inset-top/bottom)`, the laid-out `.app-frame` height, and the document's
+  client vs scroll height (excess scroll = the difference), plus the user agent (which carries
+  the iOS version). "Re-measure viewport" re-runs it after rotating or opening the keyboard.
+  `Canvas.res` gained the `innerWidth/innerHeight/screen*/offsetHeight/scrollHeight/clientHeight`
+  bindings. `shell.spec.js` asserts the 13 rows render and `100dvh` reads the pinned 844.
+- **If the phone still disagrees:** the readout says which unit equals the visible height; the
+  frame rule follows it. Candidates in order: `100dvh` (spec §5), `position: fixed; inset: 0`,
+  `visualViewport.height` mirrored into a CSS variable (already done for `--vv-height`).
+- **Tooling note.** `resq set decl` hung indefinitely on `Canvas.res` for an `@val @scope(...)`
+  external (killed after 5 min, file untouched — writes are atomic as promised); appended with a
+  heredoc instead. Not reproduced or chased here.

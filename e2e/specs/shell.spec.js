@@ -22,6 +22,11 @@ test.describe('app shell', () => {
     await page.goto('/#/debug')
     await expect(page.locator('.shell-title')).toHaveText('Debug')
     await expect(page.getByRole('heading', {name: 'Timers'})).toBeVisible()
+    // Viewport readout (LOGBOOK 2026-09-17 "iOS 26/27 standalone"): every
+    // probe row renders with a real measurement.
+    await expect(page.getByRole('heading', {name: 'Viewport'})).toBeVisible()
+    await expect(page.getByTestId('viewport-row')).toHaveCount(13)
+    await expect(page.getByTestId('viewport-row').filter({hasText: '100dvh'})).toContainText('844.0')
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page).toHaveURL(/#\/?$/)
     await expect(page.locator('.shell-title')).toHaveText('Parts')
