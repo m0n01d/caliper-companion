@@ -21,10 +21,14 @@ stable; add to this list before you rely on a new one.
 - `timer` — hands-on timer readout
 
 ## Capture (`#/parts/:id/capture`)
-- `capture-file-<kind>` — the `<input type="file" capture="environment">` for that face kind
-- `library-file-<kind>` — the library picker input (no `capture` attribute)
+- `capture-file-<kind>` — the `<input type="file" capture="environment">` for that face kind, always
+  in the DOM (one per kind, regardless of which chip is selected or whether a dialog is open)
+- `library-file-<kind>` — the library picker input (no `capture` attribute), same "always present" rule
 - `recapture-confirm` / `recapture-keep` / `recapture-cancel` — replace-image dialog
 - `capture-note` — the one-line explanation shown when camera access is unavailable
+- `capture-kinds` — the Top/Side/End/Detail chip row (design wave 2, DESIGN.md §11.2)
+- `capture-level` — the live level-readout pill next to the shutter, present only when the device
+  orientation sensor has reported a sample and permission wasn't denied (design wave 2)
 
 ## Annotate (`#/parts/:id/faces/:faceId`)
 - `annotate-canvas` — the `<canvas>`. Carries two live attributes for tests: `data-transform="scale,tx,ty"`
