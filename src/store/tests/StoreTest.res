@@ -22,10 +22,11 @@ let freshDbPath = (): string => mkdtempSync(pathJoin(tmpdir(), "caliper-store-te
 
 let onePixelBlob = () => PouchDb.blobFromBytes(Uint8Array.fromArray([1]))
 
-let mkFace = (~partId: string, ~kind: Types.faceKind): Types.face => {
+let mkFace = (~partId: string, ~kind: Types.faceKind, ~label: option<string>=?): Types.face => {
   id: Ids.face(),
   partId,
   kind,
+  label: label->Option.getOr(Enums.faceKindToString(kind)),
   imageAttachment: "image.jpg",
   pixelWidth: 1,
   pixelHeight: 1,
@@ -367,4 +368,84 @@ describe("Store — indexes", () => {
       await Store.destroy(store)
     },
   )
+})
+
+// SPEC §8a A7 — face labels in the store.
+describe("Store — face labels (SPEC §8a A7)", () => {
+  testAsync("putFace stores label and reads it back; replace-by-id keeps it", async () => {
+    let store = Store.make(~name=freshDbPath())
+    let part = await Store.createPart(store, ~name="P7", ~slug="p7", ~units=Types.Mm)
+    let face = mkFace(~partId=part.id, ~kind=Types.Side, ~label="left_side")
+    let _ = await Store.putFace(store, face, ~image=onePixelBlob(), ~contentType="image/jpeg")
+    let fetched = await Store.getFace(store, face.id)
+    expect(fetched->Option.map(f => (f.kind, f.label)))->toEqual(Some((Types.Side, "left_side")))
+
+    // Recapture = same id, same label, new image (SPEC A7: "replaces by face").
+    let _ = await Store.putFace(
+      store,
+      {...face, pixelWidth: 2},
+      ~image=PouchDb.blobFromBytes(Uint8Array.fromArray([1, 2])),
+      ~contentType="image/jpeg",
+    )
+    let faces = await Store.facesOf(store, ~partId=part.id)
+    expect(faces->Array.map(f => (f.label, f.pixelWidth)))->toEqual([("left_side", 2)])
+
+    await Store.destroy(store)
+  })
+
+  testAsync("facesOf orders by kind, then label; same-kind faces coexist", async () => {
+    let store = Store.make(~name=freshDbPath())
+    let part = await Store.createPart(store, ~name="P8", ~slug="p8", ~units=Types.Mm)
+    let put = (kind, label) =>
+      Store.putFace(
+        store,
+        mkFace(~partId=part.id, ~kind, ~label),
+        ~image=onePixelBlob(),
+        ~contentType="image/jpeg",
+      )
+    let _ = await put(Types.End, "end")
+    let _ = await put(Types.Side, "side")
+    let _ = await put(Types.Side, "left_side")
+    let _ = await put(Types.Top, "top")
+    let _ = await put(Types.Top, "underside")
+
+    let faces = await Store.facesOf(store, ~partId=part.id)
+    expect(faces->Array.map(f => f.label))->toEqual(["top", "underside", "left_side", "side", "end"])
+
+    await Store.destroy(store)
+  })
+
+  // The owner's phone already holds face docs written before A7 — no
+  // `label` field at all. They must keep reading back, as the default face
+  // of their kind. Written through a second raw handle on the same
+  // directory (see the module doc comment) because Store itself can no
+  // longer produce such a doc.
+  testAsync("a face doc written without label reads back with label = kind", async () => {
+    let dir = freshDbPath()
+    let store = Store.make(~name=dir)
+    let part = await Store.createPart(store, ~name="P9", ~slug="p9", ~units=Types.Mm)
+    let legacyId = Ids.face()
+
+    let raw = PouchDb.make(dir, {})
+    let doc: PouchDb.doc = Dict.make()
+    Dict.set(doc, "_id", JSON.Encode.string(legacyId))
+    Dict.set(doc, "type", JSON.Encode.string("face"))
+    Dict.set(doc, "partId", JSON.Encode.string(part.id))
+    Dict.set(doc, "kind", JSON.Encode.string("end"))
+    Dict.set(doc, "imageAttachment", JSON.Encode.string("image.jpg"))
+    Dict.set(doc, "pixelWidth", JSON.Encode.int(1200))
+    Dict.set(doc, "pixelHeight", JSON.Encode.int(1600))
+    Dict.set(doc, "levelDegrees", JSON.Null)
+    Dict.set(doc, "outline", JSON.Null)
+    Dict.set(doc, "capturedAt", JSON.Encode.string(Clock.nowIso()))
+    Dict.set(doc, "updatedAt", JSON.Encode.string(Clock.nowIso()))
+    let _ = await PouchDb.put(raw, doc)
+
+    let fetched = await Store.getFace(store, legacyId)
+    expect(fetched->Option.map(f => (f.kind, f.label)))->toEqual(Some((Types.End, "end")))
+    let faces = await Store.facesOf(store, ~partId=part.id)
+    expect(faces->Array.map(f => f.label))->toEqual(["end"])
+
+    await Store.destroy(store)
+  })
 })

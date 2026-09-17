@@ -57,7 +57,10 @@ let putFace: (
 let getFace: (t, string) => promise<option<Types.face>>
 let getFaceImage: (t, string) => promise<option<PouchDb.blob>>
 
-// Ordered top, side, end, detail (Enums.allFaceKinds order).
+// Ordered top, side, end, detail (Enums.allFaceKinds order), then by
+// `label` within a kind (SPEC §8a A7: a part may hold several faces of one
+// kind). Face docs written before A7 carry no `label`; they read back with
+// `label = Enums.faceKindToString(kind)`.
 let facesOf: (t, ~partId: string) => promise<array<Types.face>>
 
 // Face + its dimensions, one bulkDocs call.
