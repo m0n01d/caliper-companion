@@ -50,24 +50,30 @@ stable; add to this list before you rely on a new one.
   or still only a chip — regardless of which chip is selected or whether a dialog/card is open)
 - `library-file-<label>` — the library picker input (no `capture` attribute), same "always present" rule
 - `capture-chip-<label>` — one `Ui.FaceCard` per face, in the face-card grid (design wave P2b
-  "layout A", DESIGN.md §4/§11.2, docs/design/review-2026-09-17.md §3/§4): captured = thumbnail +
-  live check badge; the selected one additionally gets the accent ring (both signals together when
-  a captured face is also selected); uncaptured = the plain dashed "Empty" look regardless of
-  selection (`Ui.FaceCard` has no way to ring an `image=None` card — a noted Ui gap, see
-  `Capture.res`'s module-end notes). Tapping a card selects it as the shutter/library target. No
-  `aria-pressed` (`Ui.FaceCard` doesn't expose one) — selected/captured state is stated in the
-  card's accessible name instead (`"<label> — captured|not captured[, selected]"`)
-- `custom-face` — the "+ Custom" card, last in the grid (SPEC §8a A7; `Ui.FaceCard` `Empty` look,
-  label text "+ Custom" — no `Plus` icon variant to ask `Ui.FaceCard` for, another noted Ui gap);
+  "layout A", DESIGN.md §4/§11.2, docs/design/review-2026-09-17.md §3/§4; agent/facecard-fix gave
+  `Ui.FaceCard` a state-driven ring on `image=None` cards too): captured = thumbnail + live check
+  badge; the selected one additionally gets the accent ring (both signals together when a captured
+  face is also selected); a *selected but uncaptured* kind now also gets the accent ring on its
+  plain dashed "Empty" look (the dashed border itself drops while selected — a solid ring replacing
+  a dashed one would otherwise double up); uncaptured-and-unselected stays the plain dashed "Empty"
+  look. Tapping a card selects it as the shutter/library target. `aria-pressed` (`true` for the
+  selected chip, `false` otherwise) states the same signal `Ui.FaceCard`'s `~ariaPressed` now
+  exposes; the card's accessible name (`"<label> — captured|not captured[, selected]"`) still
+  carries it too, kept alongside rather than replaced (DESIGN.md §9 "color is never the only
+  signal" — belt-and-suspenders for screen readers, not redundant noise)
+- `custom-face` — the "+ Custom" card, last in the grid (SPEC §8a A7; `Ui.FaceCard` `Empty` look
+  with `~icon=Plus`, label text "Custom" — the "+" is the icon now, not baked into the string)
   opens the inline card `custom-face-card`: `custom-face-label` (mono name input,
   `enterkeyhint="done"`, Enter adds) · `custom-face-error` (inline validation: feature-name rule +
   unique among this part's faces and chips) · `custom-face-plane-<top|side|end|detail>`
   (sketch-plane segmented control, `aria-pressed`) · `custom-face-add` (primary, `aria-disabled`
   until the name is valid) · `custom-face-cancel`
-- `custom-face-remove` — small button in the shutter block, present only while the selected chip is
-  a custom one with no face yet; removes the chip (a captured face is deleted from the Part page).
-  Stays in the shutter block rather than moving onto the card itself — `Ui.FaceCard`'s `Empty` look
-  has no caption/badge slot to put it in
+- `custom-face-remove` — small 24 px round button, present only while the selected chip is a custom
+  one with no face yet; removes the chip (a captured face is deleted from the Part page instead).
+  Sits on that chip's own face-card now (agent/facecard-fix: `Ui.FaceCard` grew `~badge`/`~caption`
+  slots on `Empty` cards, not just captured ones), in the same top-right spot the captured check
+  badge uses — a real `Ui.Button`, a DOM sibling of the card's own `<button>` rather than nested
+  inside it (Capture.res's `faceGrid`, `.face-card-holder` in Capture.css positions it)
 - `recapture-confirm` / `recapture-keep` / `recapture-cancel` — replace-image dialog
 - `capture-note` — the one-line explanation shown when camera access is unavailable; the last
   element in `.capture-action`'s bottom-anchored group (design wave P2b), so it sits directly under

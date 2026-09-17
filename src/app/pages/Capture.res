@@ -24,8 +24,12 @@
 // the screen (`.capture-action { margin-top: auto }` inside a
 // `min-height: 100%` `.capture-page`). Capture/decode/recapture/custom-face
 // logic is unchanged — this wave only touches `faceGrid`, `view`'s markup,
-// and `Capture.css`. See the module-end notes for what's new and the Ui
-// gaps this ran into.
+// and `Capture.css`. See the module-end notes for what's new. That wave ran
+// into four `Ui.FaceCard` gaps (no ring on an `image=None` card, no
+// `ariaPressed`, no `Plus` icon, no badge/caption slot on `Empty`) that
+// `agent/facecard-fix` closed in `Ui.res`/`global.css` — this page just
+// uses the results (`~ariaPressed`, `~icon=Plus`, the moved
+// `custom-face-remove`); see the module-end notes for the details.
 
 // -- model -------------------------------------------------------------
 
@@ -670,9 +674,11 @@ let sizeText = (face: Types.face): string =>
 
 // Accessible name for a face-grid card (DESIGN.md §9 "Color is never the
 // only signal" — captured/selected are visual-only otherwise: a live ring,
-// an accent ring, a check badge). `Ui.FaceCard` has no `aria-pressed` (see
-// the module-end notes' "Ui gaps"), so the selection state the old slot's
-// `aria-pressed` used to carry is folded into the name instead.
+// an accent ring, a check badge). `Ui.FaceCard` also carries `~ariaPressed`
+// now (agent/facecard-fix), which `faceGrid` sets from the same `isSelected`
+// — this name is kept as a second, explicit statement of the same signal
+// (screen readers announce both; belt-and-suspenders, not redundant noise,
+// since `aria-pressed` alone doesn't say *what* is captured vs. not).
 let cardAriaLabel = (chip: chip, ~hasExisting: bool, ~isSelected: bool): string =>
   chipAriaName(chip) ++
   (hasExisting ? " — captured" : " — not captured") ++
@@ -686,16 +692,20 @@ let cardAriaLabel = (chip: chip, ~hasExisting: bool, ~isSelected: bool): string 
 // `badge`); the selected chip additionally gets the `Selected` accent ring
 // — `state` and `badge` are independent props, so a captured-and-selected
 // card keeps both signals. An uncaptured chip is `Empty` (camera icon +
-// label) regardless of selection: `Ui.FaceCard` only ever shows a ring when
-// `image` is `Some(_)` (see its own doc comment), so a selected-but-
-// uncaptured kind reads as a plain empty card here — a real Ui gap, noted
-// in the module-end notes, not worked around by hand-rolling the card's
-// markup outside the shared component. "+ Custom" is a fixed trailing
-// `Empty` card (own testid, not one of `chipsOf`'s chips) that opens the
-// existing inline custom-face card; `Ui.FaceCard`'s empty look always shows
-// a camera icon (no way to ask it for `Plus` without editing `Ui.res`), so
-// the card's own label reads "+ Custom" to keep the affordance legible —
-// another noted Ui gap. Dense (3-up, `.face-grid-dense`) at ≥ 5 *chips*,
+// label); a *selected but uncaptured* kind now also gets the accent ring
+// (agent/facecard-fix gave `Ui.FaceCard` a ring on `image=None` cards too —
+// see its doc comment's state matrix), where it used to read as a plain
+// empty card. `~ariaPressed=isSelected` restores the toggle semantics the
+// old chip row's `aria-pressed` carried (`cardAriaLabel`'s accessible name
+// still states the same thing in words, kept alongside it, not replaced).
+// "+ Custom" is a fixed trailing `Empty` card (own testid, not one of
+// `chipsOf`'s chips) that asks the card for the `Plus` icon (`~icon`) so
+// its own label can just read "Custom" instead of baking the "+" into the
+// string. A face whose thumbnail hasn't loaded yet (`existing` is `Some`
+// but `thumbUrl` is still `None` — the `FaceImageLoaded` gap) now keeps its
+// check `badge` and size `caption` on the empty look instead of losing them
+// until the object URL resolves, since `Ui.FaceCard` renders both slots
+// regardless of `~image`. Dense (3-up, `.face-grid-dense`) at ≥ 5 *chips*,
 // reading the review's "≥ 5 faces" rule against this page's chips, not the
 // total cell count including "+ Custom" — counting the trailing cell would
 // make a bare 4-default, zero-capture part dense on day one.
@@ -707,30 +717,65 @@ let faceGrid = (model: model, ~dispatch: msg => unit): React.element => {
     let hasExisting = existing->Option.isSome
     let thumbUrl = existing->Option.flatMap(f => Dict.get(model.faceImages, f.id))
     let isSelected = chip.label == model.selectedLabel && model.customDraft->Option.isNone
-    <Ui.FaceCard
-      key=chip.label
-      label={chipAriaName(chip)}
-      caption=?{existing->Option.map(sizeText)}
-      image=thumbUrl
-      state={hasExisting
-        ? isSelected ? Ui.FaceCard.Selected : Ui.FaceCard.Captured
-        : Ui.FaceCard.Empty}
-      badge=?{
-        hasExisting
-          ? Some(<span className="face-card-check"> <Icon name=Check size=14 /> </span>)
-          : None
-      }
-      testId={"capture-chip-" ++ chip.label}
-      ariaLabel={cardAriaLabel(chip, ~hasExisting, ~isSelected)}
-      onClick={_ => dispatch(SelectChip(chip.label))}
-    />
+    let card =
+      <Ui.FaceCard
+        label={chipAriaName(chip)}
+        caption=?{existing->Option.map(sizeText)}
+        image=thumbUrl
+        // `isSelected` wins over `hasExisting` here (not the other way
+        // round, as it read pre-fix, back when `Selected` only ever went
+        // to a *captured* chip because an uncaptured one's ring had
+        // nowhere to render) — a selected-but-uncaptured chip now needs
+        // `Selected` reaching `Ui.FaceCard` for its ring to show at all.
+        state={isSelected
+          ? Ui.FaceCard.Selected
+          : hasExisting ? Ui.FaceCard.Captured : Ui.FaceCard.Empty}
+        badge=?{
+          hasExisting
+            ? Some(<span className="face-card-check"> <Icon name=Check size=14 /> </span>)
+            : None
+        }
+        ariaPressed=isSelected
+        testId={"capture-chip-" ++ chip.label}
+        ariaLabel={cardAriaLabel(chip, ~hasExisting, ~isSelected)}
+        onClick={_ => dispatch(SelectChip(chip.label))}
+      />
+    // A custom chip with no face yet is page-only state and can be taken
+    // back (SPEC §8a A7); a captured one is a real face, deleted from Part
+    // instead — mirrors `shutterBlock`'s old `removable`, now scoped to
+    // "the selected chip" via `isSelected` since this replaces that block's
+    // per-selection button. `custom-face-remove` can't be the card's own
+    // `~badge` (the card is a `<button>` when `onClick` is set — Capture's
+    // kind picker always passes one — and a `<button>` nested inside
+    // another `<button>` is invalid HTML/a11y); instead it's a real
+    // sibling `Ui.Button`, absolutely positioned over the card via the same
+    // `.face-card-badge` slot class the badge itself uses, in a small
+    // `.face-card-holder` wrapper that stands in for `.face-card` as the
+    // grid item (Capture.css) so the remove button has something
+    // `position: relative` to sit on.
+    let removable = isSelected && !isDefaultLabel(chip.label) && !hasExisting
+    removable
+      ? <div className="face-card-holder" key=chip.label>
+          card
+          <Ui.Button
+            variant=Icon
+            className="face-card-badge custom-face-remove"
+            testId="custom-face-remove"
+            disabled={model.busy == Some(chip.label)}
+            ariaLabel={"Remove the " ++ chip.label ++ " chip"}
+            onClick={_ => dispatch(CustomRemove(chip.label))}>
+            <Icon name=X size=14 />
+          </Ui.Button>
+        </div>
+      : <React.Fragment key=chip.label> card </React.Fragment>
   })
   let addCustomCard =
     <Ui.FaceCard
       key="custom-face"
-      label="+ Custom"
+      label="Custom"
       image=None
       state=Ui.FaceCard.Empty
+      icon=Plus
       testId="custom-face"
       ariaLabel="Add a custom face"
       onClick={_ => dispatch(CustomOpen)}
@@ -744,6 +789,9 @@ let faceGrid = (model: model, ~dispatch: msg => unit): React.element => {
 // camera input), Body caption, "From library" secondary capsule, the live
 // level readout, and the busy/error lines. Swapped out for `recaptureCard`
 // or `customCard` while one of those is open (DESIGN.md §11.2).
+// `custom-face-remove` used to live here (a button below "From library");
+// it now sits on the face-grid card itself (`faceGrid`, `~badge` slot) now
+// that `Ui.FaceCard` has one on `Empty` cards — see that function's comment.
 let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.element => {
   let label = chip.label
   let hasExisting = existingFaceOf(model.faces, label)->Option.isSome
@@ -760,9 +808,6 @@ let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.el
   | RecaptureConfirm(_) => "Saving…"
   | NoDialog => "Decoding…"
   }
-  // A custom chip with no face yet is page-only state and can be taken
-  // back (SPEC §8a A7); a captured one is a real face, deleted from Part.
-  let removable = !isDefaultLabel(label) && !hasExisting
   <div className="shutter-block">
     <div className="shutter-row">
       <label
@@ -788,20 +833,6 @@ let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.el
       <Icon name=Image size=20 />
       {React.string("From library")}
     </label>
-    {removable
-      ? <Ui.Button
-          variant=Secondary
-          size=Small
-          testId="custom-face-remove"
-          disabled=isBusy
-          ariaLabel={"Remove the " ++ label ++ " chip"}
-          onClick={_ => dispatch(CustomRemove(label))}>
-          <>
-            <Icon name=X size=16 />
-            {React.string("Remove chip")}
-          </>
-        </Ui.Button>
-      : React.null}
     {isBusy ? <Ui.Pill> {React.string(progressText)} </Ui.Pill> : React.null}
     {switch rowError {
     | Some(msg) => <p className="t-footnote text-error"> {React.string(msg)} </p>
@@ -1063,30 +1094,31 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
 //   Same technique the review doc itself proposed for the do-now fix,
 //   generalized to the one wrapper so all three interchangeable blocks
 //   inherit it without three separate CSS rules.
-// - Ui gaps run into, not worked around by hand-rolling markup outside
-//   `Ui.FaceCard` (out of this track's file ownership — `Ui.res` isn't
-//   editable here): (1) no `ariaPressed` prop — the old slot's
-//   `aria-pressed` is gone; selection is now stated in the card's
-//   `ariaLabel` instead (`cardAriaLabel`), and `faces.spec.js`'s two
-//   `capture-chip-*` `aria-pressed` assertions were updated to check
-//   `face-card-selected`/`face-card-captured` instead (a legitimate
-//   interaction change, not a weakening of the check — see that spec's own
-//   comment at the edit). (2) `~image=None` always renders the `Empty`
-//   look regardless of `~state` (per `Ui.FaceCard`'s own doc comment), so a
-//   *selected but uncaptured* kind shows no accent ring — the shutter
-//   block's "Capture <Label>" caption is the only cue which kind is
-//   targeted in that case. (3) The `Empty` branch hardcodes a Camera icon
-//   with no way to ask for `Plus`, so the "+ Custom" card's own *label*
-//   text is "+ Custom" (the "+" lives in the string, not an icon swap).
-//   (4) `badge`/`caption` only render in the `Some(image)` branch — a real
-//   `Empty` card (no image at all, e.g. an uncaptured default or an unsaved
-//   custom chip) has no slot for either, which is also why
-//   `custom-face-remove` couldn't move onto the card itself (see below).
-//   One knock-on effect: a just-captured face briefly shows as a plain
-//   `Empty` card until its object URL loads (`FaceImageLoaded`) — the old
-//   slot row showed the check badge immediately off `hasExisting`,
-//   independent of the thumbnail; this is a minor, transient regression
-//   (local-blob object URLs resolve in well under a frame in practice).
+// - Ui gaps run into by this wave (P2b), closed by `agent/facecard-fix`
+//   (LOGBOOK.md "FaceCard gaps (agent/facecard-fix)" has the full write-up;
+//   `Ui.res`/`global.css` are that track's file ownership, not this one's):
+//   (1) `Ui.FaceCard` had no way to ring an `image=None` card, so a
+//   *selected but uncaptured* kind read as a plain empty card — `~state`
+//   now drives the ring on the `Empty` look too (`(None, Selected)` gets
+//   the accent ring), used here via `faceGrid`'s existing `state` value,
+//   no call-site change needed. (2) No `ariaPressed` prop — selection was
+//   stated only in the card's `ariaLabel` (`cardAriaLabel`); `Ui.FaceCard`
+//   now takes `~ariaPressed`, passed here as the same `isSelected` each
+//   card already computes, and `faces.spec.js`'s two `capture-chip-*`
+//   `aria-pressed` assertions are back (kept alongside the accessible-name
+//   ones, not replacing them). (3) The `Empty` look hardcoded a Camera
+//   icon with no way to ask for `Plus`, so "+ Custom" spelled the "+" into
+//   its own label text; `Ui.FaceCard` now takes `~icon`, so `addCustomCard`
+//   asks for `Plus` and its label is just "Custom". (4) `badge`/`caption`
+//   only rendered in the `Some(image)` branch, so a real `Empty` card had
+//   no slot for either — this is why `custom-face-remove` stayed in the
+//   shutter block rather than moving onto the card, and why a just-
+//   captured face briefly showed as a plain `Empty` card (no check badge)
+//   until its object URL loaded. `Ui.FaceCard` now renders both slots
+//   regardless of `~image`, so `faceGrid` passes `badge`/`caption` the same
+//   way in both branches — the just-captured-but-not-yet-thumbnailed case
+//   keeps its badge, and `custom-face-remove` moved onto the selected,
+//   unsaved custom chip's own card (see below).
 // - Dense grid (`.face-grid-dense`, 3-up) triggers at ≥ 5 *chips*
 //   (`chipsOf`'s length), not ≥ 5 total grid cells: counting the always-
 //   present "+ Custom" cell would make every bare, zero-capture part
@@ -1095,12 +1127,18 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
 // - `capture-kinds` testid moved from the old chip row onto the face-grid
 //   container (docs/testids.md updated) — nothing in the e2e suite reads
 //   it, kept for discoverability/continuity of the id.
-// - `custom-face-remove` stays exactly where it was (a button in the
-//   shutter block, shown once a custom chip with no face yet is selected)
-//   rather than moving into the card's own caption/badge slot — the
-//   `Empty` branch has neither slot to put it in (Ui gap #4 above), and
-//   "existing" affordance in the task brief read as "keep it where it
-//   already works," which is also what `faces.spec.js` already exercises.
+// - `custom-face-remove` (agent/facecard-fix) moved off the shutter block
+//   and onto the selected, unsaved custom chip's own face-card, in the
+//   card's `~badge` slot's position — but not as the card's actual
+//   `~badge` prop, since the card is a `<button>` (Capture always passes
+//   `onClick`) and a `<button>` can't nest inside another `<button>`.
+//   `faceGrid` instead renders it as a real sibling `Ui.Button`, absolutely
+//   positioned over the card via the same `.face-card-badge` class the
+//   badge itself uses, inside a small `.face-card-holder` wrapper
+//   (Capture.css) that takes over the grid-item role from `.face-card` so
+//   there's something `position: relative` for it to sit on. Every other
+//   card renders exactly as before (a bare `Ui.FaceCard`, no wrapper) —
+//   only the one removable card pays for the extra DOM node.
 //
 // M3 capture (original, still true):
 // - `levelDegrees` = sqrt(beta² + gamma²): SPEC doesn't define the exact
