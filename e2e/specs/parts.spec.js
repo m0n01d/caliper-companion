@@ -40,6 +40,9 @@ test.describe('parts', () => {
     await expect(page).toHaveURL(/#\/parts\/.+/)
     await page.getByRole('button', {name: 'Back'}).click()
 
+    // P2a (layout A): rename/delete live behind the bar's "Edit" text
+    // action now, not as permanent per-row icon buttons.
+    await page.getByTestId('parts-edit').click()
     await page.getByTestId('part-rename').click()
     await page.getByTestId('part-rename-input').fill('Renamed Part')
     await page.getByTestId('part-rename-save').click()
@@ -58,6 +61,8 @@ test.describe('parts', () => {
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page.getByTestId('part-row')).toHaveCount(1)
 
+    // P2a (layout A): same "Edit" gate as the rename test above.
+    await page.getByTestId('parts-edit').click()
     await page.getByTestId('part-delete').click()
     await page.getByTestId('part-delete-confirm').click()
 

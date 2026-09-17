@@ -88,7 +88,7 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     expect(tag).not.toBe('BODY')
   })
 
-  test('part page — buttons named, features table has real column headers, live region present, Tab reaches Back then content', async ({
+  test('part page — buttons named, features list has real list/listitem roles, live region present, Tab reaches Back then content', async ({
     page,
   }) => {
     const partId = await createPart(page, 'A11y part')
@@ -96,8 +96,9 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await page.setInputFiles('[data-testid="capture-file-top"]', FIXTURE_TOP)
     await expect(page).toHaveURL(/#\/parts\/[^/]+\/faces\/[^/]+\/?$/)
 
-    // One dimension, so Part.res actually renders the `<table>` (it's plain
-    // text — "No dimensions captured yet." — until there's at least one).
+    // One dimension, so Part.res actually renders the features list (it's
+    // plain text — "No dimensions captured yet." — until there's at least
+    // one).
     await clickNormalizedPoint(page, 0.2, 0.5)
     await clickNormalizedPoint(page, 0.6, 0.5)
     await page.getByTestId('reading').fill('10.00')
@@ -109,17 +110,18 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await expect(page.getByTestId('part-live')).toBeAttached()
     await expect(page.getByTestId('feature-row')).toHaveCount(1)
 
-    // Part.css lays the table out as `display: grid` (so the name column
-    // can shrink+ellipsis — see that file), which strips the implicit
-    // table/row/cell roles the CSS Display spec normally computes from the
-    // HTML tag. Part.res restores them explicitly; this is the regression
-    // guard for that fix, not just "does a <table> exist".
-    const table = page.locator('.features-table')
-    await expect(table).toHaveAttribute('role', 'table')
-    const headers = table.locator('[role="columnheader"]')
-    await expect(headers).toHaveCount(4)
-    for (const header of await headers.all()) {
-      await expect(header).toHaveAttribute('scope', 'col')
+    // P2a (layout A, review-2026-09-17.md F5/§4 "Feature row"): the
+    // features table became a role=list of role=listitem rows (no column
+    // header row — the group header carries the unit instead). This is the
+    // regression guard for that structure, not just "does the list exist".
+    const list = page.getByTestId('features-list')
+    await expect(list).toHaveAttribute('role', 'list')
+    const rows = page.getByTestId('feature-row')
+    await expect(rows).toHaveCount(1)
+    for (const row of await rows.all()) {
+      await expect(row).toHaveAttribute('role', 'listitem')
+      const label = await row.getAttribute('aria-label')
+      expect(label?.length ?? 0).toBeGreaterThan(0)
     }
 
     await expectEveryButtonNamed(page)
@@ -192,6 +194,10 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page.getByTestId('part-row')).toHaveCount(1)
 
+    // P2a (layout A): rename/delete only show once the bar's "Edit" text
+    // action is tapped (review-2026-09-17.md P1) — no longer permanent
+    // per-row icon buttons.
+    await page.getByTestId('parts-edit').click()
     await page.getByTestId('part-rename').click()
     await expect(page.getByTestId('part-rename-input')).toBeFocused()
     await page.getByTestId('part-rename-cancel').click()
