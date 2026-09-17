@@ -367,10 +367,31 @@ button[aria-disabled="true"]:active,
   color: var(--cc-error-ink);
 }
 
+/* Borderless, `cc-text` on transparent (Ui.Button ~variant=Plain). Pressed
+   state is the base `button:active`/`.btn:active` rule (opacity 0.6) —
+   nothing extra needed here. */
+.btn-plain {
+  background: transparent;
+  border-color: transparent;
+  color: var(--cc-text);
+}
+
+/* The old combined variant+size (kept for the deprecated Ui.Button
+   ~variant=Small alias — see Ui.res). New code should reach for
+   ~size=Small on a colour variant instead, which gets this same compact
+   sizing from `.btn-compact` below without baking `cc-field` into it. */
 .btn-small {
   min-height: 40px;
   padding: var(--cc-space-1) var(--cc-space-4);
   background: var(--cc-field);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+/* Size, decoupled from colour (Ui.Button ~size=Small on any variant except
+   Icon/the deprecated Small, which already have their own compact metrics). */
+.btn-compact {
+  min-height: 40px;
+  padding: var(--cc-space-1) var(--cc-space-4);
   font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
 }
 
@@ -494,6 +515,27 @@ button.list-row:focus-visible {
   gap: 2px;
 }
 
+/* The real <a> for Ui.ListRow's `~href` (a navigational row with sibling
+   actions — see that module). It is its own flex ROW, not `.list-row-body`
+   itself (a flex COLUMN of Title over Meta) — it holds that column plus the
+   chevron side by side, so the chevron sits beside the text instead of
+   stacking under the meta line as a third line. Takes over `.list-row-body`'s
+   share of the row's width (`flex: 1 1 auto`, `min-width: 0`) since it's the
+   direct sibling of `leading`/`trailing` now. */
+.list-row-link {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.list-row-link:active {
+  opacity: 0.6;
+}
+
 .list-row-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -501,8 +543,11 @@ button.list-row:focus-visible {
 }
 
 .list-row-meta {
+  overflow: hidden;
   font: var(--cc-text-footnote);
   color: var(--cc-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .list-row-meta-live {
@@ -690,25 +735,44 @@ textarea:disabled {
 }
 
 /* ── 8. Segmented control (capsule, concentric selection) ────────────── */
+/* Full width by default (a <div> with `display: flex` is a flex ITEM inside
+   any flex row parent, which sizes it to shrink-to-fit content instead of
+   filling — the reported bug: the bar rendered as a tiny content-hugging
+   blob inside a horizontal .list-row). `.segmented-inline` (Ui.Segmented's
+   `~inline` prop) opts back into content width. */
 .segmented {
   display: flex;
+  width: 100%;
   min-height: var(--cc-tap-min);
+  gap: 4px;
   padding: 2px;
   background: var(--cc-field);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-capsule);
 }
 
+.segmented-inline {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* 12 px side padding + the container's 4 px gap so the selected amber
+   capsule never touches the next label (the annotate kind row used to show
+   "Length" touching "Diameter"). `white-space: nowrap` is needed for
+   `text-overflow: ellipsis` to actually trigger instead of the option
+   silently wrapping to a clipped second line. */
 .segmented-option {
   flex: 1 1 0;
   min-width: 0;
   min-height: calc(var(--cc-tap-min) - 6px);
-  padding: 0 var(--cc-space-2);
+  padding: 0 12px;
   border: 0;
   border-radius: var(--cc-radius-capsule);
   background: transparent;
   color: var(--cc-text-2);
   font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+  text-align: center;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -735,6 +799,12 @@ textarea:disabled {
   -webkit-user-select: none;
 }
 
+/* Purely decorative (aria-hidden on the element itself), later in the DOM
+   than the real `<input>` sibling it's paired with — at equal stacking
+   (both `position`, `z-index: auto`) it would otherwise paint on top and
+   intercept every pointer event meant for the input. `pointer-events: none`
+   keeps it decoration-only; a real tap anywhere in the wrapping `<label>`
+   still activates the input via native click-forwarding either way. */
 .toggle-track {
   position: relative;
   display: block;
@@ -742,7 +812,26 @@ textarea:disabled {
   height: 32px;
   border-radius: var(--cc-radius-capsule);
   background: var(--cc-surface-2);
+  pointer-events: none;
   transition: background-color var(--cc-motion) var(--cc-ease);
+}
+
+/* The real control. It covers the whole 52×32 track and stays invisible via
+   `opacity: 0` rather than the shared `.visually-hidden` utility: that
+   class's `clip: rect(0,0,0,0)` makes an element unpaintable, which browsers
+   also exclude from hit-testing entirely — so a direct click at the input's
+   own coordinates (what Playwright's `.click()` does, and the only thing
+   `docs/testids.md`'s `wedge-toggle` id promises) fell through to whatever
+   was behind it instead of landing on the input. `opacity: 0` keeps the
+   element fully hit-testable while staying invisible. */
+.toggle-input {
+  position: absolute;
+  inset: 0;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .toggle-knob {

@@ -144,9 +144,13 @@
   gap: var(--cc-space-2);
 }
 
-/* Kind + tolerance share a row. The segmented options drop to 14 px with
-   4 px padding: "Diameter" at Subhead 15 semibold clips beside the
-   tolerance column on a 390 px phone with a wide fallback font. */
+/* Kind + tolerance share a row, so the segmented control only gets the
+   width left after the 124 px tolerance field — still too little for
+   Ui.Segmented's base metrics (design wave 3a: 12 px padding, 4 px gap,
+   Subhead 15 semibold) to fit "Diameter" without clipping on a 390 px phone
+   with a wide fallback font (headless/non-Apple platforms; SF Pro Text
+   isn't there to fall back from). Kept as a page-scoped override — smaller
+   padding and font, same call wave 1 and wave 2 both made here. */
 .annotate-kind-row {
   display: flex;
   align-items: flex-start;

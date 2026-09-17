@@ -250,17 +250,20 @@ let renderForm = (form: createForm, ~dispatch: msg => unit): React.element =>
     </div>
   </div>
 
-// A row's normal content is a real <a> (navigates to the part) plus two
-// sibling <button>s (Rename, Delete) — never a <button> wrapping other
-// buttons, which is invalid HTML and why this hand-rolls the shared
-// list-row/-body/-trailing/-chevron classes instead of Ui.ListRow (see the
-// report's Ui.res gap). Renaming/ConfirmingDelete replace this in place.
+// A row's Normal content is a single Ui.ListRow: thumbnail leading, name +
+// meta body wrapped in a real <a> (`~href`, chevron included), Rename/
+// Delete as `~trailing` siblings outside that <a> — never a <button>
+// wrapping other buttons, which is invalid HTML (design wave 3a's fix for
+// the Ui.res gap wave 2 reported; see LOGBOOK.md). Renaming/ConfirmingDelete
+// replace a row's content in place with their own plain container (not
+// Ui.ListRow — they're a form/confirm strip, not a navigable row), still
+// under the same `part-row` testid.
 let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.element => {
   let state = rowStateOf(model, part.id)
 
-  <div key={part.id} className="list-row part-row" dataTestId="part-row">
-    {switch state {
-    | Renaming(draft) =>
+  switch state {
+  | Renaming(draft) =>
+    <div key={part.id} className="list-row" dataTestId="part-row">
       <div className="part-row-edit">
         <input
           type_="text"
@@ -287,7 +290,9 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
           </Ui.Button>
         </div>
       </div>
-    | ConfirmingDelete =>
+    </div>
+  | ConfirmingDelete =>
+    <div key={part.id} className="list-row" dataTestId="part-row">
       <div className="part-row-edit">
         <p className="t-footnote">
           {React.string("Delete \"" ++ part.name ++ "\"? This removes its faces and dimensions.")}
@@ -307,42 +312,38 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
           </Ui.Button>
         </div>
       </div>
-    | Normal =>
-      <>
-        <div className="part-row-top">
-          <Ui.ListThumb src=None />
-          <a className="list-row-body list-row-link" href={Route.href(Route.Part(part.id))}>
-            <span className="list-row-title"> {React.string(part.name)} </span>
-          </a>
-          <span className="list-row-chevron"> <Icon name=ChevronRight size=20 /> </span>
-        </div>
-        <div className="part-row-bottom">
-          <span className="list-row-meta">
-            {React.string(
-              Enums.unitsToString(part.units) ++ " · updated " ++ relativeDate(part.updatedAt),
-            )}
-          </span>
-          <span className="part-row-actions">
-            <button
-              type_="button"
-              className="btn btn-small"
-              dataTestId="part-rename"
-              onClick={_ => dispatch(RenameStart(part.id))}>
-              {React.string("Rename")}
-            </button>
-            <button
-              type_="button"
-              className="btn btn-icon"
-              ariaLabel={"Delete " ++ part.name}
-              dataTestId="part-delete"
-              onClick={_ => dispatch(DeleteStart(part.id))}>
-              <Icon name=Trash size=20 />
-            </button>
-          </span>
-        </div>
-      </>
-    }}
-  </div>
+    </div>
+  | Normal =>
+    <Ui.ListRow
+      key={part.id}
+      testId="part-row"
+      href={Route.href(Route.Part(part.id))}
+      chevron=true
+      leading={<Ui.ListThumb src=None />}
+      trailing={
+        <>
+          <Ui.Button
+            variant=Ui.Button.Icon
+            testId="part-rename"
+            ariaLabel="Rename"
+            onClick={_ => dispatch(RenameStart(part.id))}>
+            <Icon name=Pencil size=20 />
+          </Ui.Button>
+          <Ui.Button
+            variant=Ui.Button.Icon
+            testId="part-delete"
+            ariaLabel={"Delete " ++ part.name}
+            onClick={_ => dispatch(DeleteStart(part.id))}>
+            <Icon name=Trash size=20 />
+          </Ui.Button>
+        </>
+      }>
+      <Ui.ListRow.Title> {React.string(part.name)} </Ui.ListRow.Title>
+      <Ui.ListRow.Meta>
+        {React.string(Enums.unitsToString(part.units) ++ " · updated " ++ relativeDate(part.updatedAt))}
+      </Ui.ListRow.Meta>
+    </Ui.ListRow>
+  }
 }
 
 // DESIGN.md §7: "one line of copy … and the primary button; no

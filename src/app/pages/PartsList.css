@@ -8,61 +8,21 @@
 }
 
 /* The row is a horizontal flex container, so its lone .field child sizes to
-   its own shrink-to-fit content by default — fine for the text input (a
-   block element that fills available width on its own), but Ui.Segmented's
-   flex:1 children instead collapse the whole control to its label text.
-   Force the field, and the segmented bar inside it, to the row's width. */
+   its own shrink-to-fit content by default rather than the row's full
+   width — push it. (Ui.Segmented itself no longer needs this: design wave
+   3a made it `width: 100%` by default in global.css §8, so the
+   `.parts-form-row .segmented` override that used to sit here is gone.) */
 .parts-form-row .field {
   width: 100%;
 }
 
-.parts-form-row .segmented {
-  width: 100%;
-}
-
-/* The row's clickable name area is a real <a> so it never nests inside the
-   sibling Rename/Delete <button>s (see PartsList.res's comment on
-   renderRow). */
-.list-row-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.list-row-link:active {
-  opacity: 0.6;
-}
-
-/* A part row is two lines, not one: name + chevron on top (full width, so
-   long names aren't squeezed by the actions), meta + Rename/Delete below.
-   Cramming thumbnail + name + two buttons + chevron onto a single 390 px
-   row left ~70 px for the name — this stacks instead. */
-.part-row {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--cc-space-2);
-}
-
-.part-row-top {
-  display: flex;
-  align-items: center;
-  gap: var(--cc-space-3);
-}
-
-.part-row-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--cc-space-3);
-}
-
-.part-row-actions {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--cc-space-2);
-}
-
-/* Renaming / ConfirmingDelete replace a row's normal content in place. */
+/* A part row is a single Ui.ListRow now (design wave 3a): thumbnail
+   leading, name+meta body wrapped in a real <a> (Ui.ListRow's `~href`),
+   Rename/Delete icon buttons as `~trailing` siblings outside that <a> — no
+   button-in-button, and no page-scoped row markup needed any more (this
+   used to be a hand-rolled two-line row; see LOGBOOK.md "Design wave 2 —
+   lists" for why, and "Design wave 3a" for the fix). Renaming /
+   ConfirmingDelete still replace a row's normal content in place below. */
 .part-row-edit {
   display: flex;
   flex-direction: column;
