@@ -1939,3 +1939,81 @@ already built and unused; this track is what wires them in.
   top-right of the End card) turned out to be the real `fixtures/hinge_pin/end.jpg` fixture's own
   printed content after EXIF rotation + `cover` crop, not a rendering bug — confirmed by reading
   the raw fixture image directly.
+
+## 2026-09-17 — FaceCard gaps (agent/facecard-fix)
+
+Closes the four `Ui.FaceCard` gaps P2b hit and ran into rather than worked around (LOGBOOK.md
+"P2b — layout A: Capture", "P1 — Dark Sky tokens + Face card"), then wires the fixes into Capture.
+File ownership: `Ui.res` (`FaceCard` only), `global.css` (§14 only), `Capture.res`/`Capture.css`,
+`faces.spec.js` (`aria-pressed` restoration only), `docs/testids.md` (Capture). `Part.res`/`Part.css`
+untouched, confirmed unchanged both by `git diff --stat` and a Part-page screenshot (below).
+
+- **State-driven ring on empty cards.** `Ui.FaceCard`'s `stateClass` switch grew a
+  `(None, Selected) => " face-card-empty face-card-selected"` arm — the accent ring
+  (`.face-card-selected::after`) now reaches an `image=None` card instead of only ever landing on a
+  photo. `(None, Captured)` (impossible in practice — a captured face always has an image) falls
+  back to the plain empty look, no ring, rather than a new failure mode. Doc comment rewritten to
+  state the real matrix (it previously said `~image=None` always renders `Empty` "regardless of
+  `~state`", which stopped being true here).
+  **CSS (fix 5):** the ring pseudo-element is inset from the *padding* box, so on top of
+  `.face-card-empty`'s own 2px dashed border it would've sat visibly inside it (two concentric
+  rings) instead of replacing it — `.face-card-empty.face-card-selected { border: none; }` in
+  global.css §14 drops the dashed border so the solid accent ring is flush with the card edge,
+  same as a captured/selected card with a photo.
+  **Capture.res gap not mentioned in the brief, found by looking at the first screenshot:**
+  `faceGrid`'s own `state` expression was `hasExisting ? (isSelected ? Selected : Captured) :
+  Empty` — the `Empty` branch never checked `isSelected` at all, so even with `Ui.FaceCard` fixed,
+  a selected-but-uncaptured chip still got `Empty`, not `Selected`, and still showed no ring. Fixed
+  to `isSelected ? Selected : (hasExisting ? Captured : Empty)` (`isSelected` wins over
+  `hasExisting`). Without this, the Ui.res fix alone is inert on this page — caught by actually
+  rendering a fresh-part screenshot before calling the work done, not by reading the diff.
+- **`~ariaPressed: option<bool>=?`.** Renders `ariaPressed=?` (mapped to the `[#"true" | #"false"]`
+  polymorphic variant `JsxDOM` expects — not a bare `bool`, ReScript's JSX aria props aren't typed
+  that loosely) on the `<button>` form only (`<a>`/inert `<div>` cards have nothing to be "pressed").
+  `faceGrid` passes `ariaPressed=isSelected` on every `capture-chip-*` card (not just the selected
+  one — `false` on the rest, matching a real toggle group). `cardAriaLabel`'s accessible-name
+  signal is kept alongside it, not replaced — DESIGN.md §9 "color is never the only signal," and
+  redundant channels for the same state aren't noise for a screen reader here.
+  `faces.spec.js`'s two `capture-chip-*` checks (`addCustomChip`, the standalone Enter-adds case)
+  get their `toHaveAttribute('aria-pressed', 'true')` assertions back, added *alongside* the
+  `toHaveAccessibleName` ones P2b introduced, not instead of them.
+- **`~icon: Icon.name=Camera`.** The empty look's icon is now a prop; `faceGrid`'s `addCustomCard`
+  passes `~icon=Plus` and its label drops to `"Custom"` (the "+" was living in the label string
+  before, baked in because there was no other way to get it on screen).
+- **`~badge`/`~caption` on `Empty` cards too.** Both render regardless of `~image` now (badge
+  top-right via the same `.face-card-badge` class either branch uses, caption under the label).
+  Two knock-on fixes in Capture.res: (a) a just-captured face whose object-URL thumbnail hasn't
+  resolved yet (`existing` is `Some` but `thumbUrl` is still `None`) keeps its check badge and size
+  caption instead of reading as a bare empty card until `FaceImageLoaded` fires — `faceGrid` already
+  computed both, they just weren't reaching the card. (b) `custom-face-remove` moved off the
+  shutter block and onto the selected, unsaved custom chip's own card, in the badge slot's
+  position. **Not** passed as that card's actual `~badge` prop, though — the card is a `<button>`
+  (Capture always passes `onClick`), and a `<button>` nested inside another `<button>` is invalid
+  HTML and breaks the accessibility tree. `faceGrid` instead renders it as a real sibling
+  `Ui.Button` (`variant=Icon`), absolutely positioned over the card via `.face-card-badge`, inside a
+  new `.face-card-holder` wrapper (Capture.css) that stands in for `.face-card` as the grid item
+  (`aspect-ratio: 1`, inner `.face-card` at 100%/100%) so the button has a `position: relative`
+  ancestor. Shrunk from the standard 44px `.btn-icon` tap target to 24px (`.face-card-holder
+  .custom-face-remove.btn-icon`) to match `.face-card-check`'s badge size and not swallow a 109px
+  (3-up) card. Only the one removable card gets the extra wrapper div — every other card renders
+  exactly as before.
+- **Verification.** `npx rescript build` clean (`warnings.error = "+a"`, no warnings), `npm test`
+  217/217, `npm run build` clean, `E2E_PORT=3920 npx playwright test --config=e2e/playwright.config.js
+  --project=chromium` — **44/44 green** both before and after the `faceGrid` state-expression fix
+  above (no stale preview/dev-server processes running before either pass). Screenshots (390×844,
+  via a throwaway Playwright script against `node node_modules/vite/bin/vite.js preview --port
+  3921 --strictPort`, killed by PID after each run, not committed): a fresh part's Capture page
+  with nothing captured and Top selected (solid accent ring, no dashed-border doubling); Top
+  captured + Side selected (live ring + check badge on Top, accent ring on the still-empty Side);
+  the "+ Custom" card (Plus icon, "Custom" label); an unsaved custom chip (`left_side`) showing
+  `custom-face-remove` as a small round badge top-right of its own card, and the grid right after
+  clicking it (chip gone, selection fell back to Top); the Part page, unchanged. Looked at all of
+  them — the first screenshot is what caught the `faceGrid` state-expression gap above.
+- **Judgment calls:** (1) `~ariaPressed`'s ReScript type is `option<bool>` rather than the brief's
+  literal `bool=?` — ReScript 12's JSX requires optional labelled args to be spelled with an
+  explicit `option<_>`; `bool=?` alone is a compile error (warning 22, configured as an error here).
+  Same optional-bool prop, correct syntax. (2) `custom-face-remove`'s accessible affordance changed
+  from a labelled "Remove chip" button (icon + text, in the shutter block) to an icon-only 24px
+  badge (`aria-label` unchanged: "Remove the `<label>` chip") — smaller, but per the brief's own
+  instruction to move it into the badge slot; the accessible name carries the same information a
+  sighted "Remove chip" label did.

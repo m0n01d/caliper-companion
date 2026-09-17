@@ -1124,10 +1124,12 @@ button.warning-row {
 /* ── 14. Face card (Ui.FaceCard; DESIGN.md §4 "Face card",
    docs/design/review-2026-09-17.md §3 layout A / docs/design/mockups/part-a.html) ─
    A square photo card: the Part page's face gallery and the Capture kind
-   picker share this one component (P2 wires it into both pages — nothing
-   here yet references it). `.face-grid`/`.face-grid-dense` are the grids
-   that hold them; the card itself never sets its own width, so it sizes
-   off the grid's column track (171 px at 390 in a 2-up grid, 109 px 3-up). */
+   picker share this one component. `.face-grid`/`.face-grid-dense` are the
+   grids that hold them; the card itself never sets its own width, so it
+   sizes off the grid's column track (171 px at 390 in a 2-up grid, 109 px
+   3-up). `.face-card-selected` can land on an image-less card (Capture's
+   kind picker on an uncaptured, selected kind) — see the
+   `.face-card-empty.face-card-selected` override below the empty look. */
 .face-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1267,4 +1269,15 @@ button.warning-row {
   border: 2px dashed var(--cc-border);
   color: var(--cc-text-2);
   font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+/* Selected-but-uncaptured (Capture's kind picker, `Ui.FaceCard`'s
+   `(None, Selected)` case): the `.face-card-selected::after` accent ring is
+   inset from the *padding* box, so it would sit visibly inside this card's
+   own 2px dashed border rather than replacing it, reading as two concentric
+   rings. Drop the border here so the ring is flush with the card edge, same
+   as a captured/selected card with a photo — the solid accent ring replaces
+   the dashed one instead of doubling up with it. */
+.face-card-empty.face-card-selected {
+  border: none;
 }

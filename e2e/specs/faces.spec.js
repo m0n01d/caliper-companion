@@ -54,11 +54,10 @@ async function addCustomChip(page, label, plane) {
   await expect(page.getByTestId('custom-face-add')).toBeEnabled()
   await page.getByTestId('custom-face-add').click()
   await expect(page.getByTestId('custom-face-card')).toHaveCount(0)
-  // The chip row's `aria-pressed` was dropped for the layout-A face-card
-  // grid (`Ui.FaceCard` has no such prop — Capture.res's module-end notes,
-  // "Ui gaps"); an unsaved custom chip with no face yet still has no image,
-  // so it stays the plain `Empty` look either way — selection is checked
-  // via the card's accessible name instead (Capture.res's `cardAriaLabel`).
+  // `Ui.FaceCard` grew an `~ariaPressed` prop (agent/facecard-fix); the
+  // accessible-name check stays alongside it, not replaced by it — both
+  // state the same selection signal (Capture.res's `cardAriaLabel`).
+  await expect(page.getByTestId(`capture-chip-${label}`)).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId(`capture-chip-${label}`)).toHaveAccessibleName(new RegExp(`${label}.*selected`))
   await expect(page.locator(`[data-testid="capture-file-${label}"]`)).toHaveCount(1)
   await expect(page.locator(`[data-testid="library-file-${label}"]`)).toHaveCount(1)
@@ -192,8 +191,9 @@ test.describe('custom faces (SPEC §8a A7)', () => {
     await page.getByTestId('custom-face').click()
     await page.getByTestId('custom-face-label').fill('underside')
     await page.getByTestId('custom-face-label').press('Enter')
-    // See `addCustomChip`'s own comment above: no `aria-pressed` on the
-    // layout-A face card, selection is in the accessible name instead.
+    // See `addCustomChip`'s own comment above: `aria-pressed` and the
+    // accessible name both carry selection now.
+    await expect(page.getByTestId('capture-chip-underside')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('capture-chip-underside')).toHaveAccessibleName(/underside.*selected/)
     await expect(page.locator('[data-testid="capture-file-underside"]')).toHaveCount(1)
 

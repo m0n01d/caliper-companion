@@ -13,15 +13,15 @@
 
 /* Design wave P2b "layout A" (docs/design/review-2026-09-17.md C1, DESIGN.md
    §1 "hands stay on the part" / §11.2): the face-card grid (`.face-grid`,
-   global.css §14 — nothing page-specific needed for the cards themselves)
-   sits on top; `.capture-action` (whichever of the shutter block, the
-   recapture card or the custom-face card is showing) is pushed to the
-   bottom of the content by `margin-top: auto`, which only has somewhere to
-   push *to* because this container is `min-height: 100%` of `.shell-
-   content` (a flex item that fills the remaining viewport height — see
-   Capture.res's view-section comment for why that resolves). The camera
-   note, as the next sibling after `.capture-action`, lands right under
-   whichever block is showing, at the very bottom. */
+   global.css §14 handles the cards themselves) sits on top; `.capture-
+   action` (whichever of the shutter block, the recapture card or the
+   custom-face card is showing) is pushed to the bottom of the content by
+   `margin-top: auto`, which only has somewhere to push *to* because this
+   container is `min-height: 100%` of `.shell-content` (a flex item that
+   fills the remaining viewport height — see Capture.res's view-section
+   comment for why that resolves). The camera note, as the next sibling
+   after `.capture-action`, lands right under whichever block is showing,
+   at the very bottom. */
 .capture-page {
   display: flex;
   flex-direction: column;
@@ -31,6 +31,39 @@
 
 .capture-action {
   margin-top: auto;
+}
+
+/* -- face grid ----------------------------------------------------------- */
+/* `custom-face-remove` (SPEC §8a A7, `faceGrid`'s own comment in
+   Capture.res): sits in the selected, unsaved custom chip's card, in the
+   same top-right spot `.face-card-badge` (global.css §14) positions the
+   captured check. It's a real `Ui.Button` — a DOM sibling of `.face-card`,
+   never nested inside the card's own `<button>` — so this wrapper stands in
+   for `.face-card` as the grid item (same `aspect-ratio: 1` a bare
+   `.face-card` gets from sizing off the grid track) and gives the badge
+   something `position: relative` to sit on. */
+.face-card-holder {
+  position: relative;
+  aspect-ratio: 1;
+}
+
+.face-card-holder .face-card {
+  width: 100%;
+  height: 100%;
+}
+
+/* `.btn-icon` (global.css) is a 44 px tap target — right for a standalone
+   icon button, too big for a badge overlaid on a 109 px (3-up) card. Shrink
+   it to the same 24 px `.face-card-check` uses for the captured badge. */
+.face-card-holder .custom-face-remove.btn-icon {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+}
+
+.face-card-holder .custom-face-remove.btn-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* -- shutter block ------------------------------------------------------ */

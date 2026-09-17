@@ -396,14 +396,24 @@ module Live = {
 
 // Square photo card (design wave P1, DESIGN.md §4 "Face card"): the Part
 // page's face gallery and the Capture screen's kind picker share this one
-// component — see global.css §14 for `.face-card*`/`.face-grid*`. Not wired
-// into any page yet; P2 does that. `~image=None` always renders the `Empty`
-// look regardless of `~state` (there's nothing to show a ring or scrim
-// around), so callers don't have to keep the two in sync by hand — but
-// `~state` still drives which visual (ring vs dashed) an `Empty` card with
-// no clear state gets, i.e. pass `~state=Empty` for a real empty slot.
-// `~href` renders an `<a>` (Part's navigable cards); `~onClick` a `<button>`
-// (Capture's kind picker, "+ Custom"); neither renders a plain, inert `<div>`.
+// component — see global.css §14 for `.face-card*`/`.face-grid*`.
+// `~state` drives the ring on every card, image or not — an `Empty`-looking
+// card (no `~image`) can still be rung: `Selected` gets the accent ring
+// (Capture's kind picker on an uncaptured kind), `Captured` gets the live
+// ring (only reachable with an image in practice — a captured face always
+// has one — but falls back to the plain empty look, no ring, if a caller
+// ever passes `Captured` with no image rather than crash on it).
+// `(Some(image), Selected)`/`(Some(image), Captured)` render the photo with
+// its ring as before. `~badge` and `~caption` are caller slots that render
+// on *either* look — top-right and under the label respectively — so a
+// just-captured face keeps its check badge and size caption while its
+// object-URL thumbnail is still loading (both `~image=None` and `~state
+// =Captured` at that point). `~icon` picks the empty look's centred glyph
+// (default `Camera`, "+ Custom" asks for `Plus`). `~ariaPressed` renders
+// `aria-pressed` on the `<button>` form only — `<a>`/inert `<div>` cards
+// have nothing to be "pressed". `~href` renders an `<a>` (Part's navigable
+// cards); `~onClick` a `<button>` (Capture's kind picker, "+ Custom");
+// neither renders a plain, inert `<div>`.
 module FaceCard = {
   type state = Captured | Selected | Empty
 
@@ -416,43 +426,57 @@ module FaceCard = {
     ~href: option<string>=?,
     ~onClick: option<JsxEvent.Mouse.t => unit>=?,
     ~badge: option<React.element>=?,
+    ~icon: Icon.name=Camera,
+    ~ariaPressed: option<bool>=?,
     ~testId: option<string>=?,
     ~ariaLabel: option<string>=?,
   ) => {
     let stateClass = switch (image, state) {
     | (Some(_), Captured) => " face-card-captured"
     | (Some(_), Selected) => " face-card-selected"
-    | (Some(_), Empty) | (None, _) => " face-card-empty"
+    | (None, Selected) => " face-card-empty face-card-selected"
+    | (Some(_), Empty) | (None, Empty) | (None, Captured) => " face-card-empty"
     }
     let className = "face-card" ++ stateClass
+    let badgeEl = switch badge {
+    | Some(el) => <span className="face-card-badge"> el </span>
+    | None => React.null
+    }
+    let captionEl = switch caption {
+    | Some(text) => <span className="face-card-caption"> {React.string(text)} </span>
+    | None => React.null
+    }
     let content = switch image {
     | Some(url) =>
       <>
         <img src=url alt=label />
-        {switch badge {
-        | Some(el) => <span className="face-card-badge"> el </span>
-        | None => React.null
-        }}
+        badgeEl
         <span className="face-card-scrim">
           <span className="face-card-label"> {React.string(label)} </span>
-          {switch caption {
-          | Some(text) => <span className="face-card-caption"> {React.string(text)} </span>
-          | None => React.null
-          }}
+          captionEl
         </span>
       </>
     | None =>
       <>
-        <Icon name=Camera size=24 />
+        <Icon name=icon size=24 />
         <span> {React.string(label)} </span>
+        captionEl
+        badgeEl
       </>
     }
+    let ariaPressed = ariaPressed->Option.map(pressed => pressed ? #"true" : #"false")
     switch href {
     | Some(url) => <a className href=url dataTestId=?testId ariaLabel=?ariaLabel> content </a>
     | None =>
       switch onClick {
       | Some(handler) =>
-        <button type_="button" className onClick=handler dataTestId=?testId ariaLabel=?ariaLabel>
+        <button
+          type_="button"
+          className
+          onClick=handler
+          ariaPressed=?ariaPressed
+          dataTestId=?testId
+          ariaLabel=?ariaLabel>
           content
         </button>
       | None => <div className dataTestId=?testId ariaLabel=?ariaLabel> content </div>
