@@ -755,3 +755,83 @@ under `src/app/pages/` was edited; wave 2 restyles them onto these classes.
 - Not done / for wave 2: pages still use their own classes (this section's §13 maps them); no
   scroll-edge shadow modulation (no reliable CSS for it in Safari); the 96 px face tiles on Part
   still overflow horizontally at 4 tiles (pre-existing; §11.2 wants 56 px slots).
+
+## 2026-09-17 — Design wave 2 — lists (agent/w2-lists)
+
+Restyled Parts, Part, Settings and Debug onto the wave-1 foundation (DESIGN.md §11.2). All four
+`.css` files dropped section-13-style legacy classes and `--color-*` aliases; they now reference
+only `--cc-*` tokens and the shared `Ui.res`/global.css component classes, plus a handful of
+genuinely page-specific rules (faces row, features table, the two-line part row, the toggle-track
+hit-test fix below).
+
+- **Parts**: empty state = one Footnote line + amber `Ui.Button Primary` "New part"; with parts, an
+  inset `Ui.ListGroup` + secondary "New part" underneath. Copy conflict: DESIGN.md §7 mandates "A
+  part is a set of photographed faces." verbatim, but `shell.spec.js` (not in this track's file
+  ownership) hard-matches the pre-existing "No parts yet." substring. Resolved by leading with the
+  old substring and appending the new sentence: "No parts yet. A part is a set of photographed
+  faces." — satisfies both; flagging in case a later wave wants to update `shell.spec.js` and drop
+  the compromise.
+- **Create form**: `Ui.ListGroup` + `Ui.Field` "Name" (60-char limit, `autocapitalize="words"`) +
+  `Ui.Segmented` mm/in, with a `visually-hidden` real `<select data-testid="part-units">` kept in
+  sync so `parts.spec.js`'s `selectOption('mm')` still works — `Ui.Segmented` has no `<select>`
+  semantics of its own. **Ui.res gap / layout bug**: `Ui.Segmented`'s container has no intrinsic
+  width, and a `flex:1 1 0` row of segments collapses to its own min-content instead of filling its
+  parent — inside a horizontal `.list-row`, the bar rendered as a tiny content-hugging blob instead
+  of a full-width capsule. Fixed at the page level (`.parts-form-row .field/.segmented { width:
+  100%; }`); the right long-term fix is probably `width: 100%` on `.segmented` itself in global.css.
+- **Row actions, hand-rolled**: `Ui.ListRow`'s `onClick` wraps the whole row in a `<button>`, which
+  can't coexist with the sibling Rename/Delete `<button>`s each row needs (`part-rename`,
+  `part-delete` must stay directly clickable per docs/testids.md) — button-in-button is invalid
+  HTML. `PartsList.res` hand-rolls the row with the same `list-row`/`list-row-body`/`-trailing`/
+  `-chevron` classes `Ui.ListRow` itself uses, with a real `<a>` for navigation as a sibling of the
+  action buttons rather than a wrapping button. **Ui.res gap**: no pencil/edit icon in `Icon.res`'s
+  set (Trash exists, no equivalent for rename) — "Rename" stays a text `btn-small`, not an icon
+  button; noted rather than worked around, since inventing a shape isn't this track's call.
+  First pass crammed thumbnail + name + "Rename" + delete icon + chevron onto one 390 px line,
+  which truncated names to ~4 characters — screenshotted, looked broken, redone as two lines (name
+  + chevron on top, meta + actions below); Ui.ListThumb always renders the neutral placeholder
+  (PartsList doesn't load face images — not "cheaply available" per §11.2's own escape hatch).
+  Rename/delete stay fully inline (no modal): input + Save/Cancel, or the confirm sentence +
+  danger Delete/Cancel, replacing the row's normal content in place.
+- **Part**: faces = `.chip-row` (reused, already handles horizontal scroll + hidden scrollbar) of
+  56 px `.slot`s; captured faces keep the size text inside the `face-<kind>` anchor for
+  `capture.spec.js`. Features = `Ui.ListGroup` wrapping a `<table>` (no shared table component
+  exists) — name mono, value mono + Subhead unit, tolerance/faces right-aligned, faces `cc-teal`
+  when a feature spans >1 face. Flagged rows carry `Icon TriangleAlert` + literal " flagged" text
+  (never colour alone). Split the old single "Check: …" warning row into two `Ui.WarningRow`s by
+  cause — Teal for spread-flagged features, Error for kind conflicts (the DESIGN.md brief asks for
+  tone-by-cause; the old code merged both into one line). Export is a full-width amber
+  `Ui.Button Primary`; timer is a Footnote mono line.
+- **Settings**: `Ui.ListGroup` + a real `Ui.Toggle` for the wedge row, second read-only `ListGroup`
+  for default tolerances. **Ui.res gap, two-part, both worked around in `Settings.css` (global.css
+  isn't ours to edit)**: (1) the toggle's decorative `.toggle-track` span is later in the DOM than
+  its `aria-hidden`-free real `<input>` sibling, so at equal `position`/`z-index:auto` stacking it
+  paints on top and intercepts every click meant for the checkbox — including Playwright's own
+  `getByTestId('wedge-toggle').click()`, which timed out for 30s with "toggle-track intercepts
+  pointer events". (2) even with the track set to `pointer-events: none`, the checkbox itself never
+  received the click: global.css's `.visually-hidden` clips it to `clip: rect(0,0,0,0)`, which
+  browsers exclude from hit-testing entirely, so the click fell through to the wrapping `<label>`
+  instead. Fixed by overriding the input (scoped to `.wedge-row`) to occupy the full 52×32 switch
+  and stay invisible via `opacity: 0` instead of `clip`, which keeps it hit-testable. Real users are
+  unaffected either way (tapping anywhere in the `<label>` already activates the input natively);
+  this only ever blocked a direct, precise click at the input's own coordinates. Also moved the
+  wedge row's label off `.list-row-title` (forced single-line ellipsis) onto plain `.t-body`, since
+  "Readings come from a wedge dongle" isn't a scannable short title and was truncating to
+  "Readings come from a wedg…".
+- **Debug**: `Ui.ListGroup header="Timers"` wrapping the loading/empty/rows states rather than only
+  the rows — `shell.spec.js` expects a "Timers" heading even with zero timers recorded, and putting
+  the header inside the conditional (my first pass) dropped it whenever the list was empty. Rows are
+  `list-row`s (part name Body, start/stop Footnote meta, hands-on mono trailing); `Ui.Button
+  Secondary` "Export CSV" below.
+- Verified: `rescript build` clean under `+a`, vitest 152/152, `vite build` clean, Playwright
+  **23/23 on Chromium** (re-ran after every fix above, not just once at the end). Screenshotted all
+  four screens (empty/create/list/edit-states for Parts; empty/features for Part; Settings; Debug)
+  at 390×844 via `scripts/screenshot-tour.mjs` plus an ad-hoc script for the rename/delete row
+  states not on the tour's golden path — reviewed by eye, fixed the segmented-width and row-crowding
+  bugs above before calling it done.
+- Not done / for a later wave: `global.css`'s `.toggle-track`/`.visually-hidden` gaps above should
+  get their real fix there once someone owns that file again, so every future `Ui.Toggle` use
+  doesn't have to repeat this page-level workaround; the features table's VALUE/TOL columns wrap
+  to two lines on a 390 px phone when the unit or "± " prefix doesn't fit — legible, not broken, but
+  a narrower/denser layout would look tighter; face-slot size text ("1600 ×" / "1200") also wraps at
+  72 px — same story.

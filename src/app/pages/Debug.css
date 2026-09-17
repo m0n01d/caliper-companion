@@ -1,27 +1,12 @@
-/* Debug — page-scoped styles. Owned by the Debug module; global tokens live in src/theme.css. */
+/* Debug — page-scoped styles. The inset grouped list and mono trailing
+   value come from src/global.css / Ui.res; nothing here is specific to this
+   screen beyond the error banner. Tokens: src/theme.css (--cc-*). */
 
-.debug-page .page-error {
-  color: var(--color-danger);
-  background: var(--color-rust-tint);
-  border: 1px solid var(--color-rust);
-  border-radius: var(--radius-card);
-  padding: 8px 12px;
-  font-size: 14px;
-}
-
-.timers-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.timers-table th,
-.timers-table td {
-  text-align: left;
-  padding: 6px;
-  border-bottom: 1px solid var(--color-tan);
-}
-
-.debug-page .muted {
-  color: var(--color-muted);
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
 }
