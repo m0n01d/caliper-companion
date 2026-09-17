@@ -146,7 +146,10 @@ module Segmented = {
 // row of a list" — safe even where the enclosing container isn't marked
 // `asList` (an orphaned `listitem` is tolerated, never wrong).
 // `~headerTestId` lands on the header `<h2>` (SPEC §8a A10's
-// `parts-section-header`); it does nothing without a `~header`.
+// `parts-section-header`); it does nothing without a `~header`. `~role`
+// (SPEC §8a A12a) is for a container whose rows are something other than
+// list items — the folder picker's `role="listbox"` of `role="option"`
+// buttons; `~asList` wins when both are given.
 module ListGroup = {
   @react.component
   let make = (
@@ -154,6 +157,7 @@ module ListGroup = {
     ~headerTestId: option<string>=?,
     ~footer: option<string>=?,
     ~asList: bool=false,
+    ~role: option<string>=?,
     ~testId: option<string>=?,
     ~children: React.element,
   ) =>
@@ -163,7 +167,7 @@ module ListGroup = {
         <h2 className="list-group-header" dataTestId=?headerTestId> {React.string(text)} </h2>
       | None => React.null
       }}
-      <div className="list-group" role=?{asList ? Some("list") : None} dataTestId=?testId>
+      <div className="list-group" role=?{asList ? Some("list") : role} dataTestId=?testId>
         children
       </div>
       {switch footer {

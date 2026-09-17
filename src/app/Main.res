@@ -152,24 +152,17 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
     )
   }
 
+  // The Parts root owns both of these (SPEC §8a A12a): its static Large
+  // Title gives way to a centred bar title while the folder picker is open,
+  // and its leading slot is the Settings gear (the only way in from an
+  // installed app) or the picker's Cancel. Every other page has a Back
+  // button and a centred Headline.
   let largeTitle = switch model.page {
-  | PartsList(_) => true
+  | PartsList(pageModel) => PartsList.largeTitle(pageModel)
   | _ => false
   }
-  // Settings and Debug have no other way in from an installed app (no URL
-  // bar), so the Parts root carries a gear in the bar's leading slot;
-  // Settings then links on to Debug.
   let leading = switch model.page {
-  | PartsList(_) =>
-    Some(
-      <a
-        className="btn btn-icon"
-        href={Route.href(Route.Settings)}
-        ariaLabel="Settings"
-        dataTestId="settings-link">
-        <Icon name=Settings size=22 />
-      </a>,
-    )
+  | PartsList(pageModel) => PartsList.leading(pageModel, ~dispatch=m => dispatch(PartsListMsg(m)))
   | _ => None
   }
 

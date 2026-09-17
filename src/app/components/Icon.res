@@ -7,8 +7,8 @@
 // licensed: portions copyright (c) 2013-2022 Cole Bemis (Feather, MIT), all
 // other copyright (c) 2022-present Lucide Contributors. Icon → file mapping:
 // Trash = trash-2, TriangleAlert = triangle-alert, CircleCheck = circle-check,
-// ZoomIn/ZoomOut = zoom-in/zoom-out, FolderPlus = folder-plus; the rest are
-// the lowercase name.
+// ZoomIn/ZoomOut = zoom-in/zoom-out, FolderPlus = folder-plus; the rest
+// (Folder = folder, …) are the lowercase name.
 
 type name =
   | ChevronLeft
@@ -29,6 +29,7 @@ type name =
   | Bug
   | Pencil
   | FolderPlus
+  | Folder
 
 let shapes = (name: name): React.element =>
   switch name {
@@ -142,6 +143,10 @@ let shapes = (name: name): React.element =>
         d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
       />
     </>
+  | Folder =>
+    <path
+      d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+    />
   }
 
 // Decorative by default (`aria-hidden`, the parent control carries the
