@@ -1107,3 +1107,121 @@ about the four default faces — testids, export paths, golden — moved. `schem
   `npm run build`, Playwright Chromium **30/30** (26 existing + 4 new, `E2E_PORT=3320`).
   Screenshots at 390×844 (custom card open, duplicate error, custom chip selected, annotate
   title, custom face captured, Part slots, Part edit/delete confirm) reviewed by eye.
+
+## 2026-09-17 — Design wave 3a — foundation fixes (agent/w3-foundation)
+
+Closed the `Ui.res`/`Icon.res` gaps the four wave-2 page agents reported (see "Design wave 2 —
+lists"/"capture"/"annotate + A6" above), deleted wave 1's compatibility CSS now that every page is
+confirmed restyled off it, and fixed two visible layout defects. Files: `src/global.css`,
+`src/app/components/{Icon,Ui}.res`, `src/app/pages/{Settings,PartsList,Annotate,Part}.css`,
+`src/app/pages/PartsList.res`. Four commits: components, annotate toolbar, compat removal, tables.
+
+- **`Ui.Toggle` hit-testing** (global.css §9). Root cause exactly as wave 2's Settings.css comment
+  diagnosed it: the decorative `.toggle-track` (later in the DOM than the real `<input>`, both
+  `position` with `z-index: auto`) painted on top and intercepted every click meant for the input;
+  the shared `.visually-hidden` utility's `clip: rect(0,0,0,0)` additionally made the input
+  un-hit-testable even once the track got out of the way. Fixed at the component: `.toggle-track`
+  is `pointer-events: none`, and the input gets its own `.toggle-input` class — `opacity: 0` over
+  the full 52×32 switch, not the shared clip utility (which other, genuinely-hidden inputs —
+  Capture.res's file inputs, PartsList's synced `<select>` — still use unmodified). Deleted the
+  `.wedge-row` workaround from `Settings.css`; `parts.spec.js`'s `wedge-toggle` click test is the
+  regression guard.
+- **`Ui.Segmented`**: `width: 100%` by default (a `<div style="display:flex">` is still a flex ITEM
+  in whatever row it sits inside, and shrinks to its label text without an explicit width — the
+  wave-2 lists report's exact diagnosis), `~inline` prop to opt out. Crowding fix: 12 px option
+  padding + 4 px container gap (previously segments were flush against each other with only 8 px
+  padding total, no gap at all — the amber pill and the next label touched). Removed the now-
+  redundant `.parts-form-row .segmented { width: 100% }` page override; kept Annotate's page-scoped
+  14 px/4 px override (the kind row still shares 124 px with the tolerance field, and "Diameter" at
+  the new 12 px/Subhead-15 base still doesn't fit in what's left — verified by not being able to
+  remove it without the label clipping again).
+- **`Ui.Button`**: added `~size: Regular | Small` decoupled from `~variant` (`.btn-compact`, sizing
+  only, composes with any colour) and a borderless `Plain` variant (`.btn-plain`) per the capture-
+  wave gap report. `~className` passthrough. `variant=Small` stays as a deprecated alias (renders
+  identically to before) — `Annotate.res` and `A2hsHint.res` both still pass it and are out of this
+  track's file ownership.
+- **`Ui.Pill`**: `~className`/`~ariaLabel` (the annotate-wave gap report). **`Ui.Field`**: `~after`,
+  rendered between the input and the error, for a chip row inside a field.
+- **`Ui.ListRow`**: added `~href`, which renders the title/meta body (+ chevron) as a real `<a>` with
+  `~leading`/`~trailing` as plain siblings outside it — the fix for the exact gap the lists-wave
+  report named: `Ui.ListRow`'s old `onClick` wrapped the *whole row* in a `<button>`, which can't
+  coexist with sibling Rename/Delete buttons (button-in-button is invalid HTML), so PartsList had
+  hand-rolled its row instead. `PartsList.res` now uses `Ui.ListRow` for the Normal row state
+  (Renaming/ConfirmingDelete stay a plain container — they're a form/confirm strip, not a
+  navigable row). Rename became an icon button (new `Pencil` icon, `aria-label="Rename"`), which
+  also freed enough row width to go back to a single-line row instead of wave 2's stacked two-line
+  layout. `part-row`, `part-rename`, `part-delete` and the inline editor ids are all unchanged.
+  **Self-caught regression**: my first pass nested the chevron straight inside `.list-row-body`
+  (a flex *column* — Title over Meta), which stacked the chevron under the meta line as a third
+  line instead of beside the text — caught from a screenshot, not e2e (no test asserts chevron
+  position). Fixed by giving the anchor its own class, `.list-row-link`, that's a flex *row* (Title/
+  Meta column + chevron side by side) and moving `flex: 1 1 auto`/`min-width: 0` onto it instead of
+  `.list-row-body`. Also added `text-overflow: ellipsis`/`white-space: nowrap` to `.list-row-meta`
+  (previously unclipped) since a navigable row's text column is narrower now that it shares the row
+  with `~trailing` actions — without it "mm · updated today" wrapped to two lines.
+- **Icon**: added `Pencil` and `FolderPlus` (Lucide v1.47.0, same source/citation as the existing
+  set); `FolderPlus` isn't used by anything on this track, added per the brief for whoever needs it
+  next.
+- **Annotate toolbar collision** (`Annotate.css` only — `Annotate.res` isn't this track's file).
+  Root cause of the "oversized black disc": `.annotate-tools` is a flex row with no `align-items`
+  of its own, so the default `stretch` cross-axis alignment stretched the count `Ui.Pill` to the
+  44 px height of its button siblings — a near-square box at `border-radius: 999px` renders as a
+  circle. `align-items: center` fixes it outright. Relaid the group as one flat scrim capsule (the
+  group itself carries `cc-scrim`; the buttons/pills inside go transparent so nothing paints a
+  second, overlapping capsule) with the count as a compact mono figure. The hint pill's top-left
+  position and 360 px wrap-below were already correct (`.annotate-overlay`'s existing `flex-wrap`)
+  and needed no change — confirmed by screenshot, not assumed.
+- **Compat removal** (`global.css` §13, ~384 net lines). Verified dead before deleting, not just
+  assumed: `grep -rn -- "--color-"` outside `global.css` matches only a Capture.css comment noting
+  it does *not* use the aliases (no real `var(--color-*)` usage anywhere; `theme.css` never defined
+  any of its own, so there was nothing to re-alias); every §13b-i selector (`.page`, `.sheet`,
+  `ul.list`, `.face-tile-*`, `.timers-table`, `.toggle-row`, `.face-row-*`, `.capture-btn*`, every
+  `.annotate-toolbar`/`-zoom`/`-count`/`-chips`/`-segmented`/`-primary`/`-secondary`/`-danger`
+  compat name) turned up zero real references in any `.res`/`.css` — the wave-2 annotate report
+  already flagged that it deliberately avoided these names for exactly this reason. **One
+  exception**: `.a2hs-hint*` (§13j) is current, real styling for `A2hsHint.res` — a component this
+  track doesn't own and has nowhere else to put CSS for — not a wave-1 rename shim that happened to
+  live in the same section. Kept, renumbered to a plain §13 with a note explaining why it survived.
+- **Features table / face-slot** (`Part.css` only — `Part.res` isn't this track's file), closing two
+  items wave 2's lists report explicitly deferred ("not done / for a later wave"). VALUE/TOL/FACES
+  wrapped at 390 px for two compounding reasons: `.features-table td { font: ... }`'s shorthand
+  (higher specificity than the shared `.mono` utility's longhands) was silently resetting every
+  numeric cell back to the proportional UI font despite carrying the `mono` class, and nothing
+  stopped the cells wrapping regardless. Tried the standard `table-layout: fixed` + tiny-percentage
+  trick first (give NAME `width: 100%`, the rest `width: 1%`) — **it does not work**: fixed layout
+  takes a specified width literally including padding under `box-sizing: border-box`, and a column
+  narrower than its own padding renders degenerately (verified empirically with `getClientRects()`
+  on the text nodes: Chromium laid VALUE/TOL/FACES text out starting past the cell's own right
+  edge, off past the 390 px viewport — invisible, not clipped). Replaced with `display: grid` +
+  `display: contents` on `thead`/`tbody`/`tr`, which doesn't have that failure mode: a
+  `minmax(0, 1fr)` NAME track can shrink+ellipsis below its content width the way a real grid item
+  can, `auto` tracks size VALUE/TOL/FACES to exactly what they need, and CSS selectors (e.g.
+  `tr:last-child td`) still work since `display: contents` doesn't remove elements from the DOM.
+  Also tightened cell padding toward DESIGN.md §4's literal "9 px row padding" (was 10 px/14 px,
+  which cost a four-column row over 100 px in pure padding — freed that back to NAME, which still
+  ellipsizes on a genuinely long name like `overall_l` but no longer to an unreadable 4 characters).
+  Face-slot caption ("1200 × 1600") wrapped across the spaces around "×" in the 72 px slot —
+  `white-space: nowrap` (the row already scrolls horizontally via `.chip-row`, so a slightly wider
+  caption just claims more of that scroll room); widened the slot 72 → 78 px so the common case
+  doesn't need the overflow at all.
+- **Judgment calls**: kept `variant=Small` on `Ui.Button` as a deprecated alias rather than migrating
+  every call site, since two of its three call sites (`Annotate.res`, `A2hsHint.res`) are outside
+  this track's file ownership — the brief explicitly allows this. Kept the Annotate `.annotate-kind
+  .segmented-option` page override after re-verifying it's still load-bearing post-fix, rather than
+  assuming the base-component fix made it redundant. Widened `.face-slot` and reduced the features
+  table's padding a few px beyond what the brief asked for outright — both are direct, minimal
+  consequences of the "don't wrap"/"one line" requirements, not scope creep.
+- Not done / for a later wave: the flaky `Store — parts > deletePart` unit test (fails
+  intermittently only under vitest's parallel-worker full-suite run, passes standalone and 4/5 runs
+  otherwise) is pre-existing and outside this track's file ownership (`src/store/`) — reproduced on
+  a clean stash of this branch before any of this wave's edits, so it isn't a regression from this
+  work; flagging for whoever owns Store next, likely a shared in-memory PouchDB adapter/DB-name
+  collision across parallel test files.
+- **Verification.** `rescript build` clean under `+a` (full clean rebuild, 65 modules); `npm test`
+  181/181 (run 3× to confirm the Store flake above isn't from this track); `npm run build` clean;
+  `E2E_PORT=3310 npx playwright test --config=e2e/playwright.config.js --project=chromium`
+  **26/26** on Chromium, twice (once before, once after the ListRow-chevron/features-table fixes
+  found during screenshot review). Screenshots at 390×844 via `scripts/screenshot-tour.mjs` against
+  `vite preview --port 3311`, reviewed by eye each iteration — caught and fixed the chevron-stacking
+  regression and the features-table `table-layout: fixed` failure this way, neither of which any
+  existing spec would have caught.

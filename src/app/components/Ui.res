@@ -8,33 +8,55 @@
 // be read (§6); the click is swallowed here. Playwright's `toBeDisabled()`
 // honours `aria-disabled` on buttons.
 module Button = {
-  type variant = Primary | Secondary | Danger | Small | Icon
+  // `Small` stays as a deprecated alias for the old combined variant+size
+  // (renders exactly "btn btn-small", unchanged) — pages this track doesn't
+  // own (`Annotate.res`, `A2hsHint.res`) still pass it. New call sites
+  // should use a colour variant with `~size=Small` instead, which composes
+  // the compact metrics with any variant's colours via `.btn-compact`
+  // rather than baking a colour into the size.
+  type variant = Primary | Secondary | Danger | Plain | Small | Icon
+  type size = Regular | Small
 
-  let className = (variant: variant, ~block: bool): string => {
-    let base = switch variant {
+  let baseClassName = (variant: variant, ~size: size, ~block: bool): string => {
+    let variantClass = switch variant {
     | Primary => "btn btn-primary"
     | Secondary => "btn btn-secondary"
     | Danger => "btn btn-danger"
+    | Plain => "btn btn-plain"
     | Small => "btn btn-small"
     | Icon => "btn btn-icon"
     }
-    block ? base ++ " btn-block" : base
+    let sizedClass = switch (size, variant) {
+    // Icon and the deprecated Small variant already carry their own
+    // compact sizing; don't double it up.
+    | (Small, Icon) | (Small, Small) => variantClass
+    | (Small, _) => variantClass ++ " btn-compact"
+    | (Regular, _) => variantClass
+    }
+    block ? sizedClass ++ " btn-block" : sizedClass
   }
 
   @react.component
   let make = (
     ~variant: variant=Secondary,
+    ~size: size=Regular,
     ~block: bool=false,
     ~disabled: bool=false,
     ~onClick: option<JsxEvent.Mouse.t => unit>=?,
     ~testId: option<string>=?,
     ~ariaLabel: option<string>=?,
     ~type_: string="button",
+    ~className: option<string>=?,
     ~children: React.element,
-  ) =>
+  ) => {
+    let base = baseClassName(variant, ~size, ~block)
+    let full = switch className {
+    | Some(extra) => base ++ " " ++ extra
+    | None => base
+    }
     <button
       type_
-      className={className(variant, ~block)}
+      className=full
       ariaDisabled=?{disabled ? Some(true) : None}
       dataTestId=?testId
       ariaLabel=?ariaLabel
@@ -47,6 +69,7 @@ module Button = {
         }}>
       children
     </button>
+  }
 }
 
 // Selectable capsule chip (§4): 36 px for name suggestions, `large` = 44 px
@@ -81,16 +104,21 @@ module ChipRow = {
 
 // Segmented control (§4, §11.1): `options` are (key, label); `testIdPrefix`
 // gives each option `data-testid={prefix ++ key}` (e.g. "kind-" → "kind-length").
+// Full width by default (a segmented bar reads as a tiny content-hugging
+// blob otherwise inside any flex row — see the report); pass `~inline` to
+// size it to its content instead.
 module Segmented = {
   @react.component
   let make = (
     ~options: array<(string, string)>,
     ~selected: string,
     ~onSelect: string => unit,
+    ~inline: bool=false,
     ~testIdPrefix: option<string>=?,
     ~ariaLabel: option<string>=?,
   ) =>
-    <div className="segmented" role="group" ariaLabel=?ariaLabel>
+    <div
+      className={inline ? "segmented segmented-inline" : "segmented"} role="group" ariaLabel=?ariaLabel>
       {options
       ->Array.map(((key, label)) =>
         <button
@@ -131,9 +159,14 @@ module ListGroup = {
 }
 
 // One row. With `onClick` it is a real <button> (pressed highlight, 44 px);
-// without, a plain <div>. `leading` is the 52 px thumbnail slot, `trailing`
-// a toggle/value; `chevron` marks a navigable row. Children are the body:
-// use `ListRow.Title` / `ListRow.Meta` for the two standard lines.
+// with `href` the body (+ chevron) is a real <a>, `leading`/`trailing` sit
+// outside it as plain siblings so nothing nests a <button> inside an <a> —
+// invalid HTML, and it's how a row gets sibling actions (e.g. Rename/Delete)
+// next to a navigable title without wrapping the whole row in a button (see
+// the report). With neither, a plain <div>. `leading` is the 52 px
+// thumbnail slot, `trailing` one or more actions/a value; `chevron` marks a
+// navigable row. Children are the body: use `ListRow.Title` / `ListRow.Meta`
+// for the two standard lines.
 module ListRow = {
   module Title = {
     @react.component
@@ -149,6 +182,7 @@ module ListRow = {
   @react.component
   let make = (
     ~onClick: option<JsxEvent.Mouse.t => unit>=?,
+    ~href: option<string>=?,
     ~chevron: bool=false,
     ~testId: option<string>=?,
     ~ariaLabel: option<string>=?,
@@ -156,28 +190,50 @@ module ListRow = {
     ~trailing: option<React.element>=?,
     ~children: React.element,
   ) => {
-    let body =
-      <>
-        {switch leading {
-        | Some(el) => el
-        | None => React.null
-        }}
-        <span className="list-row-body"> children </span>
-        {switch trailing {
-        | Some(el) => <span className="list-row-trailing"> el </span>
-        | None => React.null
-        }}
-        {chevron
-          ? <span className="list-row-chevron"> <Icon name=ChevronRight size=20 /> </span>
-          : React.null}
-      </>
-    switch onClick {
-    | Some(handler) =>
-      <button
-        type_="button" className="list-row" onClick=handler dataTestId=?testId ariaLabel=?ariaLabel>
-        body
-      </button>
-    | None => <div className="list-row" dataTestId=?testId ariaLabel=?ariaLabel> body </div>
+    let leadingEl = switch leading {
+    | Some(el) => el
+    | None => React.null
+    }
+    let chevronEl =
+      chevron
+        ? <span className="list-row-chevron"> <Icon name=ChevronRight size=20 /> </span>
+        : React.null
+    let trailingEl = switch trailing {
+    | Some(el) => <span className="list-row-trailing"> el </span>
+    | None => React.null
+    }
+    switch href {
+    | Some(url) =>
+      // The anchor is its own flex ROW (`.list-row-link`, in global.css next
+      // to `.list-row-body`) holding the text stack + chevron side by side —
+      // NOT `.list-row-body` itself, which is a flex COLUMN (Title over
+      // Meta). Nesting the chevron straight into a column would stack it
+      // under the meta line as a third line instead of sitting beside the
+      // text.
+      <div className="list-row" dataTestId=?testId ariaLabel=?ariaLabel>
+        leadingEl
+        <a className="list-row-link" href=url>
+          <span className="list-row-body"> children </span>
+          chevronEl
+        </a>
+        trailingEl
+      </div>
+    | None =>
+      let body =
+        <>
+          leadingEl
+          <span className="list-row-body"> children </span>
+          trailingEl
+          chevronEl
+        </>
+      switch onClick {
+      | Some(handler) =>
+        <button
+          type_="button" className="list-row" onClick=handler dataTestId=?testId ariaLabel=?ariaLabel>
+          body
+        </button>
+      | None => <div className="list-row" dataTestId=?testId ariaLabel=?ariaLabel> body </div>
+      }
     }
   }
 }
@@ -204,6 +260,7 @@ module Field = {
     ~help: option<string>=?,
     ~mono: bool=false,
     ~errorTestId: option<string>=?,
+    ~after: option<React.element>=?,
     ~children: React.element,
   ) => {
     let className =
@@ -211,6 +268,10 @@ module Field = {
     <div className>
       <label className="field-label" htmlFor=?htmlFor> {React.string(label)} </label>
       children
+      {switch after {
+      | Some(el) => el
+      | None => React.null
+      }}
       {switch error {
       | Some(text) => <p className="field-error" dataTestId=?errorTestId> {React.string(text)} </p>
       | None => React.null
@@ -238,7 +299,7 @@ module Toggle = {
     <label className="toggle">
       <input
         type_="checkbox"
-        className="visually-hidden"
+        className="toggle-input"
         checked
         disabled
         id=?id
@@ -254,8 +315,20 @@ module Toggle = {
 // readout. Never glass — it sits on the live canvas.
 module Pill = {
   @react.component
-  let make = (~mono: bool=false, ~testId: option<string>=?, ~children: React.element) =>
-    <span className={mono ? "pill pill-mono" : "pill"} dataTestId=?testId> children </span>
+  let make = (
+    ~mono: bool=false,
+    ~testId: option<string>=?,
+    ~className: option<string>=?,
+    ~ariaLabel: option<string>=?,
+    ~children: React.element,
+  ) => {
+    let base = mono ? "pill pill-mono" : "pill"
+    let full = switch className {
+    | Some(extra) => base ++ " " ++ extra
+    | None => base
+    }
+    <span className=full dataTestId=?testId ariaLabel=?ariaLabel> children </span>
+  }
 }
 
 // Warning row (§4): Teal = reconciliation note (check icon), Error = kind

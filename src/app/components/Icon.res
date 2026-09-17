@@ -7,7 +7,8 @@
 // licensed: portions copyright (c) 2013-2022 Cole Bemis (Feather, MIT), all
 // other copyright (c) 2022-present Lucide Contributors. Icon → file mapping:
 // Trash = trash-2, TriangleAlert = triangle-alert, CircleCheck = circle-check,
-// ZoomIn/ZoomOut = zoom-in/zoom-out; the rest are the lowercase name.
+// ZoomIn/ZoomOut = zoom-in/zoom-out, FolderPlus = folder-plus; the rest are
+// the lowercase name.
 
 type name =
   | ChevronLeft
@@ -26,6 +27,8 @@ type name =
   | X
   | CircleCheck
   | Bug
+  | Pencil
+  | FolderPlus
 
 let shapes = (name: name): React.element =>
   switch name {
@@ -123,6 +126,21 @@ let shapes = (name: name): React.element =>
       <path d="M6 13H2" />
       <path d="m8 2 1.88 1.88" />
       <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
+    </>
+  | Pencil =>
+    <>
+      <path
+        d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+      />
+      <path d="m15 5 4 4" />
+    </>
+  | FolderPlus =>
+    <>
+      <path d="M12 10v6" />
+      <path d="M9 13h6" />
+      <path
+        d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+      />
     </>
   }
 
