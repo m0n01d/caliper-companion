@@ -23,6 +23,12 @@ type model = {
   now: float, // Date.now(), refreshed by Tick — drives the running-timer readout
   error: option<string>,
   exportState: exportStatus,
+  // SPEC §8a A7: faces are deleted from this page (a captured custom face
+  // has nowhere else to go). "Edit" swaps the slot row for a list with a
+  // Remove per face; `pendingDelete` is the inline confirm's subject.
+  facesEditing: bool,
+  pendingDelete: option<Types.face>,
+  deleting: bool,
 }
 
 type msg =
@@ -35,6 +41,11 @@ type msg =
   | Tick
   | ExportClicked
   | ExportFinished(result<Export.outcome, Export.error>)
+  | FacesEditToggled
+  | FaceRemoveClicked(Types.face)
+  | FaceDeleteConfirmed
+  | FaceDeleteCancelled
+  | FaceDeleted(result<unit, string>)
 
 let store = () => Store.shared()
 
@@ -42,6 +53,16 @@ let store = () => Store.shared()
 // than shared because there's no page-shared module in the file-ownership
 // list for this track to add one to.
 let describeError = (_exn: exn): string => "Something went wrong talking to storage. Try again."
+
+let loadFacesCmd = (~partId: string): Tea.cmd<msg> =>
+  Tea.fromPromise(() => Store.facesOf(store(), ~partId), fs => FacesLoaded(fs), e => LoadFailed(
+    describeError(e),
+  ))
+
+let loadDimensionsCmd = (~partId: string): Tea.cmd<msg> =>
+  Tea.fromPromise(() => Store.dimensionsOf(store(), ~partId), ds => DimensionsLoaded(ds), e => LoadFailed(
+    describeError(e),
+  ))
 
 let init = (~partId: string): (model, Tea.cmd<msg>) => {
   let model = {
@@ -54,18 +75,17 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
     now: Date.now(),
     error: None,
     exportState: Idle,
+    facesEditing: false,
+    pendingDelete: None,
+    deleting: false,
   }
   let s = store()
   let cmd = Tea.batch([
     Tea.fromPromise(() => Store.getPart(s, partId), p => PartLoaded(p), e => LoadFailed(
       describeError(e),
     )),
-    Tea.fromPromise(() => Store.facesOf(s, ~partId), fs => FacesLoaded(fs), e => LoadFailed(
-      describeError(e),
-    )),
-    Tea.fromPromise(() => Store.dimensionsOf(s, ~partId), ds => DimensionsLoaded(ds), e => LoadFailed(
-      describeError(e),
-    )),
+    loadFacesCmd(~partId),
+    loadDimensionsCmd(~partId),
     Tea.fromPromise(() => Store.getTimer(s, ~partId), t => TimerLoaded(t), e => LoadFailed(
       describeError(e),
     )),
@@ -119,6 +139,30 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     | Error(Export.Failed(msg)) => Failed(msg)
     }
     ({...model, exportState: state}, Tea.none)
+  | FacesEditToggled => ({...model, facesEditing: !model.facesEditing, pendingDelete: None}, Tea.none)
+  | FaceRemoveClicked(face) => ({...model, pendingDelete: Some(face)}, Tea.none)
+  | FaceDeleteCancelled => ({...model, pendingDelete: None}, Tea.none)
+  | FaceDeleteConfirmed =>
+    switch model.pendingDelete {
+    | Some(face) if !model.deleting => (
+        {...model, deleting: true},
+        // `Store.deleteFace` removes the face and its dimensions in one
+        // bulk write (Store.resi); the features table re-reconciles from
+        // the reloaded dimensions.
+        Tea.fromPromise(
+          () => Store.deleteFace(store(), face.id),
+          () => FaceDeleted(Ok()),
+          e => FaceDeleted(Error(describeError(e))),
+        ),
+      )
+    | _ => (model, Tea.none)
+    }
+  | FaceDeleted(Ok()) => (
+      {...model, deleting: false, pendingDelete: None},
+      Tea.batch([loadFacesCmd(~partId=model.partId), loadDimensionsCmd(~partId=model.partId)]),
+    )
+  | FaceDeleted(Error(msg)) =>
+    ({...model, deleting: false, pendingDelete: None, error: Some(msg)}, Tea.none)
   }
 
 let title = (model: model): string =>
@@ -160,34 +204,45 @@ let uniqueSorted = (names: array<string>): array<string> =>
   ->Array.reduce([], (acc, n) => Array.includes(acc, n) ? acc : Array.concat(acc, [n]))
   ->Array.toSorted(String.compare)
 
+// SPEC §8a A7: a default face's label is its kind ("top"), shown
+// capitalised by Part.css's `.face-slot-label`; a custom label is a slug
+// and renders as-is in the mono stack (DESIGN.md §7), without that class.
+let isDefaultLabel = (face: Types.face): bool =>
+  face.label == Enums.faceKindToString(face.kind)
+
+let faceLabelEl = (face: Types.face): React.element =>
+  isDefaultLabel(face)
+    ? <span className="face-slot-label t-caption-1"> {React.string(face.label)} </span>
+    : <span className="t-caption-1 mono"> {React.string(face.label)} </span>
+
+let sizeText = (face: Types.face): string =>
+  Int.toString(face.pixelWidth) ++ " × " ++ Int.toString(face.pixelHeight)
+
 // DESIGN.md §11.2: 56 px .slot tiles in a horizontal scroll row (reusing
 // global.css's .chip-row scroller — it already hides the scrollbar and
 // scrolls horizontally, so this page doesn't need its own). The size text
-// stays a descendant of the face-<kind> element (capture.spec.js reads it
-// off the tile itself, not a Part-page-specific location).
+// stays a descendant of the face-<label> element (capture.spec.js reads it
+// off the tile itself, not a Part-page-specific location). Faces come in
+// Store order (kind, then label — SPEC §8a A7).
 let renderFaces = (model: model): React.element =>
   <div className="chip-row faces-row">
-    {Enums.allFaceKinds
-    ->Array.filterMap(kind => model.faces->Array.find(f => f.kind == kind))
-    ->Array.map(face => {
-      let kindLabel = Enums.faceKindToString(face.kind)
+    {model.faces
+    ->Array.map(face =>
       <a
         key={face.id}
         className="face-slot"
-        dataTestId={"face-" ++ kindLabel}
+        dataTestId={"face-" ++ face.label}
         href={Route.href(Route.Annotate(model.partId, face.id))}>
         <span className="slot slot-captured">
           {switch Dict.get(model.faceImages, face.id) {
-          | Some(url) => <img src={url} alt={kindLabel} />
+          | Some(url) => <img src={url} alt={face.label} />
           | None => React.null
           }}
         </span>
-        <span className="face-slot-label t-caption-1"> {React.string(kindLabel)} </span>
-        <span className="face-slot-size t-caption-2 muted">
-          {React.string(Int.toString(face.pixelWidth) ++ " × " ++ Int.toString(face.pixelHeight))}
-        </span>
+        {faceLabelEl(face)}
+        <span className="face-slot-size t-caption-2 muted"> {React.string(sizeText(face))} </span>
       </a>
-    })
+    )
     ->React.array}
     <a
       className="face-slot"
@@ -198,13 +253,98 @@ let renderFaces = (model: model): React.element =>
     </a>
   </div>
 
+// SPEC §8a A7 "a captured custom face is deleted from the Part page like any
+// face (delete confirms inline, removes its dimensions)". Edit mode swaps
+// the slot row for an inset grouped list — one row per face with a Remove —
+// and the confirm is an in-flow error row + two buttons (DESIGN.md §11.1
+// "Confirmations": no modal). `face-<label>` stays on each row so the label
+// and size text keep the same home as in the slot row.
+let renderFacesEdit = (model: model, ~dispatch: msg => unit): React.element => {
+  let dimCount = (face: Types.face) =>
+    model.dimensions->Array.filter(d => d.faceId == face.id)->Array.length
+  <div className="stack">
+    <Ui.ListGroup header="Faces" testId="faces-edit-list">
+      {model.faces
+      ->Array.map(face =>
+        <Ui.ListRow
+          key={face.id}
+          testId={"face-" ++ face.label}
+          leading={<Ui.ListThumb src={Dict.get(model.faceImages, face.id)} alt={face.label} />}
+          trailing={<Ui.Button
+            variant=Danger
+            testId="face-remove"
+            disabled={model.deleting}
+            ariaLabel={"Remove " ++ face.label}
+            onClick={_ => dispatch(FaceRemoveClicked(face))}>
+            {React.string("Remove")}
+          </Ui.Button>}>
+          <Ui.ListRow.Title>
+            {isDefaultLabel(face)
+              ? <span className="face-slot-label"> {React.string(face.label)} </span>
+              : <span className="mono"> {React.string(face.label)} </span>}
+          </Ui.ListRow.Title>
+          <Ui.ListRow.Meta>
+            {React.string(
+              sizeText(face) ++
+              " · " ++
+              Int.toString(dimCount(face)) ++ (dimCount(face) == 1 ? " dimension" : " dimensions"),
+            )}
+          </Ui.ListRow.Meta>
+        </Ui.ListRow>
+      )
+      ->React.array}
+    </Ui.ListGroup>
+    {switch model.pendingDelete {
+    | Some(face) =>
+      <div className="stack" role="alertdialog" ariaLabel="Delete face?">
+        <Ui.WarningRow tone=Ui.WarningRow.Error>
+          {React.string(
+            "Delete " ++
+            face.label ++
+            " and its " ++
+            Int.toString(dimCount(face)) ++
+            (dimCount(face) == 1 ? " dimension?" : " dimensions?"),
+          )}
+        </Ui.WarningRow>
+        <Ui.Button
+          variant=Danger
+          block=true
+          testId="face-delete-confirm"
+          disabled={model.deleting}
+          onClick={_ => dispatch(FaceDeleteConfirmed)}>
+          {React.string(model.deleting ? "Deleting…" : "Delete face")}
+        </Ui.Button>
+        <Ui.Button block=true testId="face-delete-cancel" onClick={_ => dispatch(FaceDeleteCancelled)}>
+          {React.string("Cancel")}
+        </Ui.Button>
+      </div>
+    | None => React.null
+    }}
+  </div>
+}
+
+// The slot row (or, in edit mode, the list) plus the small Edit/Done toggle,
+// which only appears once there is a face to remove.
+let renderFacesSection = (model: model, ~dispatch: msg => unit): React.element =>
+  <div className="stack">
+    {model.facesEditing ? renderFacesEdit(model, ~dispatch) : renderFaces(model)}
+    {Array.length(model.faces) > 0
+      ? <div>
+          <Ui.Button variant=Small testId="faces-edit" onClick={_ => dispatch(FacesEditToggled)}>
+            {React.string(model.facesEditing ? "Done" : "Edit faces")}
+          </Ui.Button>
+        </div>
+      : React.null}
+  </div>
+
 // DESIGN.md §11.2: inset grouped table; teal/error warning rows are split by
 // cause (a kind conflict blocks export and is a different severity than a
 // spread flag) rather than one merged "Check: …" line.
 let renderFeatures = (model: model, ~part: Types.part): React.element => {
   let (features, conflicts) = reconcileForDisplay(model.dimensions)
-  let faceKindById = model.faces->Array.reduce(Dict.make(), (acc, f) => {
-    Dict.set(acc, f.id, f.kind)
+  // SPEC §8a A7: the faces column shows labels ("top", "left_side").
+  let faceLabelById = model.faces->Array.reduce(Dict.make(), (acc, f) => {
+    Dict.set(acc, f.id, f.label)
     acc
   })
   let flaggedNames = uniqueSorted(features->Array.filter(f => f.flagged)->Array.map(f => f.name))
@@ -230,8 +370,8 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
               let facesLabel =
                 feature.faceIds
                 ->Array.map(id =>
-                  switch Dict.get(faceKindById, id) {
-                  | Some(k) => Enums.faceKindToString(k)
+                  switch Dict.get(faceLabelById, id) {
+                  | Some(label) => label
                   | None => "?"
                   }
                 )
@@ -334,7 +474,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
       </div>
     | Found(part) =>
       <>
-        {renderFaces(model)}
+        {renderFacesSection(model, ~dispatch)}
         {renderFeatures(model, ~part)}
         {renderExport(model, ~dispatch)}
         {renderTimer(model)}

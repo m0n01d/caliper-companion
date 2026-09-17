@@ -885,7 +885,13 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
 
 let title = (m: model): string =>
   switch m.status {
-  | Ready(l) => faceKindLabel(l.face.kind) ++ " · " ++ l.part.name
+  | Ready(l) =>
+    // SPEC §8a A7: the face's label, first letter capitalised for display —
+    // "End · Hinge pin" for a default face, "Left_side · Hinge pin" for a
+    // custom one (labels are slugs; the rest of the slug is shown as-is).
+    let label = l.face.label
+    let shown = String.toUpperCase(String.slice(label, ~start=0, ~end=1)) ++ String.slice(label, ~start=1)
+    shown ++ " · " ++ l.part.name
   | _ => "Annotate"
   }
 
