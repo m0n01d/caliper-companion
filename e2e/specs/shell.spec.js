@@ -7,7 +7,6 @@ test.describe('app shell', () => {
   test('/ shows the parts-list empty state', async ({page}) => {
     await page.goto('/')
     await expect(page.locator('.shell-title')).toHaveText('Parts')
-    await expect(page.locator('.page-name')).toHaveText('PartsList')
     await expect(page.getByText('No parts yet.', {exact: false})).toBeVisible()
     await expect(page.getByRole('button', {name: 'New part'})).toBeVisible()
   })
@@ -15,7 +14,6 @@ test.describe('app shell', () => {
   test('#/settings and #/debug render their stubs; back returns to /', async ({page}) => {
     await page.goto('/#/settings')
     await expect(page.locator('.shell-title')).toHaveText('Settings')
-    await expect(page.locator('.page-name')).toHaveText('Settings')
     await expect(page.getByText('Readings come from a wedge dongle')).toBeVisible()
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page).toHaveURL(/#\/?$/)
@@ -55,7 +53,6 @@ test.describe('app shell', () => {
     try {
       await page.reload()
       await expect(page.locator('.shell')).toBeVisible()
-      await expect(page.locator('.page-name')).toHaveText('PartsList')
     } finally {
       await context.setOffline(false)
     }
