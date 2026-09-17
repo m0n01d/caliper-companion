@@ -12,17 +12,11 @@ npm run e2e          # build + Playwright (Chromium; WebKit where its libs exist
 
 ## Test on a phone (GitHub Pages)
 
-`docs/pages-workflow.yml` builds and publishes `dist/` to GitHub Pages on every push to `main` or a
-`claude/**` branch, at `https://m0n01d.github.io/caliper-companion/`. **One-time setup:** move it
-into place — a Claude Code session token has no `workflow` scope, so it could not be committed
-there directly:
-
-```sh
-mkdir -p .github/workflows && git mv docs/pages-workflow.yml .github/workflows/pages.yml && git commit -m "ci: enable Pages deploy" && git push
-``` iOS needs HTTPS
-for the service worker, `navigator.share`, and the DeviceOrientation permission prompt, so this is
-the route for real-device testing. Pages must be enabled with Source = GitHub Actions (the
-workflow tries to enable it itself).
+`.github/workflows/pages.yml` builds and publishes `dist/` to GitHub Pages on every push to `main`
+or a `claude/**` branch, at `https://m0n01d.github.io/caliper-companion/`. iOS needs HTTPS for the
+service worker, `navigator.share`, and the DeviceOrientation permission prompt, so this is the route
+for real-device testing. Repo settings it depends on (already set): Pages › Source = GitHub Actions,
+and the `github-pages` environment allows `claude/*` branches to deploy.
 
 The site lives under a subpath, so the build is parameterized by `VITE_BASE` (default `/`):
 
