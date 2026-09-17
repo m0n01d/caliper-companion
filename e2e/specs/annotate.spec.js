@@ -19,6 +19,7 @@ import {fileURLToPath} from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const endJpg = repoRoot + 'fixtures/hinge_pin/end.jpg'
+const topJpg = repoRoot + 'fixtures/hinge_pin/top.jpg'
 
 // fixtures/README.md: end.jpg is stored landscape with EXIF orientation 6;
 // oriented it is 1200×1600 and the hole is at (0.55, 0.30).
@@ -214,11 +215,26 @@ function normalizedDelta(t, dx, dy) {
   return {x: dx / (t.w * t.s), y: dy / (t.h * t.s)}
 }
 
+// SPEC §8a A5: the Snap pill (`snap-toggle`, aria-pressed) — on by default,
+// persisted in settings. `data-snap` on the canvas mirrors it.
+async function setSnap(page, on) {
+  const toggle = page.getByTestId('snap-toggle')
+  if ((await toggle.getAttribute('aria-pressed')) !== String(on)) {
+    await toggle.click()
+  }
+  await expect(toggle).toHaveAttribute('aria-pressed', String(on))
+  await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snap', on ? 'on' : 'off')
+}
+
 // ── tests ──────────────────────────────────────────────────────────────
 
 test.describe('annotate', () => {
   test('EXIF-rotated face: the hole taps to (0.55, 0.30) at 1× and at ≥3× (M3 b2, M4 b1)', async ({page}) => {
     await openFace(page)
+    // This test is about tap geometry. The hole's rim is inside the snap
+    // window at 1× (SPEC §8a A5, on by default), which would move the tap
+    // off the centre; A5 has its own block below.
+    await setSnap(page, false)
 
     const t1 = await readTransform(page)
     expect(t1.h).toBeGreaterThan(t1.w) // portrait after orientation
@@ -506,5 +522,122 @@ test.describe('annotate — SPEC §8a A6 (fit the view to the dimension)', () =>
     const after = await readTransform(page)
     expect(Math.abs(after.s - moved.s)).toBeLessThan(0.01)
     expect(Math.abs(after.s - t0.s)).toBeGreaterThan(0.01)
+  })
+})
+
+// SPEC §8a A5: edge snap on `top.jpg` (fixtures/README.md): the bar spans
+// x 0.17–0.81 and y 0.35–0.55 of the oriented 1600×1200 image, with the
+// darker hole (centre 0.30, 0.45) inside it. The tap is still a sketch
+// mark; snapping only moves it onto the visible edge. Reduced motion makes
+// the A6 fit instant and skips the snap ring, so every state is a plain
+// attribute wait.
+test.describe('annotate — SPEC §8a A5 (edge snap)', () => {
+  const BAR = {left: 0.17, right: 0.81}
+  const SNAP_TOL = 0.004 // SPEC A5 bullet 6; the 1024-px patch resolves ~0.001
+
+  async function openTopFace(page) {
+    await page.emulateMedia({reducedMotion: 'reduce'})
+    await page.goto('/')
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-name').fill('Hinge pin')
+    await page.getByTestId('part-create').click()
+    await page.waitForURL(/#\/parts\/[^/]+$/)
+    const partId = page.url().match(/#\/parts\/([^/]+)$/)[1]
+    await page.goto(`/#/parts/${partId}/capture`)
+    await page.setInputFiles('[data-testid=capture-file-top]', topJpg)
+    await page.waitForURL(/#\/parts\/[^/]+\/faces\/[^/]+$/)
+    const faceId = page.url().match(/\/faces\/([^/]+)$/)[1]
+    await expect(page.locator('.shell-title')).toHaveText('Top · Hinge pin')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-image-size', '1600x1200')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snap', 'on')
+    return {partId, faceId}
+  }
+
+  function expectSnapped(actual, expected) {
+    expect(Math.abs(actual[0] - expected.x)).toBeLessThan(SNAP_TOL)
+    expect(Math.abs(actual[1] - expected.y)).toBeLessThan(SNAP_TOL)
+  }
+
+  test('on by default: a tap 12 px inside the left edge lands on the edge (snapPoint)', async ({page}) => {
+    await openTopFace(page)
+    const t = await readTransform(page)
+    const edge = screenOf(t, {x: BAR.left, y: 0.45})
+    expect(insideBox(t, edge)).toBe(true)
+    await page.mouse.click(edge.x + 12, edge.y)
+    const pts = await pendingPoints(page)
+    expect(pts).toHaveLength(1)
+    expect(Math.abs(pts[0][0] - BAR.left)).toBeLessThan(SNAP_TOL)
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snapped', 'true,false')
+  })
+
+  test('two rough taps either side of the bar land on its two edges (snapPair)', async ({page}) => {
+    await openTopFace(page)
+    await tapNormalized(page, {x: 0.15, y: 0.45})
+    await tapNormalized(page, {x: 0.83, y: 0.45})
+    const pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    expectSnapped(pts[0], {x: BAR.left, y: 0.45})
+    expectSnapped(pts[1], {x: BAR.right, y: 0.45})
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snapped', 'true,true')
+    // The rest of the flow is untouched: p2 still fits the view and focuses
+    // the reading.
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'fitted')
+    await expect(page.getByTestId('reading')).toBeFocused()
+  })
+
+  test('with the Snap pill off, the same taps are stored as tapped', async ({page}) => {
+    await openTopFace(page)
+    await setSnap(page, false)
+    await tapNormalized(page, {x: 0.15, y: 0.45})
+    await tapNormalized(page, {x: 0.83, y: 0.45})
+    const pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    expectSnapped(pts[0], {x: 0.15, y: 0.45})
+    expectSnapped(pts[1], {x: 0.83, y: 0.45})
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snapped', 'false,false')
+  })
+
+  test('the pill state survives a reload and is the Settings row\'s field', async ({page}) => {
+    const {partId, faceId} = await openTopFace(page)
+    await setSnap(page, false)
+    await page.reload()
+    await expect(page.getByTestId('snap-toggle')).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snap', 'off')
+
+    // Settings shows the same field; flipping it there shows on the canvas.
+    await page.goto('/#/settings')
+    const row = page.getByTestId('snap-setting-toggle')
+    await expect(row).not.toBeChecked()
+    await row.click()
+    await expect(row).toBeChecked()
+    await page.goto(`/#/parts/${partId}/faces/${faceId}`)
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snap', 'on')
+    await expect(page.getByTestId('snap-toggle')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('dragging a snapped handle moves it by the drag; a drag never re-snaps', async ({page}) => {
+    await openTopFace(page)
+    await tapNormalized(page, {x: 0.15, y: 0.45})
+    let pts = await pendingPoints(page)
+    expectSnapped(pts[0], {x: BAR.left, y: 0.45})
+    const t = await readTransform(page)
+    const handle = screenOf(t, {x: pts[0][0], y: pts[0][1]})
+    // 20 px further into the bar — well inside the snap window, so a
+    // re-snap would pull it straight back onto the edge.
+    await dragFrom(page, handle, 20, 0)
+    const d = normalizedDelta(t, 20, 0)
+    const moved = {x: pts[0][0] + d.x, y: pts[0][1] + d.y}
+    pts = await pendingPoints(page)
+    expect(pts).toHaveLength(1)
+    expectSnapped(pts[0], moved)
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snapped', 'false,false')
+
+    // The second tap's snapPair snaps p2 but leaves the dragged p1 alone.
+    await tapNormalized(page, {x: 0.83, y: 0.45})
+    pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    expectSnapped(pts[0], moved)
+    expectSnapped(pts[1], {x: BAR.right, y: 0.45})
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snapped', 'false,true')
   })
 })
