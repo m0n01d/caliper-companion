@@ -80,7 +80,7 @@ await byId('reading').press('Enter')
 await byId('name').fill('pin_dia')
 await byId('name').press('Enter')
 await page.waitForTimeout(150)
-await addDim([0.2, 0.55], [0.85, 0.55], '42.18', 'overall_l')
+await addDim([0.2, 0.55], [0.85, 0.55], '42.18', 'overall_l', 'kind-length')
 await shot('07-annotate-saved')
 
 await page.goto(`${baseURL}/#/parts/${partId}`)
