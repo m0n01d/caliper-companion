@@ -301,3 +301,15 @@ the visible edge. It must be cheap, contrast-agnostic, and easy to turn off per 
 - [ ] Feedback and override: a snapped point draws a 150 ms ring (respecting reduced motion); `pending-points` reflects the snapped values; dragging a handle disables snap for that point (a drag never re-snaps). Applies to p1 on the first tap and to both ends on the second tap (via `snapPair`).
 - [ ] Unit tests on synthetic patches: a vertical step edge snaps within 1 px from up to `radius` away on either side; a flat or noise-only patch leaves the point alone; a bar (two edges) with taps just inside and just outside each edge → `snapPair` lands on both edges; an oblique segment snaps along its own direction, not the image axes.
 - [ ] Playwright on `top.jpg` (bar spans x 0.17–0.81, y 0.35–0.55): p1 tapped 12 px inside the left edge → stored x within 0.004 of 0.17; taps at (0.15, 0.45) and (0.83, 0.45) → (0.17, 0.45) and (0.81, 0.45) within 0.004; with the toggle off the stored points equal the taps; the toggle state survives reload.
+
+### A6 — Fit the view to the dimension when the second point lands
+
+With the keyboard up, the visible stage is roughly half its normal height (it tracks
+`visualViewport`), so a freshly placed dimension can sit under the keyboard. After p2, bring it
+into view.
+
+- [ ] When p2 lands (tap, snap, or the second end of `snapPair`), the viewport animates to **fit the p1–p2 segment** into the current stage with ~15 % padding on each side, centred on the segment midpoint, scale clamped to the existing [fit, 8×fit] range (a long dimension across the whole part therefore just re-centres at the fit scale). 160 ms, `--cc-ease`; instant under `prefers-reduced-motion`. Pure math lives in `Viewport.fitToSegment` with unit tests.
+- [ ] While a pending pair exists and the stage resizes (keyboard opening/closing changes `--vv-height` and therefore the canvas size), re-fit so both points stay visible.
+- [ ] Any pinch or pan by the user during the fitted state cancels auto-fit for that pair: later stage resizes do not re-fit, and the view is left where the user put it.
+- [ ] On Save or Clear, animate back to the view the user had **before** the fit (remembered when the fit was applied), unless the user pinched or panned in between, in which case stay.
+- [ ] Playwright (Chromium, 390×844): after two taps 60 px apart at the fit scale, `data-transform` shows a larger scale and both points map to inside the canvas box with ≥ 10 % margin; the `zoom` readout reflects it; after Save the transform returns to the pre-fit value within 0.01; a `zoom-in` click between p2 and Save prevents the restore.
