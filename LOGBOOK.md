@@ -1225,3 +1225,64 @@ confirmed restyled off it, and fixed two visible layout defects. Files: `src/glo
   `vite preview --port 3311`, reviewed by eye each iteration — caught and fixed the chevron-stacking
   regression and the features-table `table-layout: fixed` failure this way, neither of which any
   existing spec would have caught.
+
+## 2026-09-17 — A5 EdgeSnap: blur + suppression (agent/a5-blur)
+
+Hardened the pure `EdgeSnap` module (no public-signature changes) with two classical upgrades plus
+two additive fixes the wiring agent asked for mid-task from real-photo testing. `npx rescript build`
+clean under `+a`; `npm test` 205/205 (193 baseline + 12 net new in `EdgeSnapTest.res`, 19→31).
+
+- **Window-local Gaussian smoothing.** `smoothWindow` blurs `[minX,maxX]×[minY,maxY]` (a call's own
+  search rectangle) padded 3 px on every side (clamped to the patch) with the standard 5×5,
+  `[1 4 6 4 1]`/256, σ≈1.0 kernel, applied as two separable 1-D passes into a fresh
+  `Float64Array` scratch buffer — never the whole patch. `snapPoint`/`snapEnd` (and therefore
+  `snapPair`) read gradients off this smoothed window; `gradientMagnitude`/`medianGradient` are
+  untouched (still raw-patch), per the brief. `defaultThreshold` is **unchanged** — the floor is
+  still `max(relative × medianGradient(raw), absolute)`, and since the synthetic patches' raw
+  median is 0 almost everywhere, the floor is effectively still just the 24.0 absolute term, which
+  the smoothed peak magnitude of every tested edge (hard step, ramp, thin line, noisy variants)
+  clears comfortably. No legitimate reason found to move it.
+- **Non-max suppression.** `snapPoint`: a candidate survives only if its magnitude is `>=` (not
+  `>`) its two bilinearly-sampled neighbours ±1 px along its own gradient direction
+  (`isDirectionalMax`) — `>=` on purpose, so a flat-topped plateau (a soft multi-pixel ramp) keeps
+  every plateau pixel eligible instead of reporting `None` because no single pixel is *strictly*
+  above its neighbours; the outer tie-break then picks the plateau's centre-most pixel. `snapEnd`
+  (the `snapPair` walk): a step is a candidate only if its directional score is strictly greater
+  than the step already visited and at least as great as the one still to come — the "first of a
+  flat-topped run" test, the walk's equivalent of the same plateau handling.
+- **Distance-weighted scoring (additive — requested by the wiring agent after testing against real
+  `top.jpg` luma; not in the original brief).** Both functions weight a candidate's score by
+  `1 − dist/radius` before comparing, so among real edge pixels (weak ones are already excluded by
+  `cutoff`'s floor) the nearest wins. **Judgment call: coefficient is 1.0, not the wiring agent's
+  illustrative "e.g. 0.35."** Swept the noisy-step and noisy-long-edge scenarios across ~60 LCG
+  seeds at 0.35: ~25–50% failure rate (the weight only varies ±17.5% across the whole search disk,
+  which ±20 noise comfortably overwhelms once two candidates are within a couple of px of each
+  other in distance — exactly the "slides along the edge" bug being fixed). At 1.0 the same sweep
+  passed cleanly (0/60, then re-verified 0/24 on the actual committed test's exact geometry).
+  Because weak candidates are already gated out by `cutoff` before weighting is ever applied,
+  pushing the coefficient to 1.0 doesn't reintroduce "a weak near edge beats a strong far one" —
+  it only sharpens the tie-break among pixels that already cleared the floor.
+- **Cached `~median` (additive, same request).** `snapPoint`/`snapPair` gained `~median:
+  option<float>=?`; when given, `resolveMedian` uses it directly instead of calling
+  `medianGradient(patch)`, keeping the `max(relative × median, absolute)` arithmetic itself in one
+  place (`cutoff`, now `(threshold, ~median) => float`, no longer taking `patch`). Existing call
+  sites are unaffected (optional, added last). This is what makes the per-call cost bound in the
+  next bullet achievable for the wiring agent's actual usage (two radii per tap).
+- **Per-call cost bound.** Nothing touches the whole patch per call except `medianGradient` itself
+  (already stride-sampled, and now optional per the bullet above) — `smoothWindow`'s buffer size is
+  `O(radius²)`, `snapPoint`'s scan is the same disk it always was, `snapEnd`'s walk is `O(radius)`
+  along 3 lines. Verified, not just argued: a test scans a 1024×768 patch 1000 times with a cached
+  median and asserts under 500 ms (was ~16 s before caching the median — `medianGradient` alone,
+  stride-sampling ~49k pixels and sorting them, dominates the cost when it isn't cached; this is the
+  concrete reason upgrade 4 exists).
+- **Test judgment calls.** "Noisy step" (test 1) checks only the *x* distance to the edge line, not
+  `y` — for a vertical edge, landing at a different row is still on the edge; staying near the tap's
+  own row under noise is upgrade 3's job and has its own test. Offsets stop at 14 px, not the full
+  16 px radius: at offset == radius exactly, only one pixel is geometrically admissible at all, and
+  a noise draw that pushes *that one pixel* below threshold or off the NMS test legitimately
+  returns `None` (~1 in 12 seeds, empirically) — a real edge case, but a different one from what
+  this test checks, and not something any distance weighting can fix (there's nothing else to fall
+  back to). Went with "assert the upgraded result" over also asserting the raw/unsmoothed failure
+  mode, per the brief's stated option.
+- Nothing left unfinished. Did not touch `Annotate.res` or any wiring — out of scope per the brief,
+  and a sibling agent owns it.
