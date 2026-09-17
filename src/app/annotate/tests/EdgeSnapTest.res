@@ -285,8 +285,11 @@ describe("EdgeSnap window locality — bounded per-call cost", () => {
     }
     let elapsed = Date.now() -. start
     // Generous on purpose — this is a "didn't accidentally scan the whole
-    // 1024×768 patch 1000 times" smoke test, not a tight perf budget.
-    expect(elapsed < 500.0)->toBeTruthy
+    // 1024×768 patch 1000 times" smoke test, not a tight perf budget. The
+    // whole-patch version measured ~16 s here, so 3 s still discriminates
+    // by 5× while surviving the parallel full-suite run on a loaded CPU
+    // (500 ms failed under contention, passed standalone).
+    expect(elapsed < 3000.0)->toBeTruthy
   })
 })
 
