@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+dist/
+.env.local
+.env.*.local
+# ReScript: compiled output is in-source (.res.mjs); build cache is lib/
+*.res.mjs
+/lib/
+.bsb.lock
+.claude/worktrees/
+e2e/.results/
+e2e/.results-html/
+e2e/.state/
+coverage/

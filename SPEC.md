@@ -1,0 +1,258 @@
+# Caliper Companion — v0 spec (mobile web PWA, Ternpike stack)
+
+**Status:** ready for Claude Code · **Owner:** Dwight · **Target:** installable PWA, one user, two weeks
+**Supersedes:** `caliper-companion-spec-v0.md` (Swift). Same product, same JSON contract, different runtime.
+
+## 1. Why this exists
+
+Reverse-engineering a small part today means a notepad sketch, caliper readings scribbled next to arrows, then retyping everything into Fusion 360 — and the CAD agent never creates named user parameters unless told to. The app replaces the notepad: photograph each face, tap two edges, enter the caliper reading, name the feature. It exports a dimensioned image for humans and a `features.json` for the Fusion MCP, which creates one user parameter per feature and one sketch per face.
+
+**The photo is never measured.** It is a labeled sketch. No calibration, no scale bar, no lens correction. The caliper is the only source of numbers.
+
+## 2. Hypothesis v0 tests
+
+> Annotated-photo capture is at least 30% faster than notepad + calipers from part-in-hand to a parametric Fusion model, on five real parts.
+
+Kill if not true by part five. Everything in v0 serves this test.
+
+## 3. Goals
+
+- G1: 3 faces, 10 dimensions, captured, named and exported in under 4 minutes hands-on.
+- G2: `features.json` round-trips into Fusion via the MCP with zero manual renaming.
+- G3: Zero data loss — closing the tab or killing Safari loses at most the dimension being typed.
+- G4: Works in airplane mode once installed to the home screen.
+
+## 4. Non-goals for v0 (do not build)
+
+- Bluetooth of any kind. The caliper path is a text input; a keyboard-wedge dongle (§9) will type into it later. Nothing in the app knows a dongle exists.
+- Edge snap (Canny/contours) — P1.
+- Reconciliation UI — the data model supports one name on several faces; UI shows a warning row only.
+- AR, 3D, WebXR, LiDAR, mesh import.
+- Accounts, auth, sync to CouchDB, Stripe, analytics. (Sync is v1; the PouchDB doc shapes are designed for it now.)
+- Desktop layout. Phone portrait only, 360–430 px wide.
+- Fusion sketch generation — that is the MCP skill's job; the app ends at JSON.
+
+## 5. Platform and constraints
+
+- **Language/UI:** ReScript + React, mirroring Ternpike exactly: same ReScript major version, same bundler and config, same lint/test setup. Copy Ternpike's PouchDB bindings, PWA scaffold (manifest, service worker, install prompt), and theme tokens; do not rewrite them. Point Claude Code at the Ternpike repo and say "match this."
+- **Persistence:** PouchDB (IndexedDB adapter). Images stored as PouchDB attachments (JPEG blobs). No CouchDB sync in v0, but every doc has `type`, `partId`, and `updatedAt` so v1 sync is a config change.
+- **Offline:** service worker precaches the app shell; all reads/writes hit PouchDB. No network calls in v0.
+- **Dependencies:** PouchDB, React, ReScript toolchain. One optional extra allowed: `fflate` for zipping the export bundle. Nothing else without asking.
+- **iOS Safari rules that bite (encode as tests where possible):**
+  - Camera via `<input type="file" accept="image/jpeg,image/png" capture="environment">`; Safari transcodes HEIC to JPEG for file inputs. Never use `getUserMedia` for stills.
+  - Decode photos with `createImageBitmap(file, { imageOrientation: "from-image" })` so EXIF rotation is applied **before** any coordinate is computed. Every normalized point is relative to the oriented image.
+  - Canvas render at source size: 4032×3024 (12.2 MP) is under Safari's ~16.7 MP canvas cap; anything larger gets downscaled to 4096 on the long edge and the scale recorded in JSON.
+  - Layout with `100dvh` and `env(safe-area-inset-*)`; no `position: fixed` toolbars over the canvas (keyboard resizes break them); use `visualViewport` for the reading-input sheet.
+  - Numeric entry uses `<input type="text" inputmode="decimal" enterkeyhint="next">` — `type="number"` strips leading dots and fights fractions.
+  - Home-screen installed apps are exempt from Safari's 7-day storage eviction; the app still offers "Export" prominently and v1 sync is the real backstop.
+  - `navigator.share({ files })` for export; test that multiple files share on iOS 17+.
+
+## 6. Data model (`core/` — pure ReScript, no DOM, fully unit-tested)
+
+```rescript
+type units = Mm | Inch
+type faceKind = Top | Side | End | Detail
+type dimensionKind = Length | Diameter | Depth
+type readingSource = Typed | Wedge   // Wedge = a keyboard-wedge dongle typed it; indistinguishable at runtime, set by a user toggle
+
+type point = {x: float, y: float}   // 0.0–1.0 of oriented image width/height
+
+type dimension = {
+  id: string,            // "dim:" ++ uuid
+  faceId: string,
+  name: string,          // validated by FeatureName
+  kind: dimensionKind,
+  value: float,          // part units
+  tolerance: float,      // ± part units
+  p1: point,
+  p2: point,
+  source: readingSource,
+  createdAt: string,     // ISO 8601
+}
+
+type face = {
+  id: string,            // "face:" ++ uuid
+  partId: string,
+  kind: faceKind,
+  imageAttachment: string,   // attachment name on this doc, e.g. "image.jpg"
+  pixelWidth: int,
+  pixelHeight: int,          // oriented dimensions
+  levelDegrees: option<float>,
+  outline: option<array<point>>,   // optional 4 corners, reserved for future AR review; no v0 UI
+  capturedAt: string,
+}
+
+type part = {
+  id: string,            // "part:" ++ uuid
+  name: string,
+  slug: string,
+  units: units,
+  notes: string,
+  anchors: array<anchor>,   // reserved, always [] in v0
+  createdAt: string,
+  updatedAt: string,
+}
+
+type anchor = {family: string, tagId: int, sizeMm: float}   // reserved for AR review
+
+/// Derived, never stored.
+type feature = {
+  name: string,
+  kind: dimensionKind,
+  value: float,          // reconciled
+  tolerance: float,      // max of contributors
+  faceIds: array<string>,
+  spread: float,         // max − min
+  flagged: bool,         // spread > tolerance
+}
+```
+
+### 6.1 PouchDB documents
+
+- One doc per part, face, dimension. `_id` = the typed id above. Every doc carries `type: "part" | "face" | "dimension"`, `partId`, `updatedAt`.
+- Face image lives as attachment `image.jpg` on the face doc. Never inline base64 in a doc body.
+- Indexes (`pouchdb-find`): `[type, partId]` and `[type, updatedAt]`.
+- Deleting a part deletes its faces and dimensions in one bulk write.
+
+### 6.2 Feature names
+
+- Regex `^[a-z][a-z0-9_]{0,31}$`. Valid Fusion 360 user-parameter names.
+- Reject reserved: `pi`, `e`, `sin`, `cos`, `tan`, `sqrt`, `abs`, `floor`, `ceil`, `round`, `min`, `max`, `log`, `ln`, `exp`.
+- Suggestions, in order: names already used on other faces of this part; then `overall_l`, `overall_w`, `overall_h`, `hole_dia`, `wall`, `slot_w`, `slot_l`, `chamfer`.
+- Part `slug`: lowercase, non `[a-z0-9]` runs → `_`, trimmed, ≤ 40 chars, must match `^[a-z][a-z0-9_]*$`, prefix `p_` if it would start with a digit.
+
+### 6.3 Reconciliation (pure function)
+
+`reconcile: array<dimension> => result<array<feature>, reconcileError>`
+
+- Group by `name`. Kind conflict within a group → `Error(KindConflict(name))`.
+- `value` = mean, `tolerance` = max, `spread` = max − min, `flagged` = `spread > tolerance`.
+- Output sorted by name ascending. Deterministic.
+
+## 7. JSON contract — `features.json` (schema `caliper-companion/features/1`)
+
+Unchanged from the Swift spec except two optional reserved fields. Frozen once v0 ships.
+
+```json
+{
+  "schema": "caliper-companion/features/1",
+  "exportedAt": "2026-09-17T14:12:03Z",
+  "app": { "name": "Caliper Companion", "version": "0.1.0", "runtime": "web" },
+  "part": { "id": "part:…", "name": "Norcold freezer hinge pin", "slug": "norcold_freezer_hinge_pin",
+            "units": "mm", "notes": "", "anchors": [] },
+  "faces": [
+    { "id": "face:…", "kind": "top", "image": "faces/top.jpg", "annotated": "faces/top_dimensioned.png",
+      "pixelWidth": 4032, "pixelHeight": 3024, "renderScale": 1.0, "levelDegrees": 0.4, "outline": null }
+  ],
+  "features": [
+    { "name": "overall_l", "kind": "length", "value": 42.18, "tolerance": 0.10,
+      "faceIds": ["face:…"], "spread": 0.0, "flagged": false,
+      "measurements": [
+        { "faceId": "face:…", "value": 42.18, "p1": [0.171, 0.448], "p2": [0.811, 0.448],
+          "source": "typed", "at": "2026-09-17T14:03:11Z" } ] }
+  ]
+}
+```
+
+Export bundle: `<slug>.ccpart.zip` (via `fflate`) containing `features.json`, `faces/<kind>.jpg`, `faces/<kind>_dimensioned.png`. If zip is skipped, share the same files as an array with `navigator.share`. Paths in JSON are bundle-relative either way.
+
+**MCP skill contract (built in parallel against the golden fixture):** one user parameter per feature (`name = value units`, comment carries tolerance and faceIds); one sketch per face on top→XY, side→XZ, end→YZ, detail→XY, with the annotated PNG attached as a canvas. Never invent geometry. In v1 the skill pulls the JSON straight from CouchDB over HTTP; in v0 it reads the exported file.
+
+## 8. Modules, in build order, with acceptance criteria
+
+One module → green tests → commit → next. Never start N+1 with red tests in N.
+
+### M1 — `core/` (day 1–2)
+
+- [ ] Types in §6 compile; JSON encode/decode round-trips a fixture part (3 faces, 9 dimensions) losslessly.
+- [ ] `FeatureName.validate` accepts `overall_l`, `hole_dia2`; rejects `Overall_L`, `2nd_hole`, `pi`, `sqrt`, 33-char names, empty.
+- [ ] `Slug.make("Norcold freezer hinge pin") == "norcold_freezer_hinge_pin"`; `Slug.make("2018 NB bezel") == "p_2018_nb_bezel"`.
+- [ ] `reconcile` on the fixture returns 9 features sorted by name; two-face `pin_dia` 6.50/6.52 tol 0.05 → value 6.51, spread 0.02, `flagged == false`; 6.40/6.52 → `flagged == true`.
+- [ ] `reconcile` returns `KindConflict("wall")` when `wall` is Length on one face and Depth on another.
+- [ ] `FeaturesDocument.make` matches the checked-in golden `features.json` byte-for-byte with injected dates.
+- [ ] Number parsing: `"42.18"`, `".5"`, `"42"` parse in mm; `"1 3/8"` and `"1-3/8"` parse only when units are inch; negatives and empty are errors.
+
+### M2 — Persistence (day 3–4)
+
+- [ ] PouchDB store with the doc shapes and indexes in §6.1; typed ReScript API (`Store.putPart`, `Store.facesOf(partId)`, …) — no raw PouchDB calls outside `store/`.
+- [ ] Parts list: create (name, units), rename, delete with confirmation; empty state names the first action.
+- [ ] Part screen: faces row, features table (name, value, tolerance, faces), warning row when any feature is flagged or a kind conflict exists.
+- [ ] Given a dimension half-typed, when the tab is killed, then reopening shows every *saved* dimension; the half-typed one is gone. (Playwright: reload mid-entry.)
+- [ ] A face doc is written only after its image attachment write resolves; failure leaves no orphan doc.
+
+### M3 — Capture (day 5–6)
+
+- [ ] Face picker (top/side/end/detail). Recapturing a kind replaces the image after confirmation; dimensions are discarded unless the user chooses "keep".
+- [ ] `<input type="file" capture="environment">` flow; image decoded with `imageOrientation: "from-image"`; oriented `pixelWidth/Height` stored. Test: a portrait EXIF-rotated fixture JPEG yields the rotated dimensions and a tap on a known feature yields the expected normalized point.
+- [ ] `DeviceOrientationEvent` permission requested once; `levelDegrees` recorded at the moment the file input is opened; `None` when denied or when importing from the library.
+- [ ] Given camera permission denied at the OS level, when the user taps Capture, then the library picker still works and a one-line explanation shows.
+
+### M4 — Annotate (day 7–10) — the core screen
+
+- [ ] Canvas image view with pinch-zoom and pan (Pointer Events, no third-party gesture lib). Taps convert to normalized image coordinates regardless of zoom; Playwright test taps the same feature at 1× and 3× and asserts points within 0.005.
+- [ ] Two-tap dimension: tap 1 places p1 (handle), tap 2 places p2 and draws the line with extension ticks; handles draggable afterwards.
+- [ ] Reading field: `inputmode="decimal"`, `enterkeyhint="next"`, parses per M1; shows part units; rejects invalid with an inline message.
+- [ ] Name field with suggestion chips in §6.2 order; invalid names show the rule inline and disable Save.
+- [ ] Kind segmented control and tolerance field defaulting to the part's last-used tolerance (initial 0.10 mm / 0.005 in).
+- [ ] **Enter in the reading field moves focus to the name field; Enter in the name field saves.** This is the keyboard-wedge seam: a dongle that types `42.18⏎` lands a reading and advances with zero app code.
+- [ ] Save writes the dimension, clears reading and name, keeps kind and tolerance, returns focus to the canvas for the next tap.
+- [ ] Existing dimensions on the face render dimmed; tapping one selects it for edit or delete.
+- [ ] Settings toggle "Readings come from a wedge dongle" sets `source: Wedge` on saved dimensions; default `Typed`.
+
+### M5 — Export (day 11–12)
+
+- [ ] Dimensioned PNG per face rendered on an offscreen canvas at oriented source size (or 4096 long edge with `renderScale` recorded): lines, ticks, name + value labels on solid pills, label height ≥ 2% of image height.
+- [ ] Bundle zipped with `fflate` and passed to `navigator.share({ files })`; fallback "Download" anchor for browsers without file sharing.
+- [ ] Given a kind conflict, when the user taps Export, then export is blocked and the name is shown.
+- [ ] Given a flagged feature, when the user exports, then JSON carries `flagged: true` — never silently averaged.
+- [ ] Re-export of an unchanged part produces identical `features.json` except `exportedAt`.
+
+### M6 — PWA shell and dogfood timer (day 12–13)
+
+- [ ] Manifest, icons, service worker precache; "Add to Home Screen" hint shown once on iOS Safari; app launches offline from the home screen (Playwright WebKit with network blocked).
+- [ ] Per-part hands-on timer: starts at first capture, stops at first export; shown on the part screen; included in JSON as `"telemetry": {"handsOnSeconds": …}`. Local only.
+- [ ] Debug screen exports the last 20 timer results as CSV.
+
+## 9. The keyboard-wedge dongle (v1, hardware, separate repo)
+
+ESP32 reading Digimatic SPC (52-bit, 13 nibbles) or the 24-bit cheap-caliper protocol (jumper-selected), advertising as a **BLE HID keyboard**. Data button → types the reading in the phone's current units followed by Enter. Pairs in iOS Settings like any keyboard. Works in this PWA, in Fusion's parameter dialog, in a spreadsheet. The app never talks to it directly; M4's focus order is the entire integration.
+
+## 10. Testing
+
+- `core/`: unit tests on the compiled JS (vitest), 100% line coverage on codec, names, slug, reconcile, number parsing.
+- App: Playwright with the WebKit engine and a 390×844 viewport for the golden path — create part, import fixture image, add 3 dimensions, export, assert zip contents against the golden file.
+- Fixtures: `fixtures/hinge_pin/` with three JPEGs (one EXIF-rotated), `features.json` golden.
+- No visual snapshot tests in v0.
+
+## 11. Dogfood protocol
+
+1. Baseline two parts with today's notepad + Fusion process; record minutes and parameters named by hand.
+2. v0 on five parts: TPU battery tray mount, washer-nozzle plug, Norcold hinge pin, a Hehr window clip, one of your choice. Record `handsOnSeconds` plus minutes to a constrained Fusion sketch.
+3. Pass: median v0 total ≤ 70% of baseline and every export yields correctly named parameters in Fusion. Fail: stop, write down why.
+
+## 12. Borrow list from Ternpike (copy, don't rewrite)
+
+- ReScript project config, bundler config, lint and test setup.
+- PouchDB bindings and the `Store` pattern; index setup helpers.
+- PWA scaffold: manifest generation, service worker, install prompt, iOS safe-area layout shell.
+- Theme tokens; keep Ternpike's look for v0 — polish is post-hypothesis.
+- v1 only: Cloudflare Workers auth, CouchDB per-user database provisioning, Stripe checkout.
+
+## 13. Open questions
+
+- **Blocking (Dwight):** mm-only in v0, inch as display toggle? Recommendation: yes.
+- **Non-blocking (engineering):** does `createImageBitmap` at 12 MP hold on an iPhone 13 while the annotate canvas is live? If not, decode a 2048-wide working copy for the canvas and keep the original attachment for export.
+- **Non-blocking (Dwight):** `fflate` zip vs. multi-file share — pick after seeing what iOS Files does with a `.ccpart.zip`.
+
+## 14. Instructions for Claude Code (paste into `CLAUDE.md`)
+
+```
+Read SPEC.md fully before writing code. Build modules M1→M6 in order; tests first for M1, alongside for the rest.
+ReScript + React + PouchDB, matching the Ternpike repo's versions and config exactly. Copy Ternpike's PouchDB bindings and PWA scaffold; do not reinvent them.
+No dependencies beyond React, PouchDB (+ pouchdb-find), ReScript toolchain, and fflate. Ask before adding anything.
+Apply EXIF orientation at decode; every stored coordinate is relative to the oriented image. This is the most common bug in this class of app — test it.
+Do not build anything under Non-goals. No Bluetooth code. No AR code. Reserved fields stay reserved.
+Do not change the features.json shape; if the schema must change, stop and ask.
+One commit per acceptance-criteria group; the message names the module and criteria met.
+Ambiguous criterion → simplest reading, note it in the commit body, keep going.
+```
