@@ -82,6 +82,10 @@ async function clickNormalizedPoint(page, nx, ny) {
 // field saves"). `kindTestId` is clicked before the reading is typed, when
 // the dimension isn't the segmented control's default (length).
 async function addDimension(page, {p1, p2, reading, name, kindTestId}) {
+  // Wait for the previous save's store write to land before tapping again:
+  // a tap that arrives while a save is in flight can be wiped when the save
+  // completes and clears the entry (SPEC §8a A6 note in LOGBOOK).
+  const before = Number((await page.getByTestId('dimension-count').textContent()) || '0')
   await clickNormalizedPoint(page, p1[0], p1[1])
   await clickNormalizedPoint(page, p2[0], p2[1])
   if (kindTestId) {
@@ -91,6 +95,7 @@ async function addDimension(page, {p1, p2, reading, name, kindTestId}) {
   await page.getByTestId('reading').press('Enter')
   await page.getByTestId('name').fill(name)
   await page.getByTestId('name').press('Enter')
+  await expect(page.getByTestId('dimension-count')).toHaveText(String(before + 1))
 }
 
 async function exportAndUnzip(page, dir, label) {
