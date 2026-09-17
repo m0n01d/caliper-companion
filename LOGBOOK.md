@@ -391,3 +391,96 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
   could not be executed here. WebKit still can't launch in this sandbox (see e2e/README.md).
 - Verified: `npx rescript build` clean under `warnings.error = "+a"`, `npm test` (ViewportTest
   15/15 plus the existing suites), `npm run build`, chromium e2e 8/8 (3 shell + 5 annotate).
+## 2026-09-17 — M3 capture (agent/m3-capture)
+
+- `src/app/pages/Capture.res`/`.css` (full implementation, replacing the M6 stub), new
+  `src/bindings/ImageDecode.res` (File/FileList/`createImageBitmap`/camera-permission-query
+  bindings) and `src/bindings/Orientation.res` (`DeviceOrientationEvent.requestPermission` +
+  `deviceorientation` bindings), `e2e/specs/capture.spec.js`. No new `data-testid`s needed —
+  everything used was already listed under "Capture" in `docs/testids.md`.
+- **All four SPEC M3 bullets implemented**: face picker (one row per `Enums.allFaceKinds`
+  order, "captured"/pixel-size vs "not captured" status, both actions relabel to "Recapture …"
+  once a kind has a face); the camera/library `<input type=file>` flow decoding with
+  `imageOrientation: "from-image"` and storing the *oriented* `pixelWidth`/`pixelHeight` while
+  the *original* file bytes go to `Store.putFace` as the attachment; `DeviceOrientationEvent`
+  permission requested once (armed by a capture label's `pointerdown`, iOS's user-gesture
+  requirement), with `levelDegrees` snapshotted at that pointerdown, never at file-change time,
+  and always `None` for the library input; a "camera blocked?" note always visible, made
+  prominent when `navigator.permissions.query({name: "camera"})` resolves `"denied"` (guarded —
+  Safari has neither this API's "camera" descriptor nor, in most versions, the API at all).
+- **Recapture** picks the file first (a native `<input type=file>` can only be opened by a user
+  gesture, so the confirm dialog can't gate it), decodes it, and only then — if the kind already
+  has a face — shows `recapture-confirm`/`recapture-keep`/`recapture-cancel`. Confirm calls
+  `Store.deleteDimensionsOfFace` then `Store.putFace` with the *same* face id; keep skips the
+  delete; cancel drops the pending file. The `<input>`'s React `key` (a per-(kind, source)
+  generation counter) is bumped the instant a file is read out of it, in `FileChosen`, not only
+  on cancel — the `File` object is already captured into the msg by then, independent of the DOM
+  node, so it's safe to remount immediately, and doing it there (rather than only at cancel)
+  means cancel needs no separate reset path and a decode failure can be retried with the same
+  file. This is a judgment call SPEC didn't spell out.
+- **`ImageDecode.res`**: `file`/`fileList` model a DOM `File`/`FileList`. `File` *is* a `Blob` at
+  the platform level, so handing a picked file to `Store.putFace`'s `~image: PouchDb.blob` uses
+  `external asBlob: file => PouchDb.blob = "%identity"` — a same-representation upcast, the exact
+  technique `@rescript/react`'s own `ReactEvent.resi` uses internally (`toSyntheticEvent`) to
+  narrow one checked type into another without touching the runtime value. Reading `.files` off a
+  React change event's `target` (typed `{..}`, an intentionally open/unconstrained object — React
+  doesn't know statically which element fired it) uses the same `%identity` technique. Neither is
+  `Obj.magic` (which would let runtime-incompatible types compile together with no such
+  guarantee) or `%raw`.
+- **Judgment call — `levelDegrees` formula.** SPEC never defines what "the level" actually is,
+  only when to snapshot it. Used the Euclidean norm of the two DOM tilt axes,
+  `sqrt(beta² + gamma²)` (falling back to whichever single axis is available) — the standard
+  "bubble level" magnitude, 0° flat, larger more tilted regardless of which axis. Whoever
+  consumes `levelDegrees` downstream (export/UI) should treat it as a magnitude, not a signed
+  tilt direction.
+- **Judgment call — `Store.startTimer` sequenced strictly before `Route.push`** (via a
+  `TimerStarted` msg After `Saved`), rather than fired concurrently with navigation. SPEC just
+  says "then… then"; a deterministic msg chain was simpler to reason about than a fire-and-forget
+  effect racing the route change, and `startTimer` is cheap and idempotent either way.
+- **Known limitation, not fixed (out of file-ownership scope):** the `deviceorientation`
+  listener `Capture.init` registers is never torn down on navigating away —
+  `src/app/Tea.res`'s `use` runs `init`'s cmd once with no unsubscribe/cleanup hook at all. A
+  stray listener keeps updating a model nobody reads after leaving the Capture page; harmless for
+  correctness, a minor cost worth fixing in `Tea.res` itself later (that file isn't mine to
+  touch here).
+- **Real, pre-existing bug found and fixed in `vite.config.js`** (not one of my own files, but
+  it blocked every acceptance check this task asked for): `resolve.alias` pointed
+  `pouchdb-find` at `./node_modules/pouchdb-find/dist/pouchdb.find.js`, a file the installed
+  `pouchdb-find@9.0.0` package has never shipped (only `lib/`). Since `Capture.res` is the first
+  page whose module graph actually reaches `Store` → `PouchDb` → `pouchdb-find`, `npm run build`
+  and `vite dev` both failed outright (`UNLOADABLE_DEPENDENCY` / `ENOENT`) the moment this page
+  existed — a latent bug since the initial scaffold commit, not something this page introduced.
+  Coordinator confirmed the same finding from the M2 UI agent and had two fix commits ready on
+  the integration branch; cherry-picked both onto `agent/m3-capture` (`30bafbf`, then `44ba297`,
+  net effect: the `pouchdb-find` alias is dropped entirely, letting Vite resolve the package's own
+  `browser` field to `lib/index-browser.es.js`; only the `pouchdb` alias remains). Verified after
+  cherry-picking: `npm run build` succeeds, `npm run e2e --project=chromium` runs all 6 specs
+  (`shell.spec.js` 3/3 still green; `capture.spec.js`'s 3 fail cleanly at `getByTestId('new-part')`
+  — see below, expected on this branch).
+- **Verification, in order:**
+  - `npx rescript build` (clean, 47 modules, zero warnings under `warnings.error = "+a"`).
+  - `npm test` — 107/107 existing unit tests still green (nothing under `src/core` touched).
+  - `npm run build` — succeeds (after the `vite.config.js` cherry-picks above).
+  - `npm run e2e --project=chromium` (official suite) — `shell.spec.js` 3/3 pass;
+    `capture.spec.js`'s 3 tests fail at the very first step, `getByTestId('new-part')` timing
+    out, because `PartsList.res` on this branch is still the M6 stub with no create-part form
+    (agent/m2-ui's work hasn't been merged into this branch — the coordinator will run
+    `capture.spec.js` again against the merged integration tree). This is the expected,
+    anticipated outcome per the task brief, not a bug in `Capture.res`.
+  - **Ad-hoc verification of the actual M3 behavior**, done because the official e2e suite
+    can't exercise a real part yet: a throwaway Playwright script (not committed) seeded a part
+    directly through the app's own compiled `Store.res.mjs` (dynamically `import()`ed in-page,
+    the same module the app uses) against a `vite` dev server, then drove the real Capture UI.
+    28/28 checks passed, covering: "Part not found" renders a message + back link;
+    `capture-note` always visible; all 8 `capture-file-<kind>`/`library-file-<kind>` inputs
+    present; **`end.jpg` (EXIF orientation 6) decodes to the oriented 1200×1600, `top.jpg`
+    (no EXIF rotation) to 1600×1200** — the core M3 EXIF behavior, matching `fixtures/README.md`
+    exactly; navigation to the Annotate route after a successful capture; the recapture dialog
+    appearing on a second capture of an already-captured kind, and all three of its outcomes
+    (`recapture-confirm` replaces the face keeping the same id and a new `capturedAt`,
+    `recapture-keep` does the same without deleting dimensions first, `recapture-cancel` leaves
+    the face untouched and the input immediately reusable); the library input always producing
+    `levelDegrees == None`; a decode failure (a non-image file) showing an inline error and
+    leaving no face doc. This script and its local `vite.config.js` patch (superseded by the
+    cherry-picks above) were fully reverted/deleted before finishing — nothing from it is
+    committed.
