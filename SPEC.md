@@ -215,6 +215,11 @@ One module → green tests → commit → next. Never start N+1 with red tests i
 
 ## 9. The keyboard-wedge dongle (v1, hardware, separate repo)
 
+> **v1, deferred:** `docs/linked-mode/SPEC.md` — Linked Mode (phone owns geometry, desktop owns
+> readings, CouchDB live sync, QR handoff). Depends on accounts + hosted CouchDB; not before then.
+> Its migration moves `value/name/kind/tolerance` off `dimension` into `reading` docs — keep that in
+> mind when touching the dimension type.
+
 ESP32 reading Digimatic SPC (52-bit, 13 nibbles) or the 24-bit cheap-caliper protocol (jumper-selected), advertising as a **BLE HID keyboard**. Data button → types the reading in the phone's current units followed by Enter. Pairs in iOS Settings like any keyboard. Works in this PWA, in Fusion's parameter dialog, in a spreadsheet. The app never talks to it directly; M4's focus order is the entire integration.
 
 ## 10. Testing
