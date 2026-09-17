@@ -14,6 +14,10 @@ import {fileURLToPath} from 'node:url'
 // for a page it's never going to get.
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
+// E2E_PORT lets parallel runs (agents, CI shards) avoid sharing :3000 — a
+// squatter on the port makes reuseExistingServer test the wrong build.
+const port = Number(process.env.E2E_PORT || 3000)
+
 export default defineConfig({
   // Both relative to this config file's own directory (e2e/), not the cwd.
   testDir: 'specs',
