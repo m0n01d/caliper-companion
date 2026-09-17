@@ -313,3 +313,28 @@ into view.
 - [ ] Any pinch or pan by the user during the fitted state cancels auto-fit for that pair: later stage resizes do not re-fit, and the view is left where the user put it.
 - [ ] On Save or Clear, animate back to the view the user had **before** the fit (remembered when the fit was applied), unless the user pinched or panned in between, in which case stay.
 - [ ] Playwright (Chromium, 390×844): after two taps 60 px apart at the fit scale, `data-transform` shows a larger scale and both points map to inside the canvas box with ≥ 10 % margin; the `zoom` readout reflects it; after Save the transform returns to the pre-fit value within 0.01; a `zoom-in` click between p2 and Save prevents the restore.
+
+### A7 — Custom faces (not limited to top / side / end / detail) — **schema delta, needs owner OK**
+
+Real parts have undersides, chamfered ends, section views. The four kinds stay as the **sketch-plane
+hint** Fusion needs; a face additionally gets a **label**, and a part may have any number of faces.
+
+**JSON delta (`features.json`, additive; `schema` stays `caliper-companion/features/1`):**
+```json
+{ "id": "face:…", "kind": "side", "label": "left_side",
+  "image": "faces/left_side.jpg", "annotated": "faces/left_side_dimensioned.png", … }
+```
+- `kind` keeps its four values and its meaning (top→XY, side→XZ, end→YZ, detail→XY).
+- `label` is new: `^[a-z][a-z0-9_]{0,31}$` (same rule as feature names), unique per part. Default
+  faces have `label == kind` (`"top"`, `"side"`, …), so their file paths are **unchanged**.
+- `image`/`annotated` paths use the label. The MCP skill names each sketch after `label` and picks
+  the plane from `kind`; a consumer that ignores `label` still works for the four default faces.
+
+**Acceptance criteria**
+- [ ] `Types.face` gains `label: string`; `Codec`, `Store` (face docs; docs without `label` read back as `label = kind`), `FeaturesDocument` (paths from `label`, faces sorted by kind order then label) and the golden fixture are updated; M1 tests pass with the added field; the golden changes only by the added `"label"` lines.
+- [ ] Capture page: the four default chips plus a "+ Custom" chip. Custom opens an inline card: a mono name field (validated live with `FeatureName.validate`, must be unique among this part's faces, error inline) and a plane picker (segmented: Top XY / Side XZ / End YZ / Detail XY, default Top). Confirming creates the chip and selects it; the shutter and library inputs work for it exactly as for default kinds (`capture-file-<label>` / `library-file-<label>` — labels are already slug-safe).
+- [ ] Recapture replaces **by face** (same id, same label), not by kind; a part may therefore hold several faces of the same kind with different labels.
+- [ ] Part page face slots and the features table's faces column show labels; the annotate title shows the label ("left_side · Hinge pin").
+- [ ] Name suggestions and reconciliation are unchanged (they key on face ids).
+- [ ] Custom chips can be removed only when their face has no image and no dimensions; a captured custom face is deleted from the Part page like any face (delete confirms inline, removes its dimensions).
+- [ ] Playwright: add a custom face `left_side` on plane Side, capture `side.jpg` into it, dimension it, export → the zip holds `faces/left_side.jpg` and `faces/left_side_dimensioned.png`, `features.json` has that face with `kind: "side"`, `label: "left_side"`; a second custom face with the same label is rejected inline; default faces' paths are unchanged.
