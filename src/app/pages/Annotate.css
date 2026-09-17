@@ -90,17 +90,41 @@
   pointer-events: auto;
 }
 
+/* One flat scrim capsule group — count, zoom-out, readout, zoom-in — rather
+   than four separate scrim blobs touching each other. `align-items: center`
+   is load-bearing: this is a flex ROW, so its default cross-axis alignment
+   is `stretch`, which was stretching the count Ui.Pill to the 44 px height
+   of its button siblings; a near-square box at `border-radius: 999px`
+   (capsule) renders as a circle, which is the reported "oversized black
+   disc" bug. Centering instead lets the pill size to its own content. */
 .annotate-tools {
   display: flex;
   align-items: center;
-  gap: var(--cc-space-1);
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-scrim);
 }
 
-/* Over the photo the icon buttons are flat scrim like the pills — one
-   material for everything that floats on the canvas (§11.1 "Materials"). */
-.annotate-tools .btn-icon {
-  background: var(--cc-scrim);
+/* The group supplies the one scrim background; its children stay
+   transparent so nothing paints a second, overlapping capsule. */
+.annotate-tools .btn-icon,
+.annotate-tools .pill {
+  background: transparent;
   border-color: transparent;
+}
+
+/* The count reads as a compact mono figure, not a full-size hint pill. */
+.annotate-tools [data-testid="dimension-count"] {
+  min-width: 20px;
+  padding: 0 6px;
+  justify-content: center;
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.annotate-tools [data-testid="zoom"] {
+  padding: 0 4px;
 }
 
 .annotate-hint {
