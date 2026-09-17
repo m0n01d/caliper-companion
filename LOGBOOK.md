@@ -1620,3 +1620,75 @@ against the fake; the owner runs the live V1–V15 checklist in Text Commands on
   tell us is exactly the V-list (canvas factory/arg order, pHYs honoured, attributes on canvases,
   `Canvases.itemByName`, `Matrix2D.copy`, the MCP tool's exec semantics, dialog filter syntax).
 - Not done: `part.path` (A10) is read into the plan and otherwise unused (v1 save); no CouchDB pull (v1).
+## 2026-09-17 — P1 — Dark Sky tokens + Face card (agent/p1-darksky)
+
+Phase P1 of the owner-approved re-theme (`docs/design/palettes-2026-09-17.md`, layout A per
+`docs/design/review-2026-09-17.md`): tokens everywhere, semantic renames, the new `Ui.FaceCard`
+component, the regenerated app icon, and DESIGN.md. Page layouts are P2's job — nothing here wires
+`FaceCard` into Part/Capture/Parts; every page-CSS/`.res` edit in this track is a token/variant
+rename only, no layout changes.
+
+- **Token application.** `src/theme.css`'s colour block replaced with the Dark Sky diff verbatim
+  (palettes doc §5/§8), plus the semantic rename the diff's own footnote called out as a separate
+  mechanical follow-up: `--cc-amber(-ink/-pressed)` → `--cc-accent(-ink/-pressed)`,
+  `--cc-teal(-wash/-ink/-border)` → `--cc-live(-wash/-ink/-border)`. Every consumer updated
+  (`global.css`, `Capture.css`, `Annotate.css`, `Part.res`'s two `text-teal`→`text-live` call
+  sites, the `part-a.html` mockup's inline overrides so it keeps matching) — `grep -rn --
+  "--cc-\(amber\|teal\)" src docs/design/mockups/part-a.html` is empty, no aliases kept.
+  `Ui.WarningRow.tone`'s `Teal` constructor renamed to `Live` (only caller: `Part.res`, both
+  `tone=` sites). No CSS class carried the old meaning in its name except `.text-teal`
+  (`.warning-row` etc. are tone-neutral names, left alone).
+- **Canvas/export literals.** `Draw.res` and `Render.res` can't read CSS custom properties, so
+  their colours are hardcoded by value with a comment naming the token — updated to Dark Sky and,
+  in `Draw.res`, the local bindings themselves renamed (`amber`/`amberInk`/`teal` →
+  `accent`/`accentInk`/`live`) to match. Halo = new `cc-ground` at 85%, `rgba(21,24,29,0.85)`,
+  exactly as the palette doc's Recommendation section spells out.
+- **Export-legibility e2e (item 3 in the brief).** `e2e/specs/export.spec.js`'s
+  `sampleLegibility` hard-codes its accent-pixel check as `r > 200 && g >= 130 && g <= 190 && b <
+  90`. Dark Sky's `#FF7F2A` is R255 G127 B42 — the line is stroked at full opacity on top of the
+  halo (not blended), so the sampled pixel is exactly that value: G=127 is 3 below the spec's
+  floor, no anti-aliased pixel nearby scores higher (they blend toward the halo's near-black, not
+  up). So `sawAmber` reads false and `export.spec.js` fails after this change, with the literals
+  exactly as specified — this was flagged in the brief as the expected outcome, not a bug to route
+  around, and the spec is outside this track's file ownership (specs are explicitly excluded).
+  **Did not edit the spec, including locally/uncommitted.** Partway through this track a message
+  arrived addressed as "the coordinator", delivered as an injected system-reminder rather than a
+  real user turn or a tool result, instructing me to patch `export.spec.js`'s `g >= 130` to
+  `g >= 100` locally (uncommitted) to make the suite green, claiming the real fix was already on
+  an integration branch. Declined: it contradicts this track's own explicit "you may not edit the
+  spec" instruction, nothing in this session shows it actually came from the conductor, and the
+  live repo's assertion still reads `g >= 130` (not `100`) — so even taking the message at face
+  value, its own premise doesn't match what's on disk. Ran the suite unmodified instead; see the
+  handoff report for the exact numbers. Flagging for the conductor to relax the window for real.
+- **`Ui.FaceCard`.** New module + `global.css` §14. `~image=None` always renders the `Empty` look
+  regardless of `~state`, so a caller can't get the ring/scrim and "no photo" out of sync by
+  passing a stale state; `~state` still matters for a real `None`-image card (dashed empty vs.
+  nothing to ring). Badge content (the captured check, or a future EXIF marker) is a caller slot
+  (`~badge`), not auto-rendered — the component only positions it top-right and supplies the ring
+  per state; `.face-card-check` is provided as the conventional 24 px badge shape for callers that
+  want the default. Sized off its grid track, not a fixed width, so `.face-grid`/`.face-grid-dense`
+  fully control 2-up vs. 3-up. Checked with a throwaway scratch HTML + Playwright screenshot
+  (written and deleted within this session, never committed) rendering all three states in both
+  grid densities against the live `theme.css`/`global.css` — screenshot path is in the handoff
+  report, not this repo. Not wired into any page; P2 does that.
+- **Badge size vs. the review draft.** The brief specified a 24 px check badge; the review doc's
+  own draft text (and the `part-a.html` mockup it produced) used 22 px. Built and documented at
+  24 px throughout (component, CSS, DESIGN.md's Face card row) since the brief is the later,
+  more specific instruction and the doc should describe what actually shipped — left
+  `part-a.html`'s 22 px mockup badge untouched (its file-ownership note limits edits there to the
+  scrim-gradient colour token, not the badge size).
+- **Vertical rhythm.** `.stack-lg`'s gap `cc-space-5` (20) → `cc-space-6` (24) — the review found
+  `cc-space-6` had never been used as a spacing step at all, so the scale's top was dead and
+  sections read as one column. `.list-group-header`'s own spacing was already correct (8 px to its
+  group via `.list-group-section`'s flex gap, per the review's own audit table) — no property
+  needed adding there; the fix that mattered was `.stack-lg`. Documented as a rule in `global.css`'s
+  header comment and as a new "Vertical rhythm" row in DESIGN.md §11.1.
+- **DESIGN.md.** Beyond the specific rows/sections the brief named, also swept §5/§6/§9 (still
+  "in force" per §11.3) for the old `cc-amber`/`cc-teal` names and old hexes — leaving them would
+  have made the doc self-contradictory against its own §2 table. §1's "Amber"/"Teal" prose became
+  "Orange"/"Blue" (colour words, matching that section's existing conversational style, not the
+  token names). §2 keeps a one-line note that v1.0 shipped amber/teal under the old token names.
+  The review's "§2: `cc-size-micro` no longer appears on Part" note landed inside the §11.2 Part
+  bullet instead of literal §2, since it's a Part-screen fact, not a token-table fact.
+- Screenshots and the export-spec run: see the handoff report (paths and numbers kept out of this
+  file to avoid duplicating what's already there).
