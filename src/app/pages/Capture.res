@@ -1,7 +1,8 @@
 // Capture — the face picker + camera/library capture flow (SPEC M3, all
-// four bullets). `init` takes the route's `partId`; the exported contract
-// (`model`/`msg`/`init`/`update`/`title`/`back`/`view`) matches the M6 stub
-// it replaces so `Main.res` needs no changes.
+// four bullets; SPEC §8a A7 custom faces). `init` takes the route's
+// `partId`; the exported contract (`model`/`msg`/`init`/`update`/`title`/
+// `back`/`view`) matches the M6 stub it replaces so `Main.res` needs no
+// changes.
 //
 // TEA discipline (CLAUDE.md "Architecture"): all Store/decode work is a
 // `Tea.cmd` built in `update`, never run inline in `view`; `view` stays a
@@ -9,17 +10,25 @@
 // calls this page makes where SPEC left the exact reading open.
 //
 // Design wave 2 (DESIGN.md §11, §11.2 "Capture"): restyled onto the wave-1
-// foundation (Ui/Icon/theme/global). Model/update below is the same M3
-// state machine plus two purely UI-only additions the task brief allows:
-// `selectedKind` (which chip/slot is active) and `faceImages` (object URLs
-// for the slot thumbnails, mirroring Part.res's own cheap-thumbnail
-// pattern). Nothing about the file-input/decode/save/recapture flow itself
-// changed — see the notes at the end of this file for what's new and why.
+// foundation (Ui/Icon/theme/global). A7 (SPEC §8a): the page is keyed by
+// face *label*, not kind — the four default chips plus any custom ones,
+// each with its own always-mounted camera + library `<input>` pair. Nothing
+// about the file-input/decode/save/recapture flow itself changed — see the
+// notes at the end of this file for what's new and why.
 
 // -- model -------------------------------------------------------------
 
+// One face slot the shutter/library inputs can capture into (SPEC §8a A7).
+// The four defaults always exist (`label == Enums.faceKindToString(kind)`);
+// custom chips come from captured custom faces (`model.faces`) and from
+// `customChips` (added on this page, no face yet).
+type chip = {
+  label: string, // unique per part; slug-safe (FeatureName rule)
+  kind: Types.faceKind, // sketch-plane hint
+}
+
 type pendingCapture = {
-  kind: Types.faceKind,
+  chip: chip,
   // The bytes actually destined for `Store.putFace` — already the
   // SPEC §8a A4 resize/re-encode outcome (or the picked file verbatim,
   // unchanged, if it was already at or under the cap), decided once at
@@ -37,6 +46,12 @@ type dialog =
   | NoDialog
   | RecaptureConfirm(pendingCapture)
 
+// The "+ Custom" inline card's in-progress state (SPEC §8a A7).
+type customDraft = {
+  draftLabel: string,
+  plane: Types.faceKind,
+}
+
 type model = {
   partId: string,
   // `Store.getPart` hasn't resolved yet vs. resolved to `None` are two
@@ -48,13 +63,17 @@ type model = {
   // faceId -> object URL (Download.objectUrlOfImage), Part.res's own cheap
   // thumbnail pattern reused for the slot row (DESIGN.md §11.2).
   faceImages: Dict.t<string>,
-  // UI-only (task brief: "a msg may be added for UI-only state such as
-  // 'selected kind chip'"): which chip/slot/shutter target is active.
-  selectedKind: Types.faceKind,
+  // UI-only: which chip/slot/shutter target is active, by label.
+  selectedLabel: string,
   // True once the user taps a chip/slot — stops a (currently single, but
   // future-proofed) `GotFaces` from overriding their choice with the
-  // "first kind without a face" default.
-  kindManuallySelected: bool,
+  // "first default without a face" default.
+  labelManuallySelected: bool,
+  // Custom chips added on this page that have no face yet (SPEC §8a A7:
+  // "unsaved custom chips live in the page model only"). A chip moves out
+  // of here the moment its face is saved (it then comes from `faces`).
+  customChips: array<chip>,
+  customDraft: option<customDraft>,
   cameraDenied: bool,
   // "Request once per page life" (SPEC M3 bullet 2): this flag is set the
   // first time any capture label is armed, whether or not the platform
@@ -67,13 +86,13 @@ type model = {
   // "levelDegrees is snapshotted at the moment the capture input is
   // opened … never at file-change time". Read (and reset) at `FileChosen`.
   armedLevel: option<float>,
-  // One generation counter per (kind, source) `<input>`, used as a React
+  // One generation counter per (label, source) `<input>`, used as a React
   // `key` to force-remount the element and clear its native file value —
   // see `bumpGen` below for why this fires on every selection, not just
   // cancel.
   inputGens: Dict.t<int>,
-  busy: option<Types.faceKind>,
-  error: option<(Types.faceKind, string)>,
+  busy: option<string>, // the label being decoded/saved
+  error: option<(string, string)>, // (label, message)
   dialog: dialog,
 }
 
@@ -86,16 +105,22 @@ type msg =
   | GotPart(option<Types.part>)
   | GotFaces(array<Types.face>)
   | FaceImageLoaded(string, option<string>)
-  | SelectKind(Types.faceKind)
+  | SelectChip(string)
+  | CustomOpen
+  | CustomLabelChanged(string)
+  | CustomPlaneChanged(Types.faceKind)
+  | CustomAdd
+  | CustomCancel
+  | CustomRemove(string)
   | CameraPermissionChecked(bool)
   | OrientationSample(option<float>, option<float>)
   | CaptureArmed
   | OrientationPermissionResult(option<Orientation.permissionState>)
-  | FileChosen(Types.faceKind, bool, option<ImageDecode.file>)
-  | Decoded(Types.faceKind, bool, PouchDb.blob, string, int, int, option<float>)
-  | DecodeFailed(Types.faceKind, string)
+  | FileChosen(string, bool, option<ImageDecode.file>)
+  | Decoded(string, bool, PouchDb.blob, string, int, int, option<float>)
+  | DecodeFailed(string, string)
   | Saved(Types.face)
-  | SaveFailed(Types.faceKind, string)
+  | SaveFailed(string, string)
   | TimerStarted(string)
   | RecaptureConfirmClicked
   | RecaptureKeepClicked
@@ -105,14 +130,48 @@ type msg =
 
 // -- pure helpers --------------------------------------------------------
 
-let existingFaceOf = (faces: array<Types.face>, kind: Types.faceKind): option<Types.face> =>
-  Array.find(faces, f => f.kind == kind)
+let defaultChips: array<chip> =
+  Enums.allFaceKinds->Array.map(kind => {label: Enums.faceKindToString(kind), kind})
 
-// UI-only default (DESIGN.md §11.2): the first kind without a face, else Top.
-let defaultKind = (faces: array<Types.face>): Types.faceKind =>
-  Enums.allFaceKinds
-  ->Array.find(kind => existingFaceOf(faces, kind)->Option.isNone)
-  ->Option.getOr(Types.Top)
+let isDefaultLabel = (label: string): bool => defaultChips->Array.some(c => c.label == label)
+
+let existingFaceOf = (faces: array<Types.face>, label: string): option<Types.face> =>
+  Array.find(faces, f => f.label == label)
+
+// Every chip on the page, in display order: the four defaults, then
+// captured custom faces (Store order: kind, then label), then this page's
+// unsaved custom chips (in the order they were added).
+let chipsOf = (model: model): array<chip> => {
+  let captured =
+    model.faces
+    ->Array.filter(f => !isDefaultLabel(f.label))
+    ->Array.map(f => {label: f.label, kind: f.kind})
+  let pending =
+    model.customChips->Array.filter(c => existingFaceOf(model.faces, c.label)->Option.isNone)
+  Array.concat(defaultChips, Array.concat(captured, pending))
+}
+
+let chipOf = (model: model, label: string): option<chip> =>
+  chipsOf(model)->Array.find(c => c.label == label)
+
+// UI-only default (DESIGN.md §11.2): the first default face without a
+// capture, else Top.
+let defaultLabel = (faces: array<Types.face>): string =>
+  defaultChips
+  ->Array.find(c => existingFaceOf(faces, c.label)->Option.isNone)
+  ->Option.map(c => c.label)
+  ->Option.getOr("top")
+
+// SPEC §8a A7: the label rule is the feature-name rule, plus uniqueness
+// among this part's faces (captured or still only a chip).
+let labelError = (model: model, label: string): option<string> =>
+  switch FeatureName.validate(label) {
+  | Error(e) => Some(FeatureName.errorMessage(e))
+  | Ok(_) =>
+    chipsOf(model)->Array.some(c => c.label == label)
+      ? Some("A face named `" ++ label ++ "` already exists on this part")
+      : None
+  }
 
 let upsertFace = (faces: array<Types.face>, face: Types.face): array<Types.face> => {
   let replaced = ref(false)
@@ -139,15 +198,15 @@ let levelFromSamples = (beta: option<float>, gamma: option<float>): option<float
   | (None, None) => None
   }
 
-let genKey = (kind: Types.faceKind, ~fromLibrary: bool): string =>
-  Enums.faceKindToString(kind) ++ (fromLibrary ? "-lib" : "-cam")
+let genKey = (label: string, ~fromLibrary: bool): string =>
+  label ++ (fromLibrary ? "-lib" : "-cam")
 
-let genFor = (gens: Dict.t<int>, kind: Types.faceKind, ~fromLibrary: bool): int =>
-  Dict.get(gens, genKey(kind, ~fromLibrary))->Option.getOr(0)
+let genFor = (gens: Dict.t<int>, label: string, ~fromLibrary: bool): int =>
+  Dict.get(gens, genKey(label, ~fromLibrary))->Option.getOr(0)
 
-let bumpGen = (gens: Dict.t<int>, kind: Types.faceKind, ~fromLibrary: bool): Dict.t<int> => {
+let bumpGen = (gens: Dict.t<int>, label: string, ~fromLibrary: bool): Dict.t<int> => {
   let next = Dict.copy(gens)
-  Dict.set(next, genKey(kind, ~fromLibrary), genFor(gens, kind, ~fromLibrary) + 1)
+  Dict.set(next, genKey(label, ~fromLibrary), genFor(gens, label, ~fromLibrary) + 1)
   next
 }
 
@@ -181,7 +240,7 @@ let cappedSize = (~width: int, ~height: int): (int, int) => {
 
 let saveFaceCmd = (
   ~partId: string,
-  ~kind: Types.faceKind,
+  ~chip: chip,
   ~id: string,
   ~image: PouchDb.blob,
   ~contentType: string,
@@ -192,7 +251,8 @@ let saveFaceCmd = (
   let face: Types.face = {
     id,
     partId,
-    kind,
+    kind: chip.kind,
+    label: chip.label,
     imageAttachment: "image.jpg",
     pixelWidth: width,
     pixelHeight: height,
@@ -203,14 +263,14 @@ let saveFaceCmd = (
   Tea.fromPromise(
     () => Store.putFace(Store.shared(), face, ~image, ~contentType),
     saved => Saved(saved),
-    _err => SaveFailed(kind, "Couldn't save the photo. Try again."),
+    _err => SaveFailed(chip.label, "Couldn't save the photo. Try again."),
   )
 }
 
 let saveFromPending = (~partId: string, pending: pendingCapture): Tea.cmd<msg> =>
   saveFaceCmd(
     ~partId,
-    ~kind=pending.kind,
+    ~chip=pending.chip,
     ~id=pending.existingFaceId,
     ~image=pending.image,
     ~contentType=pending.contentType,
@@ -258,8 +318,10 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
     partExists: false,
     faces: [],
     faceImages: Dict.make(),
-    selectedKind: Types.Top,
-    kindManuallySelected: false,
+    selectedLabel: "top",
+    labelManuallySelected: false,
+    customChips: [],
+    customDraft: None,
     cameraDenied: false,
     orientationRequested: false,
     orientationDenied: false,
@@ -314,14 +376,55 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
   | GotPart(part) => ({...model, partChecked: true, partExists: part->Option.isSome}, Tea.none)
   | GotFaces(faces) =>
-    let selectedKind = model.kindManuallySelected ? model.selectedKind : defaultKind(faces)
-    ({...model, faces, selectedKind}, Tea.batch(faces->Array.map(loadFaceImageCmd)))
+    let selectedLabel = model.labelManuallySelected ? model.selectedLabel : defaultLabel(faces)
+    ({...model, faces, selectedLabel}, Tea.batch(faces->Array.map(loadFaceImageCmd)))
   | FaceImageLoaded(faceId, Some(url)) =>
     let next = Dict.copy(model.faceImages)
     Dict.set(next, faceId, url)
     ({...model, faceImages: next}, Tea.none)
   | FaceImageLoaded(_, None) => (model, Tea.none)
-  | SelectKind(kind) => ({...model, selectedKind: kind, kindManuallySelected: true}, Tea.none)
+  // Picking a real chip also closes the custom card (it's the one other
+  // thing competing for the shutter slot).
+  | SelectChip(label) =>
+    ({...model, selectedLabel: label, labelManuallySelected: true, customDraft: None}, Tea.none)
+  | CustomOpen => ({...model, customDraft: Some({draftLabel: "", plane: Types.Top})}, Tea.none)
+  | CustomLabelChanged(text) =>
+    switch model.customDraft {
+    | Some(draft) => ({...model, customDraft: Some({...draft, draftLabel: text})}, Tea.none)
+    | None => (model, Tea.none)
+    }
+  | CustomPlaneChanged(plane) =>
+    switch model.customDraft {
+    | Some(draft) => ({...model, customDraft: Some({...draft, plane})}, Tea.none)
+    | None => (model, Tea.none)
+    }
+  | CustomAdd =>
+    switch model.customDraft {
+    | Some(draft) if draft.draftLabel != "" && labelError(model, draft.draftLabel)->Option.isNone =>
+      let chip = {label: draft.draftLabel, kind: draft.plane}
+      (
+        {
+          ...model,
+          customChips: Array.concat(model.customChips, [chip]),
+          selectedLabel: chip.label,
+          labelManuallySelected: true,
+          customDraft: None,
+        },
+        Tea.none,
+      )
+    | _ => (model, Tea.none)
+    }
+  | CustomCancel => ({...model, customDraft: None}, Tea.none)
+  // Only a chip with no face (and no decode in flight) can go; a captured
+  // custom face is deleted from the Part page like any face (SPEC A7).
+  | CustomRemove(label) =>
+    if existingFaceOf(model.faces, label)->Option.isSome || model.busy == Some(label) {
+      (model, Tea.none)
+    } else {
+      let customChips = model.customChips->Array.filter(c => c.label != label)
+      let selectedLabel = model.selectedLabel == label ? defaultLabel(model.faces) : model.selectedLabel
+      ({...model, customChips, selectedLabel}, Tea.none)
+    }
   | CameraPermissionChecked(denied) => ({...model, cameraDenied: denied}, Tea.none)
   | OrientationSample(beta, gamma) => ({...model, lastBeta: beta, lastGamma: gamma}, Tea.none)
   | CaptureArmed =>
@@ -344,8 +447,8 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   | OrientationPermissionResult(Some(Orientation.Denied)) =>
     ({...model, orientationDenied: true}, Tea.none)
   | OrientationPermissionResult(_) => (model, Tea.none)
-  | FileChosen(_kind, _fromLibrary, None) => (model, Tea.none)
-  | FileChosen(kind, fromLibrary, Some(file)) =>
+  | FileChosen(_label, _fromLibrary, None) => (model, Tea.none)
+  | FileChosen(label, fromLibrary, Some(file)) =>
     let level = fromLibrary ? None : model.armedLevel
     // Reset the input's own generation immediately: the `File` object is
     // already captured in this msg, independent of the DOM node, so the
@@ -353,55 +456,64 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     // that's what lets the same file (or a fresh one) be re-picked after a
     // decode failure or a recapture cancel, without extra reset logic at
     // either of those sites.
-    let nextGens = bumpGen(model.inputGens, kind, ~fromLibrary)
-    let nextModel = {...model, inputGens: nextGens, busy: Some(kind), error: None}
+    let nextGens = bumpGen(model.inputGens, label, ~fromLibrary)
+    let nextModel = {...model, inputGens: nextGens, busy: Some(label), error: None}
     (
       nextModel,
       Tea.fromPromise(
         () => decodeAndCap(file),
-        ((image, contentType, w, h)) => Decoded(kind, fromLibrary, image, contentType, w, h, level),
-        _err => DecodeFailed(kind, "Couldn't read that photo. Try a different one."),
+        ((image, contentType, w, h)) => Decoded(label, fromLibrary, image, contentType, w, h, level),
+        _err => DecodeFailed(label, "Couldn't read that photo. Try a different one."),
       ),
     )
-  | Decoded(kind, fromLibrary, image, contentType, width, height, level) =>
-    switch existingFaceOf(model.faces, kind) {
-    | None =>
-      let id = Ids.face()
-      (
-        {...model, busy: None},
-        saveFaceCmd(~partId=model.partId, ~kind, ~id, ~image, ~contentType, ~width, ~height, ~level),
-      )
-    | Some(existing) =>
-      let pending: pendingCapture = {
-        kind,
-        image,
-        contentType,
-        pixelWidth: width,
-        pixelHeight: height,
-        levelDegrees: level,
-        existingFaceId: existing.id,
-        fromLibrary,
+  | Decoded(label, fromLibrary, image, contentType, width, height, level) =>
+    switch chipOf(model, label) {
+    | None => ({...model, busy: None}, Tea.none) // chip vanished mid-decode; nothing to save into
+    | Some(chip) =>
+      // SPEC §8a A7: recapture replaces *this face* (same id, same label),
+      // never "the face of this kind" — so `side` and `left_side` coexist.
+      switch existingFaceOf(model.faces, label) {
+      | None =>
+        let id = Ids.face()
+        (
+          {...model, busy: None},
+          saveFaceCmd(~partId=model.partId, ~chip, ~id, ~image, ~contentType, ~width, ~height, ~level),
+        )
+      | Some(existing) =>
+        let pending: pendingCapture = {
+          chip,
+          image,
+          contentType,
+          pixelWidth: width,
+          pixelHeight: height,
+          levelDegrees: level,
+          existingFaceId: existing.id,
+          fromLibrary,
+        }
+        ({...model, busy: None, dialog: RecaptureConfirm(pending)}, Tea.none)
       }
-      ({...model, busy: None, dialog: RecaptureConfirm(pending)}, Tea.none)
     }
-  | DecodeFailed(kind, msg) => ({...model, busy: None, error: Some((kind, msg))}, Tea.none)
+  | DecodeFailed(label, msg) => ({...model, busy: None, error: Some((label, msg))}, Tea.none)
   | Saved(face) =>
     let faces = upsertFace(model.faces, face)
+    // The chip now comes from `faces`; drop the page-only copy.
+    let customChips = model.customChips->Array.filter(c => c.label != face.label)
     (
-      {...model, faces, dialog: NoDialog, busy: None, error: None},
+      {...model, faces, customChips, dialog: NoDialog, busy: None, error: None},
       Tea.fromPromise(
         () => Store.startTimer(Store.shared(), ~partId=model.partId),
         _timer => TimerStarted(face.id),
         _err => TimerStarted(face.id),
       ),
     )
-  | SaveFailed(kind, msg) => ({...model, busy: None, dialog: NoDialog, error: Some((kind, msg))}, Tea.none)
+  | SaveFailed(label, msg) =>
+    ({...model, busy: None, dialog: NoDialog, error: Some((label, msg))}, Tea.none)
   | TimerStarted(faceId) => (model, Route.push(Route.Annotate(model.partId, faceId)))
   | RecaptureConfirmClicked =>
     switch model.dialog {
     | NoDialog => (model, Tea.none)
     | RecaptureConfirm(pending) => (
-        {...model, busy: Some(pending.kind)},
+        {...model, busy: Some(pending.chip.label)},
         Tea.fromPromise(
           () => Store.deleteDimensionsOfFace(Store.shared(), pending.existingFaceId),
           _ => DimensionsDeletedThenSave,
@@ -413,7 +525,7 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     switch model.dialog {
     | NoDialog => (model, Tea.none)
     | RecaptureConfirm(pending) => (
-        {...model, busy: Some(pending.kind)},
+        {...model, busy: Some(pending.chip.label)},
         saveFromPending(~partId=model.partId, pending),
       )
     }
@@ -427,7 +539,7 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     switch model.dialog {
     | NoDialog => (model, Tea.none)
     | RecaptureConfirm(pending) =>
-      ({...model, busy: None, dialog: NoDialog, error: Some((pending.kind, msg))}, Tea.none)
+      ({...model, busy: None, dialog: NoDialog, error: Some((pending.chip.label, msg))}, Tea.none)
     }
   }
 
@@ -435,11 +547,12 @@ let title = (_model: model): string => "Capture"
 let back = (model: model): option<Route.t> => Some(Route.Part(model.partId))
 
 // -- view --------------------------------------------------------------
-// DESIGN.md §11.2 "Capture": chips (top) → slot row → shutter/library or
-// the inline recapture card → camera note. All eight file inputs render
-// unconditionally in `hiddenInputs`, independent of `selectedKind` and
-// `model.dialog`, so `setInputFiles('[data-testid="capture-file-<kind>"]')`
-// keeps working no matter what's on screen — see the module-end notes.
+// DESIGN.md §11.2 "Capture": chips (top) → slot row → shutter/library, the
+// inline custom-face card, or the inline recapture card → camera note. One
+// camera + one library file input per chip renders unconditionally in
+// `hiddenInputs`, independent of `selectedLabel` and `model.dialog`, so
+// `setInputFiles('[data-testid="capture-file-<label>"]')` keeps working no
+// matter what's on screen — see the module-end notes.
 
 let kindLabel = (kind: Types.faceKind): string =>
   switch kind {
@@ -449,6 +562,24 @@ let kindLabel = (kind: Types.faceKind): string =>
   | Types.Detail => "Detail"
   }
 
+// Display name of a chip: "Top"/"Side"/"End"/"Detail" for the defaults, the
+// slug itself (mono, DESIGN.md §7 "feature names: mono, never truncated")
+// for a custom face.
+let chipName = (chip: chip): React.element =>
+  isDefaultLabel(chip.label)
+    ? React.string(kindLabel(chip.kind))
+    : <span className="mono"> {React.string(chip.label)} </span>
+
+let chipAriaName = (chip: chip): string =>
+  isDefaultLabel(chip.label) ? kindLabel(chip.kind) : chip.label
+
+let planeOptions: array<(string, string)> = [
+  ("top", "Top XY"),
+  ("side", "Side XZ"),
+  ("end", "End YZ"),
+  ("detail", "Detail XY"),
+]
+
 let formatDegrees = (deg: float): string => Float.toFixed(deg, ~digits=1) ++ "°"
 
 let isDialogOpen = (model: model): bool =>
@@ -457,50 +588,71 @@ let isDialogOpen = (model: model): bool =>
   | RecaptureConfirm(_) => true
   }
 
+let onEnter = (e: JsxEvent.Keyboard.t, then: unit => unit): unit =>
+  if JsxEvent.Keyboard.key(e) == "Enter" {
+    e->JsxEvent.Keyboard.preventDefault
+    then()
+  }
+
+let inputValue = (e: JsxEvent.Form.t): string => e->Canvas.Form.target->Canvas.value
+
 let chipRow = (model: model, ~dispatch: msg => unit): React.element =>
   <Ui.ChipRow testId="capture-kinds">
-    {Enums.allFaceKinds
-    ->Array.map(kind => {
-      let kindStr = Enums.faceKindToString(kind)
-      let hasExisting = existingFaceOf(model.faces, kind)->Option.isSome
+    {chipsOf(model)
+    ->Array.map(chip => {
+      let hasExisting = existingFaceOf(model.faces, chip.label)->Option.isSome
       <Ui.Chip
-        key=kindStr
+        key=chip.label
         large=true
-        selected={kind == model.selectedKind}
-        onClick={_ => dispatch(SelectKind(kind))}>
+        selected={chip.label == model.selectedLabel && model.customDraft->Option.isNone}
+        testId={"capture-chip-" ++ chip.label}
+        onClick={_ => dispatch(SelectChip(chip.label))}>
         <>
           {hasExisting ? <Icon name=Check size=16 /> : React.null}
-          {React.string(kindLabel(kind))}
+          {chipName(chip)}
         </>
       </Ui.Chip>
     })
     ->React.array}
+    <Ui.Chip
+      large=true
+      selected={model.customDraft->Option.isSome}
+      testId="custom-face"
+      ariaLabel="Add a custom face"
+      onClick={_ => dispatch(CustomOpen)}>
+      <>
+        <Icon name=Plus size=16 />
+        {React.string("Custom")}
+      </>
+    </Ui.Chip>
   </Ui.ChipRow>
 
 // 56 px slot row (DESIGN.md §4 "Thumbnail slot", mirrors Part.res's own
 // face tiles): captured = a thumbnail once the object URL has loaded, else
 // the plain `slot-captured` surface+ring; empty = dashed. Tapping a slot
-// selects that kind, same as its chip.
+// selects that chip, same as the chip itself. One slot per chip, so the row
+// scrolls (reusing global.css's `.chip-row` scroller) once custom faces
+// push it past the viewport.
 let slotRow = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="slot-row">
-    {Enums.allFaceKinds
-    ->Array.map(kind => {
-      let kindStr = Enums.faceKindToString(kind)
-      let existing = existingFaceOf(model.faces, kind)
+  <div className="chip-row slot-row">
+    {chipsOf(model)
+    ->Array.map(chip => {
+      let existing = existingFaceOf(model.faces, chip.label)
       let hasExisting = existing->Option.isSome
       let thumbUrl = existing->Option.flatMap(f => Dict.get(model.faceImages, f.id))
       let stateClass = hasExisting ? " slot-captured" : " slot-empty"
-      let selectedClass = kind == model.selectedKind ? " slot-selected" : ""
-      let label = kindLabel(kind) ++ (hasExisting ? " — captured" : " — not captured")
+      let isSelected = chip.label == model.selectedLabel && model.customDraft->Option.isNone
+      let selectedClass = isSelected ? " slot-selected" : ""
+      let label = chipAriaName(chip) ++ (hasExisting ? " — captured" : " — not captured")
       <button
         type_="button"
-        key=kindStr
+        key=chip.label
         className={"slot" ++ stateClass ++ selectedClass}
         ariaLabel=label
-        ariaPressed={kind == model.selectedKind ? #"true" : #"false"}
-        onClick={_ => dispatch(SelectKind(kind))}>
+        ariaPressed={isSelected ? #"true" : #"false"}
+        onClick={_ => dispatch(SelectChip(chip.label))}>
         {switch thumbUrl {
-        | Some(url) => <img src=url alt={kindLabel(kind)} />
+        | Some(url) => <img src=url alt={chipAriaName(chip)} />
         | None => React.null
         }}
       </button>
@@ -508,19 +660,18 @@ let slotRow = (model: model, ~dispatch: msg => unit): React.element =>
     ->React.array}
   </div>
 
-// The shutter block: 76 px amber shutter (label for the selected kind's
+// The shutter block: 76 px amber shutter (label for the selected chip's
 // camera input), Body caption, "From library" secondary capsule, the live
 // level readout, and the busy/error lines. Swapped out for `recaptureCard`
-// while a dialog is open (DESIGN.md §11.2).
-let shutterBlock = (model: model, ~dispatch: msg => unit): React.element => {
-  let kind = model.selectedKind
-  let kindStr = Enums.faceKindToString(kind)
-  let hasExisting = existingFaceOf(model.faces, kind)->Option.isSome
-  let isBusy = model.busy == Some(kind)
+// or `customCard` while one of those is open (DESIGN.md §11.2).
+let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.element => {
+  let label = chip.label
+  let hasExisting = existingFaceOf(model.faces, label)->Option.isSome
+  let isBusy = model.busy == Some(label)
   let shutterDisabled = isBusy || isDialogOpen(model)
   let liveLevel = model.orientationDenied ? None : levelFromSamples(model.lastBeta, model.lastGamma)
   let rowError = switch model.error {
-  | Some((k, msg)) if k == kind => Some(msg)
+  | Some((l, msg)) if l == label => Some(msg)
   | _ => None
   }
   // Both phases share the one `busy` flag; which is showing is fully
@@ -529,11 +680,14 @@ let shutterBlock = (model: model, ~dispatch: msg => unit): React.element => {
   | RecaptureConfirm(_) => "Saving…"
   | NoDialog => "Decoding…"
   }
+  // A custom chip with no face yet is page-only state and can be taken
+  // back (SPEC §8a A7); a captured one is a real face, deleted from Part.
+  let removable = !isDefaultLabel(label) && !hasExisting
   <div className="shutter-block">
     <div className="shutter-row">
       <label
         className={"shutter" ++ (shutterDisabled ? " shutter-disabled" : "")}
-        htmlFor={"capture-file-" ++ kindStr}
+        htmlFor={"capture-file-" ++ label}
         ariaLabel="Capture this face"
         onPointerDown={_ => dispatch(CaptureArmed)}>
         <Icon name=Camera size=32 />
@@ -545,12 +699,26 @@ let shutterBlock = (model: model, ~dispatch: msg => unit): React.element => {
       }}
     </div>
     <p className="t-body shutter-caption">
-      {React.string((hasExisting ? "Recapture " : "Capture ") ++ kindLabel(kind))}
+      {React.string(hasExisting ? "Recapture " : "Capture ")}
+      {chipName(chip)}
     </p>
-    <label className="btn btn-secondary" htmlFor={"library-file-" ++ kindStr}>
+    <label className="btn btn-secondary" htmlFor={"library-file-" ++ label}>
       <Icon name=Image size=20 />
       {React.string("From library")}
     </label>
+    {removable
+      ? <Ui.Button
+          variant=Small
+          testId="custom-face-remove"
+          disabled=isBusy
+          ariaLabel={"Remove the " ++ label ++ " chip"}
+          onClick={_ => dispatch(CustomRemove(label))}>
+          <>
+            <Icon name=X size=16 />
+            {React.string("Remove chip")}
+          </>
+        </Ui.Button>
+      : React.null}
     {isBusy ? <Ui.Pill> {React.string(progressText)} </Ui.Pill> : React.null}
     {switch rowError {
     | Some(msg) => <p className="t-footnote text-error"> {React.string(msg)} </p>
@@ -559,11 +727,72 @@ let shutterBlock = (model: model, ~dispatch: msg => unit): React.element => {
   </div>
 }
 
+// Inline "+ Custom" card (SPEC §8a A7, DESIGN.md §4 Text input / Segmented,
+// §11.1 "Confirmations": in-flow `.list-group`, no overlay): the mono name
+// field (feature-name rule + unique on this part, validated live), the
+// sketch-plane picker, "Add face" and "Cancel". Enter in the field adds.
+let customCard = (model: model, draft: customDraft, ~dispatch: msg => unit): React.element => {
+  let error = draft.draftLabel == "" ? None : labelError(model, draft.draftLabel)
+  let canAdd = draft.draftLabel != "" && error->Option.isNone
+  <div className="list-group custom-card" dataTestId="custom-face-card">
+    <Ui.Field
+      label="Face name"
+      htmlFor="custom-face-label"
+      mono=true
+      error=?error
+      errorTestId="custom-face-error"
+      help="a–z, 0–9 and _ ; names the exported files (faces/<name>.jpg)">
+      {Canvas.Input.make({
+        dataTestId: "custom-face-label",
+        id: "custom-face-label",
+        type_: "text",
+        autoCapitalize: "none",
+        autoCorrect: "off",
+        autoComplete: "off",
+        spellCheck: false,
+        enterKeyHint: "done",
+        placeholder: "left_side",
+        ariaInvalid: error->Option.isSome,
+        value: draft.draftLabel,
+        onChange: e => dispatch(CustomLabelChanged(inputValue(e))),
+        onKeyDown: e => onEnter(e, () => dispatch(CustomAdd)),
+      })}
+    </Ui.Field>
+    <div className="field">
+      <span className="field-label" ariaHidden=true> {React.string("Sketch plane")} </span>
+      <Ui.Segmented
+        options=planeOptions
+        selected={Enums.faceKindToString(draft.plane)}
+        onSelect={key =>
+          switch Enums.faceKindFromString(key) {
+          | Some(plane) => dispatch(CustomPlaneChanged(plane))
+          | None => ()
+          }}
+        testIdPrefix="custom-face-plane-"
+        ariaLabel="Sketch plane"
+      />
+    </div>
+    <div className="custom-card-buttons">
+      <Ui.Button
+        variant=Primary block=true testId="custom-face-add" disabled={!canAdd} onClick={_ => dispatch(CustomAdd)}>
+        {React.string("Add face")}
+      </Ui.Button>
+      <Ui.Button block=true testId="custom-face-cancel" onClick={_ => dispatch(CustomCancel)}>
+        {React.string("Cancel")}
+      </Ui.Button>
+    </div>
+  </div>
+}
+
 // Inline recapture card (DESIGN.md §11.2, §11.1 "Confirmations"): no
 // overlay/modal, just a `.list-group` card in place of the shutter block.
 let recaptureCard = (pending: pendingCapture, ~dispatch: msg => unit): React.element =>
   <div className="list-group recapture-card" role="alertdialog" ariaLabel="Replace photo?">
-    <p className="t-body"> {React.string("Replace the " ++ kindLabel(pending.kind) ++ " photo?")} </p>
+    <p className="t-body">
+      {React.string("Replace the ")}
+      {chipName(pending.chip)}
+      {React.string(" photo?")}
+    </p>
     <div className="recapture-buttons">
       <Ui.Button
         variant=Danger
@@ -590,40 +819,40 @@ let recaptureCard = (pending: pendingCapture, ~dispatch: msg => unit): React.ele
 let renderCaptureInput = (
   model: model,
   ~dispatch: msg => unit,
-  ~kind: Types.faceKind,
+  ~chip: chip,
   ~fromLibrary: bool,
 ): React.element => {
-  let kindStr = Enums.faceKindToString(kind)
-  let disabled = model.busy == Some(kind) || isDialogOpen(model)
-  let gen = genFor(model.inputGens, kind, ~fromLibrary)
-  let testId = (fromLibrary ? "library-file-" : "capture-file-") ++ kindStr
-  let label =
+  let label = chip.label
+  let disabled = model.busy == Some(label) || isDialogOpen(model)
+  let gen = genFor(model.inputGens, label, ~fromLibrary)
+  let testId = (fromLibrary ? "library-file-" : "capture-file-") ++ label
+  let ariaLabel =
     (fromLibrary ? "Choose " : "Capture ") ++
-    kindLabel(kind) ++
+    chipAriaName(chip) ++
     (fromLibrary ? " photo from library" : " photo with camera")
   <input
-    key={(fromLibrary ? "lib-" : "cam-") ++ Int.toString(gen)}
+    key={testId ++ "-" ++ Int.toString(gen)}
     id=testId
     type_="file"
     accept="image/jpeg,image/png"
     capture=?{fromLibrary ? None : Some(#environment)}
     className="visually-hidden"
     dataTestId=testId
-    ariaLabel=label
+    ariaLabel
     disabled
-    onChange={evt => dispatch(FileChosen(kind, fromLibrary, ImageDecode.fileFromChangeEvent(evt)))}
+    onChange={evt => dispatch(FileChosen(label, fromLibrary, ImageDecode.fileFromChangeEvent(evt)))}
   />
 }
 
-// All eight inputs (one camera + one library per kind), always mounted —
+// Every chip's inputs (one camera + one library each), always mounted —
 // deliberately not nested inside the shutter/library labels above (which
-// only ever reference the *selected* kind's `id` via `htmlFor`), so their
-// presence never depends on `selectedKind` or `model.dialog`.
+// only ever reference the *selected* chip's `id` via `htmlFor`), so their
+// presence never depends on `selectedLabel` or `model.dialog`.
 let hiddenInputs = (model: model, ~dispatch: msg => unit): React.element =>
-  Enums.allFaceKinds
-  ->Array.flatMap(kind => [
-    renderCaptureInput(model, ~dispatch, ~kind, ~fromLibrary=false),
-    renderCaptureInput(model, ~dispatch, ~kind, ~fromLibrary=true),
+  chipsOf(model)
+  ->Array.flatMap(chip => [
+    renderCaptureInput(model, ~dispatch, ~chip, ~fromLibrary=false),
+    renderCaptureInput(model, ~dispatch, ~chip, ~fromLibrary=true),
   ])
   ->React.array
 
@@ -636,12 +865,19 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
       <a className="btn btn-secondary" href={Route.href(Route.Parts)}> {React.string("Back to parts")} </a>
     </div>
   | Found =>
+    // The selected label always resolves (defaults are always present);
+    // the fallback only guards a removed chip between two renders.
+    let selectedChip =
+      chipOf(model, model.selectedLabel)->Option.getOr(
+        chipOf(model, "top")->Option.getOr({label: "top", kind: Types.Top}),
+      )
     <div className="capture-view">
       {chipRow(model, ~dispatch)}
       {slotRow(model, ~dispatch)}
-      {switch model.dialog {
-      | RecaptureConfirm(pending) => recaptureCard(pending, ~dispatch)
-      | NoDialog => shutterBlock(model, ~dispatch)
+      {switch (model.dialog, model.customDraft) {
+      | (RecaptureConfirm(pending), _) => recaptureCard(pending, ~dispatch)
+      | (NoDialog, Some(draft)) => customCard(model, draft, ~dispatch)
+      | (NoDialog, None) => shutterBlock(model, ~chip=selectedChip, ~dispatch)
       }}
       {hiddenInputs(model, ~dispatch)}
       <p
@@ -652,59 +888,69 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     </div>
   }
 
-// -- judgment calls (see LOGBOOK.md "Design wave 2 — capture" for the full
-// write-up; "M3 capture" below is the original M3 agent's own notes) --
+// -- judgment calls (see LOGBOOK.md "A7 custom faces" and "Design wave 2 —
+// capture" for the full write-ups; "M3 capture" below is the original M3
+// agent's own notes) --
 //
-// Design wave 2 additions:
-// - `selectedKind`/`kindManuallySelected` and `faceImages`/`FaceImageLoaded`
-//   are the two UI-only additions the task brief allows. `GotFaces` fires
-//   exactly once (from `init`'s cmd; nothing else re-fetches the face
-//   list), so "default to the first kind without a face, else Top" only
-//   ever needs to run that once — `kindManuallySelected` exists mainly so
-//   a hypothetical future re-fetch can't clobber a deliberate chip tap.
+// A7 custom faces:
+// - The page is keyed by *label* end to end (`selectedLabel`, `busy`,
+//   `error`, `inputGens`, every msg that used to carry a kind). A chip's
+//   kind is only ever read at the moment a face record is built, so the
+//   four defaults behave exactly as before (`label == kind`) and the
+//   `capture-file-<kind>` / `library-file-<kind>` testids are unchanged.
+// - Chips are *derived* (`chipsOf`): defaults, then captured custom faces
+//   from `model.faces`, then the page-only `customChips`. A custom chip
+//   that gets captured therefore switches source without any bookkeeping
+//   beyond dropping the page-only copy at `Saved`.
+// - Uniqueness is checked against every chip, not just captured faces —
+//   so "top" (an uncaptured default) and an unsaved custom chip are both
+//   rejected. Same `FeatureName` rule + messages as the annotate name field.
+// - The custom card replaces the shutter block while open (like the
+//   recapture card) rather than stacking under it: one thing asks for input
+//   at a time, and the chip/slot rows above it stay visible. Tapping any
+//   chip closes it.
+// - No auto-focus on the name field: `Canvas.Input` has no `autoFocus`
+//   prop and bindings are outside this track's file ownership. One extra
+//   tap; flagged as a rough edge.
+//
+// Design wave 2 additions (still true, now by label):
+// - `selectedLabel`/`labelManuallySelected` and `faceImages`/`FaceImageLoaded`
+//   are UI-only. `GotFaces` fires exactly once (from `init`'s cmd; nothing
+//   else re-fetches the face list), so "default to the first default face
+//   without a capture, else Top" only ever needs to run that once —
+//   `labelManuallySelected` exists mainly so a hypothetical future re-fetch
+//   can't clobber a deliberate chip tap.
 // - The 76 px shutter and the "From library" capsule reference the
-//   selected kind's input by `htmlFor` (id), not by wrapping it — unlike
-//   `Ui.Toggle`'s wrap-the-checkbox pattern, this keeps all eight
-//   `<input>`s in one fixed place, present regardless of `selectedKind` or
-//   `model.dialog`, satisfying "all eight inputs stay in the DOM ...
-//   regardless of which chip is selected" literally and unconditionally.
-//   Trade-off: keyboard Tab reaches all eight (each carries its own
-//   descriptive `aria-label`, e.g. "Capture Side photo with camera")
-//   rather than just the two matching the visible shutter/library
-//   controls, and a hidden input's own `:focus-visible` ring — being on a
-//   1x1px clipped element — isn't a useful visual cue the way
-//   `.btn:focus-within:has(input:focus-visible)` is for a wrapped one.
-//   Untested by any spec; flagged here as a minor, deliberate rough edge.
+//   selected chip's input by `htmlFor` (id), not by wrapping it — unlike
+//   `Ui.Toggle`'s wrap-the-checkbox pattern, this keeps every `<input>` in
+//   one fixed place, present regardless of `selectedLabel` or
+//   `model.dialog`. Trade-off: keyboard Tab reaches all of them (each
+//   carries its own descriptive `aria-label`, e.g. "Capture Side photo
+//   with camera") rather than just the two matching the visible controls,
+//   and a hidden input's own `:focus-visible` ring — being on a 1x1px
+//   clipped element — isn't a useful visual cue. Untested by any spec;
+//   flagged here as a minor, deliberate rough edge.
 // - "From library" always reads "From library", not "Recapture from
 //   library": DESIGN.md §11.2 names the capsule's copy once, and the Body
 //   caption above it ("Capture Top" / "Recapture Top") already carries the
-//   recapture state — the original M3 pass had both actions relabel to
-//   "Recapture …", which this page no longer does. Purely a copy change;
-//   the underlying msg/testid/behaviour are identical.
+//   recapture state.
 // - The progress pill's text ("Decoding…" vs "Saving…") is derived from
 //   existing state, not a new msg: while `model.busy` matches the selected
-//   kind, `model.dialog` is still `NoDialog` during the initial decode
-//   (recapture's dialog msgs never touch it) and is still
-//   `RecaptureConfirm(_)` for the whole confirm/keep-through-save window
-//   (only `Saved`/`SaveFailed`/`DeleteDimensionsFailed` clear it), so the
-//   two phases are already distinguishable from state alone.
-// - `Ui.res` gap: no "plain"/borderless button variant. DESIGN.md's
-//   recapture card asks for a Danger, a Secondary, and a "plain" Cancel;
-//   `Ui.Button`'s variants are Primary/Secondary/Danger/Small/Icon, so
-//   Cancel uses the default (Secondary) — visually identical to "Replace,
-//   keep dimensions" next to it. Worth a `Ui.Button` `Plain` variant
-//   (borderless, `cc-text` on transparent) if this pattern recurs.
+//   chip, `model.dialog` is still `NoDialog` during the initial decode and
+//   still `RecaptureConfirm(_)` for the whole confirm/keep-through-save
+//   window, so the two phases are already distinguishable from state alone.
+// - `Ui.res` gap: no "plain"/borderless button variant, so the cards'
+//   Cancel uses the default (Secondary).
 // - Level readout: DESIGN.md's "mono teal Ui.Pill next to the shutter when
 //   available" reuses the existing `levelFromSamples` helper live off
-//   `lastBeta`/`lastGamma` (gated on `orientationDenied` the same way the
-//   save-time `armedLevel` snapshot is) — display-only, no new state.
+//   `lastBeta`/`lastGamma` — display-only, no new state.
 //
 // M3 capture (original, still true):
 // - `levelDegrees` = sqrt(beta² + gamma²): SPEC doesn't define the exact
 //   formula, only that it's "the level". This is the standard bubble-level
 //   magnitude across both tilt axes; 0° is flat.
 // - Orientation-permission request is armed only by the *camera*
-//   (capture-file-<kind>) label's pointerdown, not the library label's —
+//   (capture-file-<label>) label's pointerdown, not the library label's —
 //   the library input never uses level data, so there's no reason for it
 //   to trigger the iOS permission prompt.
 // - `Store.startTimer` is sequenced strictly before `Route.push` (via the

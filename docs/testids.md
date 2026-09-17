@@ -13,20 +13,37 @@ stable; add to this list before you rely on a new one.
 - `parts-empty` — the empty state
 
 ## Part (`#/parts/:id`)
-- `face-<kind>` — one per captured face (`top|side|end|detail`), links to annotate
+- `face-<label>` — one per captured face, links to annotate. `<label>` is the face's label (SPEC §8a
+  A7): `top|side|end|detail` for the four defaults (so `face-top` etc. are unchanged), the custom
+  slug otherwise (`face-left_side`). Contains the label and the `W × H` size text
 - `capture-face` — link/button to the capture page
+- `faces-edit` — small "Edit faces" / "Done" toggle (present once the part has a face). In edit
+  mode the slot row becomes a list (`faces-edit-list`) whose rows keep the `face-<label>` id and each
+  hold a `face-remove` button; tapping it shows the inline confirm `face-delete-confirm` /
+  `face-delete-cancel` (deleting a face removes its dimensions)
 - `feature-row` — one per reconciled feature (name, value, tolerance, faces)
 - `warning-row` — present only when a feature is flagged or a kind conflict exists
 - `export` — the export button · `export-error` — inline message when export is blocked
 - `timer` — hands-on timer readout
 
 ## Capture (`#/parts/:id/capture`)
-- `capture-file-<kind>` — the `<input type="file" capture="environment">` for that face kind, always
-  in the DOM (one per kind, regardless of which chip is selected or whether a dialog is open)
-- `library-file-<kind>` — the library picker input (no `capture` attribute), same "always present" rule
+- `capture-file-<label>` — the `<input type="file" capture="environment">` for that face, always
+  in the DOM (one per chip — the four defaults `top|side|end|detail` plus every custom face, captured
+  or still only a chip — regardless of which chip is selected or whether a dialog/card is open)
+- `library-file-<label>` — the library picker input (no `capture` attribute), same "always present" rule
+- `capture-chip-<label>` — one chip per face (`aria-pressed` on the selected one); tapping selects
+  it as the shutter/library target
+- `custom-face` — the "+ Custom" chip (SPEC §8a A7); opens the inline card `custom-face-card`:
+  `custom-face-label` (mono name input, `enterkeyhint="done"`, Enter adds) · `custom-face-error`
+  (inline validation: feature-name rule + unique among this part's faces and chips) ·
+  `custom-face-plane-<top|side|end|detail>` (sketch-plane segmented control, `aria-pressed`) ·
+  `custom-face-add` (primary, `aria-disabled` until the name is valid) · `custom-face-cancel`
+- `custom-face-remove` — small button in the shutter block, present only while the selected chip is
+  a custom one with no face yet; removes the chip (a captured face is deleted from the Part page)
 - `recapture-confirm` / `recapture-keep` / `recapture-cancel` — replace-image dialog
 - `capture-note` — the one-line explanation shown when camera access is unavailable
-- `capture-kinds` — the Top/Side/End/Detail chip row (design wave 2, DESIGN.md §11.2)
+- `capture-kinds` — the chip row: Top/Side/End/Detail, custom faces, then "+ Custom" (design wave 2,
+  DESIGN.md §11.2; A7)
 - `capture-level` — the live level-readout pill next to the shutter, present only when the device
   orientation sensor has reported a sample and permission wasn't denied (design wave 2)
 

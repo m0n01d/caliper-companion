@@ -1048,3 +1048,62 @@ Restyle of the core screen onto the wave-1 foundation (DESIGN.md §11.2 "Annotat
   errors, editing, `--vv-height` 500 re-fit, 360-wide wrap) in the scratchpad, reviewed by eye.
   **Unverified here:** the iOS keyboard sequence (p2 → keyboard → `visualViewport` resize → re-fit
   → Save → restore → keyboard closes) and the tween's feel on device — phone check.
+## 2026-09-17 — A7 custom faces (agent/a7-faces)
+
+SPEC §8a A7, owner-approved JSON delta. A face now carries `label` (unique-per-part slug under the
+feature-name rule) next to `kind` (the sketch-plane hint). Defaults keep `label == kind`, so nothing
+about the four default faces — testids, export paths, golden — moved. `schema` stays
+`caliper-companion/features/1`.
+
+- **Core**: `Types.face.label`; `Codec` encodes it and decodes a missing one as `kind` (a non-string
+  `label` is treated the same — lenient, tested); `FeaturesDocument` emits `"label"` right after
+  `"kind"`, names `image`/`annotated` from it, and sorts faces by kind rank then label. Golden
+  regenerated with the same injected dates — the diff is exactly three added `"label"` lines.
+  The compiler now emits one early `return` per required field in `decodeFace`, so a per-field
+  reject loop was added to keep core at 100 % line coverage (193 tests, branches 98.6 %).
+- **Store**: face docs carry `label`; `FaceDoc.fromDoc` defaults it to the kind, so the face docs
+  already on the owner's phone keep reading back (tested through a raw PouchDB handle writing a
+  label-less doc). `facesOf` orders kind, then label. No `faceLabelsOf` — the Capture page already
+  holds `facesOf`'s result and checks uniqueness against it plus its own unsaved chips.
+- **Export**: `Bundle.faceBundle` carries `label` (kind was only ever used for the entry name);
+  the missing-image error names the label.
+- **Capture page** is keyed by label end to end. Chips are *derived* (`chipsOf`): the four
+  defaults, captured custom faces from `faces`, then page-only `customChips` (unsaved, SPEC A7
+  bullet 6). One camera + one library `<input>` per chip, always mounted (`capture-file-<label>` /
+  `library-file-<label>`) — the "eight inputs" contract generalises to 2×N. "+ Custom" opens an
+  inline `.list-group` card in place of the shutter block (like the recapture card): mono name via
+  `Canvas.Input` (the one `<input>` path with `enterkeyhint`), `Ui.Field` error, `Ui.Segmented`
+  plane picker, primary "Add face", Cancel. Enter adds. Uniqueness is checked against every chip,
+  so `top` (uncaptured default) and an unsaved custom chip are both rejected. Recapture is by face
+  (`existingFaceOf` by label → same id) so `side` and `left_side` coexist. A custom chip with no
+  face shows "Remove chip" in the shutter block; captured ones are deleted from Part.
+  - Judgment calls: tapping any chip closes the custom card; the slot row now reuses
+    global.css's `.chip-row` scroller (N slots); no auto-focus on the name field (`Canvas.Input`
+    has no `autoFocus` prop and bindings are outside this track) — one extra tap, flagged.
+- **Part page**: slots iterate `faces` in Store order with `face-<label>`; default labels keep
+  `.face-slot-label` (capitalised "Top"), custom ones render mono as-is. Features' faces column
+  shows labels. "Edit faces" (`faces-edit`, small) swaps the slot row for an inset list with a
+  Remove per face (`face-remove`, inside the `face-<label>` row); tapping one shows an in-flow
+  error warning row + `face-delete-confirm` / `face-delete-cancel`; confirm calls
+  `Store.deleteFace` (removes its dimensions) and reloads faces + dimensions.
+  - Judgment call: Remove is a `Ui.Button Danger` capsule, not "small" — `Ui.Button`'s variants
+    are exclusive and `.btn-small`'s field background would override `.btn-danger`'s; adding a
+    small-danger variant is a `Ui.res` change outside this track. `Part.css` untouched (sibling
+    owns it); the edit list needs no page CSS.
+- **Annotate**: `title` only — `"<Label> · <part>"` with the first letter capitalised for display
+  (`End · Hinge pin` for defaults, unchanged; `Left_side · Hinge pin` for a custom face).
+- **e2e** `faces.spec.js` (4 tests): the A7 bullet-7 scenario (left_side on Side, capture
+  `side.jpg`, one dimension, export → `faces/left_side.jpg` + `faces/left_side_dimensioned.png`,
+  face `{kind: "side", label: "left_side"}` with `label` right after `kind`, default `top` paths
+  unchanged); inline rejection of duplicate/default/invalid labels + Enter-to-add + chip removal;
+  recapture-by-face coexistence + Part-page delete (dimension goes too, survives reload); a
+  pre-A7 label-less face doc seeded via PouchDB reads back as `side` on Part/Capture/Annotate.
+- New testids (docs/testids.md): `capture-chip-<label>`, `custom-face`, `custom-face-card`,
+  `custom-face-label`, `custom-face-error`, `custom-face-plane-<kind>`, `custom-face-add`,
+  `custom-face-cancel`, `custom-face-remove`, `faces-edit`, `faces-edit-list`, `face-remove`,
+  `face-delete-confirm`, `face-delete-cancel`; `face-<kind>` → `face-<label>` (identical for
+  defaults). Nothing existing changed.
+- Verified: `npx rescript build` clean under `+a`, `npm test` 193/193 (core 100 % lines),
+  `npm run build`, Playwright Chromium **30/30** (26 existing + 4 new, `E2E_PORT=3320`).
+  Screenshots at 390×844 (custom card open, duplicate error, custom chip selected, annotate
+  title, custom face captured, Part slots, Part edit/delete confirm) reviewed by eye.

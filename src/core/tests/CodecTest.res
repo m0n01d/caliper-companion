@@ -160,3 +160,64 @@ describe("Codec — part", () => {
     expect(Codec.decodePart(JSON.Null))->toEqual(None)
   })
 })
+
+// SPEC §8a A7 — `label` on face docs: additive, defaults to the kind's own
+// spelling when absent so pre-A7 data keeps decoding.
+describe("Codec — face label (SPEC §8a A7)", () => {
+  test("encodes label alongside kind", () => {
+    switch Codec.encodeFace(Fixture.sideFace) {
+    | Object(fields) => expect(Dict.get(fields, "label"))->toEqual(Some(JSON.String("side")))
+    | _ => expect(false)->toBeTruthy
+    }
+  })
+
+  test("round-trips a custom-labelled face of a default kind", () => {
+    let leftSide: Types.face = {...Fixture.sideFace, id: "face:left", label: "left_side"}
+    expect(Codec.decodeFace(Codec.encodeFace(leftSide)))->toEqual(Some(leftSide))
+  })
+
+  test("a face object without label decodes with label = kind (pre-A7 data)", () => {
+    let legacy = switch Codec.encodeFace(Fixture.endFace) {
+    | Object(fields) =>
+      Dict.delete(fields, "label")
+      JSON.Object(fields)
+    | other => other
+    }
+    expect(Codec.decodeFace(legacy))->toEqual(Some(Fixture.endFace))
+  })
+
+  test("a non-string label is treated as absent (lenient, defaults to kind)", () => {
+    let bad = switch Codec.encodeFace(Fixture.topFace) {
+    | Object(fields) =>
+      Dict.set(fields, "label", JSON.Number(1.0))
+      JSON.Object(fields)
+    | other => other
+    }
+    expect(Codec.decodeFace(bad))->toEqual(Some(Fixture.topFace))
+  })
+})
+
+describe("Codec — face required fields", () => {
+  test("decode rejects a face missing any one required field", () => {
+    let required = [
+      "id",
+      "partId",
+      "kind",
+      "imageAttachment",
+      "pixelWidth",
+      "pixelHeight",
+      "levelDegrees",
+      "outline",
+      "capturedAt",
+    ]
+    Array.forEach(required, key => {
+      let missing = switch Codec.encodeFace(Fixture.endFace) {
+      | Object(fields) =>
+        Dict.delete(fields, key)
+        JSON.Object(fields)
+      | other => other
+      }
+      expect(Codec.decodeFace(missing))->toEqual(None)
+    })
+  })
+})

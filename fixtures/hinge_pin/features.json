@@ -18,6 +18,7 @@
     {
       "id": "face:00000000-0000-4000-8000-000000000001",
       "kind": "top",
+      "label": "top",
       "image": "faces/top.jpg",
       "annotated": "faces/top_dimensioned.png",
       "pixelWidth": 1600,
@@ -29,6 +30,7 @@
     {
       "id": "face:00000000-0000-4000-8000-000000000002",
       "kind": "side",
+      "label": "side",
       "image": "faces/side.jpg",
       "annotated": "faces/side_dimensioned.png",
       "pixelWidth": 1600,
@@ -40,6 +42,7 @@
     {
       "id": "face:00000000-0000-4000-8000-000000000003",
       "kind": "end",
+      "label": "end",
       "image": "faces/end.jpg",
       "annotated": "faces/end_dimensioned.png",
       "pixelWidth": 1200,

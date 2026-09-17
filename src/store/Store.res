@@ -349,6 +349,10 @@ module FaceDoc = {
         Some(pixelHeight),
         Some(capturedAt),
       ) =>
+      // SPEC §8a A7: `label` is additive — docs written before A7 (the
+      // owner's phone) have none and read back as the default face of
+      // their kind, so their export paths are unchanged.
+      let label = getStr(d, "label")->Option.getOr(Enums.faceKindToString(kind))
       let levelDegrees = getFloat(d, "levelDegrees")
       let outline = switch Dict.get(d, "outline") {
       | Some(JSON.Array(arr)) => Some(arr->Array.filterMap(pointFromJson))
@@ -358,6 +362,7 @@ module FaceDoc = {
         Types.id,
         partId,
         kind,
+        label,
         imageAttachment,
         pixelWidth,
         pixelHeight,
@@ -382,6 +387,7 @@ type faceWriteDoc = {
   @as("type") docType: string,
   partId: string,
   kind: string,
+  label: string,
   imageAttachment: string,
   pixelWidth: int,
   pixelHeight: int,
@@ -409,6 +415,7 @@ let putFace = async (
       docType: "face",
       partId: face.partId,
       kind: Enums.faceKindToString(face.kind),
+      label: face.label,
       imageAttachment: face.imageAttachment,
       pixelWidth: face.pixelWidth,
       pixelHeight: face.pixelHeight,
@@ -449,7 +456,11 @@ let facesOf = async (t: t, ~partId: string): array<Types.face> => {
     | _ => None
     }
   )
-  faces->Array.toSorted((a, b) => Ordering.fromInt(kindRank(a.kind) - kindRank(b.kind)))
+  // Kind order, then label (SPEC §8a A7: several faces may share a kind).
+  faces->Array.toSorted((a, b) => {
+    let byKind = Ordering.fromInt(kindRank(a.kind) - kindRank(b.kind))
+    Ordering.isEqual(byKind) ? String.compare(a.label, b.label) : byKind
+  })
 }
 
 let deleteFace = async (t: t, faceId: string): unit => {

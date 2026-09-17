@@ -174,3 +174,56 @@ describe("FeaturesDocument.make — errors", () => {
     )->toEqual(Error(Reconcile.KindConflict("wall")))
   })
 })
+
+// SPEC §8a A7 — face labels: `"label"` right after `"kind"`, bundle paths
+// named by the label, faces sorted by kind order then label.
+describe("FeaturesDocument — face labels (SPEC §8a A7)", () => {
+  let leftSide: Types.face = {
+    ...Fixture.sideFace,
+    id: "face:00000000-0000-4000-8000-000000000009",
+    label: "left_side",
+  }
+  let run = (faceList: array<Types.face>): string =>
+    switch FeaturesDocument.make(
+      ~part=Fixture.part,
+      ~faces=Array.map(faceList, (face: Types.face) =>
+        ({face, renderScale: 1.0}: FeaturesDocument.faceExport)
+      ),
+      ~dimensions=Fixture.dimensions,
+      ~exportedAt="2026-09-17T14:12:03Z",
+      ~appVersion="0.1.0",
+      ~handsOnSeconds=None,
+    ) {
+    | Ok(text) => text
+    | Error(_) => ""
+    }
+
+  test("emits label on the line right after kind", () => {
+    let text = run(Fixture.faces)
+    expect(String.includes(text, "\"kind\": \"side\",\n      \"label\": \"side\","))->toBeTruthy
+  })
+
+  test("default faces keep their pre-A7 paths", () => {
+    let text = run(Fixture.faces)
+    expect(String.includes(text, "\"image\": \"faces/top.jpg\""))->toBeTruthy
+    expect(String.includes(text, "\"annotated\": \"faces/end_dimensioned.png\""))->toBeTruthy
+  })
+
+  test("a custom label names the image and annotated paths", () => {
+    let text = run(Array.concat(Fixture.faces, [leftSide]))
+    expect(String.includes(text, "\"kind\": \"side\",\n      \"label\": \"left_side\","))->toBeTruthy
+    expect(String.includes(text, "\"image\": \"faces/left_side.jpg\""))->toBeTruthy
+    expect(String.includes(text, "\"annotated\": \"faces/left_side_dimensioned.png\""))->toBeTruthy
+  })
+
+  test("faces sort by kind order, then label, regardless of input order", () => {
+    let aSide: Types.face = {...leftSide, id: "face:a", label: "a_side"}
+    let text = run([Fixture.endFace, Fixture.sideFace, leftSide, aSide, Fixture.topFace])
+    let at = label => String.indexOf(text, "\"label\": \"" ++ label ++ "\"")
+    expect(at("top") >= 0)->toBeTruthy
+    expect(at("top") < at("a_side"))->toBeTruthy
+    expect(at("a_side") < at("left_side"))->toBeTruthy
+    expect(at("left_side") < at("side"))->toBeTruthy
+    expect(at("side") < at("end"))->toBeTruthy
+  })
+})
