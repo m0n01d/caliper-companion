@@ -1,7 +1,27 @@
 /* PartsList — page-scoped styles. Everything else (buttons, fields, the
    list group/row shape, segmented control) comes from the shared classes in
    src/global.css and the Ui.res components; this file only carries what's
-   truly specific to this screen. Tokens: src/theme.css (--cc-*). */
+   truly specific to this screen. Tokens: src/theme.css (--cc-*).
+
+   The bar's trailing "Edit"/"Done" text action (`parts-edit`) reuses the
+   `.bar-action` rule defined in Part.css, not redeclared here — CSS in this
+   app is unscoped app-wide (index.html links every page's stylesheet
+   unconditionally, plain <link> tags, no CSS Modules), so that one rule
+   already applies to this page's button too. */
+
+/* P2a (docs/design/review-2026-09-17.md P2, DESIGN.md §4 "List row
+   (Part)"): 72 px first-face thumbnail. `Ui.ListThumb`/`.list-thumb`
+   (global.css) has no size prop and is 52 px by default — also used by
+   Part.res's own face-edit list at that size — so this overrides it scoped
+   to `.parts-page` (PartsList.res's view wrapper) only; an unscoped
+   override here would leak into that other page given the same unscoped-
+   CSS caveat above. Reported as a `Ui.ListThumb` gap (no `~size` prop) in
+   the P2a report rather than touching Ui.res, which is out of this track's
+   file ownership. */
+.parts-page .list-thumb {
+  width: 72px;
+  height: 72px;
+}
 
 .parts-form-row {
   align-items: flex-start;
