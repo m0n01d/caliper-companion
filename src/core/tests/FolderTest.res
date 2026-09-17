@@ -1,4 +1,5 @@
-// FolderTest — SPEC §8a A10 / docs/design/a10-folders-review.md §4's table.
+// FolderTest — SPEC §8a A10 / docs/design/a10-folders-review.md §4's table,
+// plus A12a's structure helpers, `validateSegment` and the prefix-wise `snap`.
 
 open Vitest
 
@@ -86,6 +87,132 @@ describe("Folder.snap", () => {
   test("no match leaves the path as typed", () => {
     expect(Folder.snap("Miata/Exterior", ~existing=["Miata/Interior"]))->toBe("Miata/Exterior")
     expect(Folder.snap("", ~existing=["Miata/Interior"]))->toBe("")
+    expect(Folder.snap("Miata", ~existing=[]))->toBe("Miata")
+  })
+
+  // A12a (review S4): every ancestor prefix snaps on its own, so a sibling
+  // typed in another case still lands under the existing parent.
+  test("prefix-wise: an ancestor prefix snaps even when the whole path is new", () => {
+    expect(Folder.snap("miata/exterior", ~existing=["Miata/Interior"]))->toBe("Miata/exterior")
+    expect(Folder.snap("miata/interior", ~existing=["Miata/Interior"]))->toBe("Miata/Interior")
+    expect(Folder.snap("MIATA/interior/dash", ~existing=["Miata/Interior"]))->toBe(
+      "Miata/Interior/dash",
+    )
+    expect(Folder.snap("miata", ~existing=["Miata/Interior"]))->toBe("Miata")
+  })
+})
+
+describe("Folder structure helpers (A12a)", () => {
+  test("parent", () => {
+    expect(Folder.parent("a/b/c"))->toBe("a/b")
+    expect(Folder.parent("a"))->toBe("")
+    expect(Folder.parent(""))->toBe("")
+  })
+
+  test("leaf", () => {
+    expect(Folder.leaf("a/b/c"))->toBe("c")
+    expect(Folder.leaf("a"))->toBe("a")
+    expect(Folder.leaf(""))->toBe("")
+  })
+
+  test("ancestors", () => {
+    expect(Folder.ancestors("a/b/c"))->toEqual(["a", "a/b"])
+    expect(Folder.ancestors("a"))->toEqual([])
+    expect(Folder.ancestors(""))->toEqual([])
+  })
+
+  test("depth", () => {
+    expect(Folder.depth(""))->toBe(0)
+    expect(Folder.depth("a/b"))->toBe(2)
+  })
+
+  test("join", () => {
+    expect(Folder.join(~parent="", ~name="a"))->toBe("a")
+    expect(Folder.join(~parent="a/b", ~name="c"))->toBe("a/b/c")
+  })
+
+  test("isUnder is strict and everything is under the root", () => {
+    expect(Folder.isUnder("a/b/c", ~folder="a"))->toBeTruthy
+    expect(Folder.isUnder("a/b/c", ~folder="a/b"))->toBeTruthy
+    expect(Folder.isUnder("ab", ~folder="a"))->toBeFalsy
+    expect(Folder.isUnder("a", ~folder="a"))->toBeFalsy
+    expect(Folder.isUnder("a", ~folder=""))->toBeTruthy
+    expect(Folder.isUnder("", ~folder=""))->toBeTruthy
+    expect(Folder.isUnder("x/y", ~folder=""))->toBeTruthy
+  })
+
+  test("rebase rewrites the prefix, the folder itself, and nothing else", () => {
+    expect(Folder.rebase("a/b/c", ~from="a", ~to="z"))->toBe("z/b/c")
+    expect(Folder.rebase("a", ~from="a", ~to="z"))->toBe("z")
+    expect(Folder.rebase("ab/c", ~from="a", ~to="z"))->toBe("ab/c")
+    expect(Folder.rebase("q", ~from="a", ~to="z"))->toBe("q")
+    expect(Folder.rebase("a/b", ~from="a", ~to=""))->toBe("b")
+    expect(Folder.rebase("b", ~from="", ~to="z"))->toBe("z/b")
+  })
+})
+
+describe("Folder.validateSegment", () => {
+  test("a valid name is Ok with its normalised spelling", () => {
+    expect(Folder.validateSegment("Interior"))->toEqual(Ok("Interior"))
+    expect(Folder.validateSegment(" interior "))->toEqual(Ok("interior"))
+    expect(Folder.validateSegment("Miata  (NB)"))->toEqual(Ok("Miata (NB)"))
+  })
+
+  test("a slash, an empty name, a bad character and a 33-char name are BadSegment", () => {
+    expect(Folder.validateSegment("a/b"))->toEqual(Error(Folder.BadSegment("a/b")))
+    expect(Folder.validateSegment("?"))->toEqual(Error(Folder.BadSegment("?")))
+    expect(Folder.validateSegment(""))->toEqual(Error(Folder.BadSegment("")))
+    expect(Folder.validateSegment("   "))->toEqual(Error(Folder.BadSegment("")))
+    let long = repeat("a", 33)
+    expect(Folder.validateSegment(long))->toEqual(Error(Folder.BadSegment(long)))
+  })
+
+  test("its error renders through errorMessage like validate's", () => {
+    switch Folder.validateSegment("a/b") {
+    | Error(e) => expect(String.includes(Folder.errorMessage(e), "\"a/b\" can use"))->toBeTruthy
+    | Ok(_) => expect(false)->toBeTruthy
+    }
+  })
+})
+
+describe("Folder.tree", () => {
+  test("adds ancestors, dedupes, drops the root and orders depth-first", () => {
+    expect(Folder.tree(["Miata/Interior", "Archive", "", "Miata/Interior"]))->toEqual([
+      "Archive",
+      "Miata",
+      "Miata/Interior",
+    ])
+  })
+
+  test("children follow their parent; siblings sort case-insensitively", () => {
+    // "B"/"b" twins can't come out of `snap`, but if they did each keeps its
+    // own children right under it (the exact spelling breaks the tie).
+    expect(Folder.tree(["b/x", "a", "B/y", "a/Z", "a/b"]))->toEqual([
+      "a",
+      "a/b",
+      "a/Z",
+      "B",
+      "B/y",
+      "b",
+      "b/x",
+    ])
+  })
+
+  test("a parent sorts before a sibling whose name extends it", () => {
+    // Segment-wise, not string-wise: "a" < "a/b" < "a b" even though "a b"
+    // sorts before "a/b" as a plain string (space < slash).
+    expect(Folder.tree(["a b", "a/b"]))->toEqual(["a", "a/b", "a b"])
+  })
+
+  test("empty in, empty out", () => {
+    expect(Folder.tree([]))->toEqual([])
+  })
+
+  test("compareTree: a prefix sorts first from either side; equal paths are equal", () => {
+    expect(Folder.compareTree("a", "a/b"))->toBe(Ordering.less)
+    expect(Folder.compareTree("a/b", "a"))->toBe(Ordering.greater)
+    expect(Folder.compareTree("a", "a"))->toBe(Ordering.equal)
+    expect(Folder.compareTree("B", "b"))->toBe(Ordering.less)
   })
 })
 

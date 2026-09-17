@@ -562,3 +562,72 @@ describe("Store — part path (SPEC §8a A10)", () => {
     }
   })
 })
+
+// SPEC §8a A12a — explicit folder docs. `ensureFolders` fills in every
+// ancestor in one `bulkDocs`, is idempotent, and `createPart`/`putPart`
+// call it for a non-empty path.
+describe("Store — folders (SPEC §8a A12a)", () => {
+  testAsync("ensureFolders creates the paths and every ancestor once; a second call creates nothing", async () => {
+    let store = freshStore()
+    expect(await Store.listFolders(store))->toEqual([])
+    let created = await Store.ensureFolders(store, ~paths=["a/b/c", "a/x"])
+    expect(created)->toEqual(["a", "a/b", "a/b/c", "a/x"])
+    expect(await Store.listFolders(store))->toEqual(["a", "a/b", "a/b/c", "a/x"])
+    let again = await Store.ensureFolders(store, ~paths=["a/b/c", "a/x"])
+    expect(again)->toEqual([])
+    expect(await Store.listFolders(store))->toEqual(["a", "a/b", "a/b/c", "a/x"])
+    // The root is never a doc; a new sibling only adds itself.
+    expect(await Store.ensureFolders(store, ~paths=["", "a/y"]))->toEqual(["a/y"])
+  })
+
+  testAsync("folder docs carry type, path, createdAt and updatedAt", async () => {
+    let dir = freshDbPath()
+    let store = openStore(dir)
+    let _ = await Store.ensureFolder(store, ~path="Miata")
+    let raw = PouchDb.make(dir, {})
+    let doc = await PouchDb.get(raw, "folder:Miata", {})
+    expect(Dict.get(doc, "type"))->toEqual(Some(JSON.String("folder")))
+    expect(Dict.get(doc, "path"))->toEqual(Some(JSON.String("Miata")))
+    let createdAt = Dict.get(doc, "createdAt")
+    expect(createdAt->Option.isSome)->toBeTruthy
+    expect(Dict.get(doc, "updatedAt"))->toEqual(createdAt)
+  })
+
+  testAsync("listFolders sorts case-insensitively", async () => {
+    let store = freshStore()
+    let _ = await Store.ensureFolders(store, ~paths=["b", "A", "c"])
+    expect(await Store.listFolders(store))->toEqual(["A", "b", "c"])
+  })
+
+  testAsync("createPart and putPart leave folder docs behind for their path", async () => {
+    let store = freshStore()
+    let part = await Store.createPart(
+      store,
+      ~name="Window switch bezel",
+      ~slug="window_switch_bezel",
+      ~path="Miata/Interior",
+      ~units=Types.Mm,
+    )
+    expect(await Store.listFolders(store))->toEqual(["Miata", "Miata/Interior"])
+    let _ = await Store.putPart(store, {...part, path: "Miata/Exterior"})
+    expect(await Store.listFolders(store))->toEqual(["Miata", "Miata/Exterior", "Miata/Interior"])
+    // A root part touches no folder doc.
+    let _ = await Store.createPart(store, ~name="Hinge pin", ~slug="hinge_pin", ~path="", ~units=Types.Mm)
+    expect(await Store.listFolders(store))->toEqual(["Miata", "Miata/Exterior", "Miata/Interior"])
+  })
+
+  testAsync("a folder doc written by someone else counts as existing", async () => {
+    let dir = freshDbPath()
+    let store = openStore(dir)
+    let raw = PouchDb.make(dir, {})
+    let doc: PouchDb.doc = Dict.make()
+    Dict.set(doc, "_id", JSON.Encode.string("folder:Archive"))
+    Dict.set(doc, "type", JSON.Encode.string("folder"))
+    Dict.set(doc, "path", JSON.Encode.string("Archive"))
+    Dict.set(doc, "createdAt", JSON.Encode.string(Clock.nowIso()))
+    Dict.set(doc, "updatedAt", JSON.Encode.string(Clock.nowIso()))
+    let _ = await PouchDb.put(raw, doc)
+    expect(await Store.ensureFolders(store, ~paths=["Archive/2025"]))->toEqual(["Archive/2025"])
+    expect(await Store.listFolders(store))->toEqual(["Archive", "Archive/2025"])
+  })
+})
