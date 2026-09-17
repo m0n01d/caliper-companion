@@ -80,6 +80,9 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     // to `<body>`. Reloaded first for a clean "first Tab" starting point —
     // see the longer comment in the part-page test below on why.
     await page.reload()
+    // The app renders after its module loads; on a cold run the first Tab
+    // could arrive before any control exists and land on <body>.
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
     await page.keyboard.press('Tab')
     const tag = await page.evaluate(() => document.activeElement?.tagName)
     expect(tag).not.toBe('BODY')
@@ -131,6 +134,7 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     // also the realistic case: a keyboard user arriving at this URL fresh.
     await page.reload()
     const backBtn = page.getByRole('button', {name: 'Back'})
+    await expect(backBtn).toBeVisible() // app rendered; see the root test's note
     await page.keyboard.press('Tab')
     await expect(backBtn).toBeFocused()
     await page.keyboard.press('Tab')
@@ -150,6 +154,7 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     // here (a clean "first Tab" starting point, not a same-document hop).
     await page.reload()
     const backBtn = page.getByRole('button', {name: 'Back'})
+    await expect(backBtn).toBeVisible() // app rendered; see the root test's note
     await page.keyboard.press('Tab')
     await expect(backBtn).toBeFocused()
     await page.keyboard.press('Tab')
