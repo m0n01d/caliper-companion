@@ -762,3 +762,65 @@ under `src/app/pages/` was edited; wave 2 restyles them onto these classes.
   app's own dimension mark — amber caliper jaws + dimension line, teal reading bar — on `cc-ground`.
   `favicon.svg` is rounded for browser tabs; the PNGs (192, 512, apple-touch 180) are full-bleed
   squares because iOS and the manifest mask corners themselves. Re-run the script after any change.
+## 2026-09-17 — A5 EdgeSnap module (agent/w2-edgesnap)
+
+Pure half of SPEC §8a A5 only (bullets 1, 2, 5): `src/app/annotate/EdgeSnap.res`, its unit tests,
+and `src/bindings/ImageData.res` (the grayscale-patch binding). The toolbar toggle, the ring
+feedback, and wiring taps into this module are a later agent's job on `Annotate.res`, which this
+track never touched.
+
+- **`EdgeSnap.res` is pure** — no DOM, no bindings, no React — per the task brief and SPEC's own
+  "no DOM" framing for this module. `patch`/`px`/`result`/`threshold` are plain records; every
+  top-level `let` is a real export (no `.resi`), same convention as `Viewport.res`, which is why
+  the tests can call "private" helpers (`lumaAt`, `gradientMagnitude`, `medianGradient`, `cutoff`)
+  directly rather than only exercising them indirectly.
+- **`snapPoint`**: scans the integer pixel rectangle bounding the `radius` disk around `at`,
+  candidate = highest Sobel magnitude within the disk, ties broken by nearest-to-`at`; `None` when
+  nothing clears `max(relative × medianGradient, absolute)`.
+- **`snapPair`**: direction `d` = unit(p2 − p1); each end walks the segment line through itself
+  (`± radius` along `d`, 0.5 px steps, `±1` px across via the unit normal — "robust to thin lines"
+  per spec) and scores by the **directional** dot product `|gradient · d|`, so an edge perpendicular
+  to the segment wins and one parallel to it scores ~0. `result.strength` is still the plain Sobel
+  magnitude at the winning pixel (matches `snapPoint`'s `result`) — the directional dot product is
+  only the *selection* score, never what's reported back. Judgment call, not spelled out in the
+  bullet's signature comment; noted here for the wiring agent.
+- **Judgment call — threshold on `snapPair`**: "the best gradient" in the spec bullet is applied to
+  the directional score (what's actually being maximized), not the raw magnitude — a strong edge
+  running parallel to the segment can have high magnitude but ~zero directional score and correctly
+  stays unsnapped either way, but this is the reading that matters when the two disagree.
+  Sub-pixel refinement (the bullet's "optional" parabolic fit) was **not** implemented — integer-
+  pixel landing already meets the ≤1 px acceptance bar on every synthetic patch tested, and the
+  spec explicitly makes it optional.
+- **`ImageData.res` bitmap-type note (flagged for the wiring agent):** `Canvas.res` and
+  `Canvas2d.res` each already declare their own opaque `imageBitmap` type rather than sharing one
+  (`ImageDecode.res` bridges two of them with one justified `%identity` cast). This task's brief
+  said not to add a third such cast in this file, so `ImageData.res` declares its **own** opaque
+  `imageBitmap` — structurally the same runtime `ImageBitmap`, nominally distinct. Whoever wires
+  taps to `EdgeSnap` holds a `Canvas.imageBitmap` (the annotate page's own oriented decode) and is
+  the one who converts it to `ImageData.imageBitmap` before calling `lumaPatchOf` — one line, same
+  technique and justification as `ImageDecode.res`'s `asCanvasBitmap`. This file's own render-target
+  plumbing (`OffscreenCanvas` with the detached-`<canvas>` fallback) mirrors `Canvas2d.res`'s
+  structure on purpose rather than reusing its code, since `Canvas2d.drawImage` is bound to *its*
+  bitmap type. `lumaPatchOf` returns a `promise` (per the spec signature) even though every step
+  today is synchronous — documented in the file as leaving room for a future async
+  `createImageBitmap` resize path without a signature change.
+- **Noise-fixture judgment call**: the first deterministic "noise" generator tried was a position
+  hash (`x * bigPrime + y * bigPrime2 + seed * bigPrime3, mod P`). It reads as noise by eye but is
+  linear in `x`/`y`, and ReScript's `int` arithmetic truncates to 32 bits after every op (`| 0` in
+  the compiled output) — the combination produced visibly banded, Sobel-detectable "edges" in a
+  supposedly-flat noise patch and failed the "noise never snaps" test. Replaced with a small LCG
+  (`state = state * 25173 + 13849 mod 65536`, Turbo-Pascal constants, deliberately small enough that
+  the arithmetic never overflows 32 bits) threaded across the patch in raster order — genuinely
+  uncorrelated neighbour-to-neighbour, verified against the compiled module directly (`node -e
+  "import(...)"` against `EdgeSnap.res.mjs`, not a JS re-implementation) before it went into the
+  `.res` test file.
+- Verified: `npx rescript build` clean (`warnings.error = "+a"`) from a clean `rescript clean` (64
+  modules); `npm test` 171/171 green (152 pre-existing + 19 new `EdgeSnapTest.res`); `EdgeSnap.res`
+  at **100% statement/branch/function/line coverage** via a throwaway local vitest config scoped to
+  just that file (deleted before committing — `vitest.config.js` itself is untouched, per the task
+  brief's "add it to your local reasoning, not to the config").
+- Not done / open for the wiring agent: the toggle pill, the 150 ms snap ring, `settings.snap`
+  persistence, wiring `snapPoint`/`snapPair` into `Annotate.res`'s tap handling, and the
+  `Canvas.imageBitmap → ImageData.imageBitmap` cast described above. The Playwright test on
+  `top.jpg` (SPEC bullet 6) also belongs to that track — it needs the toggle and the live canvas to
+  exist first.
