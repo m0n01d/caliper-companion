@@ -641,3 +641,143 @@ test.describe('annotate — SPEC §8a A5 (edge snap)', () => {
     await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-snapped', 'false,true')
   })
 })
+
+// SPEC §8a A9: every saved dimension of the face is listed under the panel,
+// and the list and the canvas select the same thing. The case the list
+// exists for — two dimensions drawn on top of each other — cannot be built
+// by tapping the same points twice: the canvas's own hit-testing (A1) would
+// select the saved dimension instead of placing a point on it. So the second
+// pair is placed a finger below the first and its body dragged up onto it
+// before it is saved. Reduced motion makes the A6 fit and the row scroll
+// instant, so every state is a plain attribute wait.
+test.describe('annotate — SPEC §8a A9 (dimension list)', () => {
+  const A = {x: 0.2, y: 0.5}
+  const B = {x: 0.8, y: 0.5}
+  const rows = page => page.getByTestId('dimension-row')
+  const selectedRows = page => page.locator('[data-testid="dimension-row"][aria-selected="true"]')
+
+  async function openFaceStill(page) {
+    await page.emulateMedia({reducedMotion: 'reduce'})
+    await openFace(page)
+    // Identical endpoints need identical taps; snap would move the second
+    // pair's taps by whatever edges sit a finger lower.
+    await setSnap(page, false)
+  }
+
+  // Save a second dimension with exactly the endpoints of a saved one: the
+  // pair goes down 40 screen px below the saved line (past its 22 px handle
+  // and 16 px body reach), then its body is dragged up onto the line.
+  async function saveOnTopOf(page, a, b, reading, name) {
+    const t0 = await readTransform(page)
+    const dy = 40 / (t0.h * t0.s)
+    await tapNormalized(page, {x: a.x, y: a.y + dy})
+    await tapNormalized(page, {x: b.x, y: b.y + dy})
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'fitted')
+    const t1 = await readTransform(page)
+    const mid = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2}
+    const from = screenOf(t1, {x: mid.x, y: mid.y + dy})
+    const to = screenOf(t1, mid)
+    await dragFrom(page, from, to.x - from.x, to.y - from.y)
+    const pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    expectNear(pts[0], a)
+    expectNear(pts[1], b)
+    // The drag put focus on the canvas; fill the fields directly.
+    await page.getByTestId('reading').fill(reading)
+    await page.getByTestId('name').fill(name)
+    await page.getByTestId('save').click()
+  }
+
+  async function twoOnOneLine(page) {
+    await saveDimension(page, A, B, '10', 'a_one')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await saveOnTopOf(page, A, B, '20', 'a_two')
+    await expect(page.getByTestId('dimension-count')).toHaveText('2')
+    await expect(rows(page)).toHaveCount(2)
+    const dims = await dimensionPoints(page)
+    expect(near(dims[1].p1, {x: dims[0].p1[0], y: dims[0].p1[1]})).toBe(true)
+    expect(near(dims[1].p2, {x: dims[0].p2[0], y: dims[0].p2[1]})).toBe(true)
+  }
+
+  test('a fresh face shows the one-line empty state; the first save replaces it with a row', async ({page}) => {
+    await openFaceStill(page)
+    await expect(page.getByTestId('dimension-list')).toContainText('No dimensions on this face yet.')
+    await expect(page.getByTestId('dimension-empty')).toBeVisible()
+    await expect(rows(page)).toHaveCount(0)
+
+    await saveDimension(page, A, B, '10', 'a_one')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('dimension-empty')).toHaveCount(0)
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('a_one')
+    await expect(rows(page).first()).toContainText('10.00 mm')
+    await expect(rows(page).first()).toHaveAttribute('aria-selected', 'false')
+  })
+
+  test('two dimensions on one line: the second row selects the second; Delete removes only it', async ({page}) => {
+    await openFaceStill(page)
+    await twoOnOneLine(page)
+    const first = rows(page).nth(0)
+    const second = rows(page).nth(1)
+    await expect(first).toContainText('a_one')
+    await expect(second).toContainText('a_two')
+    await expect(second).toHaveAccessibleName('a_two, 20.00 mm, length')
+    await expect(selectedRows(page)).toHaveCount(0)
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+
+    await second.click()
+    await expect(page.getByTestId('delete')).toBeVisible()
+    await expect(page.getByTestId('reading')).toHaveValue('20')
+    await expect(page.getByTestId('name')).toHaveValue('a_two')
+    await expect(page.getByTestId('save')).toHaveText('Update')
+    await expect(second).toHaveAttribute('aria-selected', 'true')
+    await expect(first).toHaveAttribute('aria-selected', 'false')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-selected', await second.getAttribute('data-id'))
+    // A6 applies to the selected segment; focus stays on the row the user chose.
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'fitted')
+    await expect(second).toBeFocused()
+
+    await page.getByTestId('delete').click()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('a_one')
+    await expect(selectedRows(page)).toHaveCount(0)
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+
+    await page.reload()
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('a_one')
+  })
+
+  test('a tap on the shared line selects one of them and marks its row', async ({page}) => {
+    await openFaceStill(page)
+    await twoOnOneLine(page)
+    await tapNormalized(page, {x: 0.5, y: 0.5})
+    await expect(page.getByTestId('delete')).toBeVisible()
+    await expect(selectedRows(page)).toHaveCount(1)
+    const row = selectedRows(page).first()
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-selected', await row.getAttribute('data-id'))
+    await expect(row).toBeInViewport()
+    // The panel edits the same one the row marks.
+    await expect(page.getByTestId('name')).toHaveValue((await row.getAttribute('aria-label')).split(',')[0])
+  })
+
+  test('tapping the selected row again clears the selection, as Clear does', async ({page}) => {
+    await openFaceStill(page)
+    await twoOnOneLine(page)
+    const first = rows(page).nth(0)
+    await first.click()
+    await expect(first).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('delete')).toBeVisible()
+
+    await first.click()
+    await expect(selectedRows(page)).toHaveCount(0)
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+    await expect(page.getByTestId('pending-points')).toHaveText('')
+    await expect(page.getByTestId('reading')).toHaveValue('')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-selected', '')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'none')
+    await expect(rows(page)).toHaveCount(2)
+    await expect(first).toBeFocused()
+  })
+})

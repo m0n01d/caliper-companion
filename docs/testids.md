@@ -72,6 +72,8 @@ stable; add to this list before you rely on a new one.
   `data-snap` (SPEC §8a A5) is `on|off` — the Snap pill's state. `data-snapped` is `"p1,p2"` as two
   booleans (`true,false` after a first tap that snapped); `false` for a point the user dragged (a
   drag pins it: no later tap re-snaps it) and always for a saved dimension's points.
+  `data-selected` (SPEC §8a A9) is the id of the dimension being edited — the one a canvas tap or a
+  `dimension-row` tap selected — and empty when none is.
 - `snap-toggle` — the Snap pill in the toolbar (a button, `aria-pressed`), SPEC §8a A5. On by default,
   persisted as `settings.snap` — the same field as Settings' `snap-setting-toggle`. With it on, the
   first tap moves to the strongest edge within a fingertip (16 px, then 24 px) unless the tap already
@@ -84,6 +86,15 @@ stable; add to this list before you rely on a new one.
   normalized to 4 dp (ids contain a colon — split each entry at its last one). `aria-busy="true"`
   while a drag's Store write is in flight (SPEC §8a A1: a drag on a saved handle or line body
   persists on release; wait for `aria-busy="false"` before reloading)
+- `dimension-list` — the inset grouped list of this face's saved dimensions under the panel (SPEC
+  §8a A9), in creation order; `role="list"` once it has rows · `dimension-row` — one `<button>` per
+  dimension, `data-id="<dimension id>"`, `aria-selected="true"` on the one being edited (mirrors the
+  canvas selection either way round), accessible name `<name>, <value> <unit>, <kind>`. A tap selects
+  it exactly as a canvas tap does (fields fill, `save` reads "Update", `delete` appears, A6 fits the
+  view to its segment); a tap on the selected row deselects as `cancel` does. Focus stays on the row
+  after either tap. A canvas selection scrolls its row into view (`scrollIntoView` `nearest`, instant
+  under reduced motion) · `dimension-empty` — the Footnote "No dimensions on this face yet." inside
+  `dimension-list` while the face has none
 - `zoom` — readout of `scale / fitScale` to two decimals · `zoom-in` / `zoom-out` — ×1.5 about the
   canvas centre (Playwright can't pinch; pinch is Pointer Events on device)
 - `reading` — reading text input (`inputmode="decimal" enterkeyhint="next"`) · `reading-error` ·

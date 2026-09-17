@@ -187,6 +187,7 @@ type msg =
   | Deleted(result<array<Types.dimension>, string>)
   | Moved(result<array<Types.dimension>, string>)
   | CancelClicked
+  | RowTapped(string) // SPEC §8a A9: a dimension-list row, by dimension id
 
 let tapSlop = 8.0
 let handleHitRadius = 22.0 // a 44 px target (DESIGN.md §2) on a 22 px handle
@@ -220,6 +221,22 @@ let focusTestId = (id: string, ~select: bool): Tea.cmd<msg> =>
       if select {
         el->Canvas.select
       }
+    | None => ()
+    }
+  )
+
+// SPEC §8a A9 bullet 3: bring the selected dimension's row into view —
+// after a selection made on the canvas as much as one made on the list.
+// `nearest` never moves a row that is already visible, and the smooth
+// scroll is instant under reduced motion (DESIGN.md §11.1).
+let scrollRowIntoView = (id: string): Tea.cmd<msg> =>
+  Tea.effect(_dispatch =>
+    switch Canvas.querySelector(`[data-testid="dimension-row"][data-id="${id}"]`) {
+    | Some(el) =>
+      el->Canvas.scrollIntoView({
+        block: "nearest",
+        behavior: Canvas.prefersReducedMotion() ? "instant" : "smooth",
+      })
     | None => ()
     }
   )
@@ -753,20 +770,29 @@ let clearEntry = (m: model): model => {
 
 // Existing dimension → the sheet shows its values for edit (M4 bullet 8);
 // its endpoints become the draggable pending handles.
-let select = (m: model, l: loaded, id: string): model =>
+let select = (m: model, d: Types.dimension): model => {
+  ...m,
+  selected: Some(d.id),
+  pending: {p1: Some(d.p1), p2: Some(d.p2)},
+  marks: noMarks, // a saved dimension's points never snap (A5)
+  reading: Float.toString(d.value),
+  name: d.name,
+  kind: d.kind,
+  tolerance: Float.toString(d.tolerance),
+  error: None,
+}
+
+// The one selection path for the canvas and the list (SPEC §8a A9: "the
+// list and the canvas select the same thing"): the sheet fills, the view
+// fits the dimension's segment (A6 — its points are now the pending pair,
+// so Save, Clear and Delete restore the view as they do for a placed
+// pair), and its row is scrolled into view.
+let selectDimension = (m: model, l: loaded, id: string): (model, Tea.cmd<msg>) =>
   switch l.dims->Array.find(d => d.id == id) {
-  | Some(d) => {
-      ...m,
-      selected: Some(id),
-      pending: {p1: Some(d.p1), p2: Some(d.p2)},
-      marks: noMarks, // a saved dimension's points never snap (A5)
-      reading: Float.toString(d.value),
-      name: d.name,
-      kind: d.kind,
-      tolerance: Float.toString(d.tolerance),
-      error: None,
-    }
-  | None => m
+  | Some(d) =>
+    let (m, fit) = fitToPending(select(m, d), l)
+    (m, Tea.batch([fit, scrollRowIntoView(id)]))
+  | None => (m, Tea.none)
   }
 
 let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>) => {
@@ -792,7 +818,7 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
     let (m, fit) = fitToPending(m, l)
     (m, Tea.batch([ring, fit]))
   // A tap (no movement) on a saved dimension still selects it (SPEC §8a A1).
-  | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => (select(m, l, id), Tea.none)
+  | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => selectDimension(m, l, id)
   // The pending pair is already the one being edited: a tap on it is a no-op.
   | (_, _, HitHandle(Pending, _)) | (_, _, HitBody(Pending)) => (m, Tea.none)
   | (_, _, HitNothing) =>
@@ -1163,6 +1189,17 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     )
   | (Moved(Error(why)), _) => ({...m, moving: false, error: Some(why)}, Tea.none)
 
+  // SPEC §8a A9: a row tap selects as a canvas tap does; the selected row
+  // tapped again deselects as Clear does. Focus stays on the row either
+  // way — the user chose the list on purpose — so neither path moves it
+  // to the canvas the way the Clear button does.
+  | (RowTapped(id), Ready(l)) =>
+    if m.selected == Some(id) {
+      endAutoFit(clearEntry(m), l)
+    } else {
+      selectDimension(m, l, id)
+    }
+
   | (CancelClicked, Ready(l)) =>
     let (m, restore) = endAutoFit(clearEntry(m), l)
     (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
@@ -1183,7 +1220,8 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       | Deleted(_)
       | Moved(Ok(_))
       | SnapToggled
-      | SnapSaved(Error(_)),
+      | SnapSaved(Error(_))
+      | RowTapped(_),
       _,
     ) => (m, Tea.none)
   }
@@ -1307,6 +1345,7 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
   el->Canvas.setAttribute("data-autofit", scene.autofit)
   el->Canvas.setAttribute("data-snap", scene.snap)
   el->Canvas.setAttribute("data-snapped", scene.snapped)
+  el->Canvas.setAttribute("data-selected", scene.selected->Option.getOr("")) // A9: the selected dimension id
   el->Canvas.setAttribute(
     "data-image-size",
     Float.toString(scene.imageW) ++ "x" ++ Float.toString(scene.imageH),
@@ -1513,6 +1552,94 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   </div>
 }
 
+// ── SPEC §8a A9: the dimension list ────────────────────────────────────
+//
+// Every saved dimension of the face, listed under the controls so one of
+// two drawn on top of each other can be picked without tapping the photo.
+// Selection state is the model's `selected`; a row tap dispatches
+// `RowTapped` and a canvas selection marks its row — no state of its own.
+
+// The kind glyph a row leads with: the canvas pill's prefix (`formatLabel`),
+// nothing for a length — the slot keeps its width so names line up.
+let kindGlyph = (kind: Types.dimensionKind): string =>
+  switch kind {
+  | Diameter => "⌀"
+  | Depth => "↓"
+  | Length => ""
+  }
+
+// A row is a real <button> (DESIGN.md §9) carrying `data-id` and
+// `aria-selected`, which `JsxDOM.domProps` cannot express — so, like
+// `Canvas.Input`, it is created through the `react/jsx-runtime` call
+// `ReactDOM.jsxKeyed` wraps, with exactly the attributes A9 names.
+// `role="listitem"` matches `Ui.ListRow`'s button rows inside a
+// `Ui.ListGroup ~asList` (`role="list"`).
+module RowButton = {
+  type props = {
+    @as("type") type_: string,
+    className: string,
+    role: string,
+    @as("data-testid") dataTestId: string,
+    @as("data-id") dataId: string,
+    @as("aria-selected") ariaSelected: bool,
+    @as("aria-label") ariaLabel: string,
+    onClick: JsxEvent.Mouse.t => unit,
+    children: React.element,
+  }
+
+  @module("react/jsx-runtime") external jsxKeyed: (string, props, string) => React.element = "jsx"
+
+  let make = (~key: string, props: props): React.element => jsxKeyed("button", props, key)
+}
+
+// One row: glyph · name (mono) · `value unit` (mono) · `± tol` (cc-text-2).
+// Accessible name "<name>, <value> <unit>, <kind>" (A9 bullet 4).
+let dimensionRow = (m: model, l: loaded, d: Types.dimension, ~dispatch: msg => unit): React.element => {
+  let units = NumberParse.unitsLabel(l.part.units)
+  let value = NumberParse.format(d.value, l.part.units)
+  RowButton.make(
+    ~key=d.id,
+    {
+      type_: "button",
+      className: "list-row annotate-dim-row",
+      role: "listitem",
+      dataTestId: "dimension-row",
+      dataId: d.id,
+      ariaSelected: m.selected == Some(d.id),
+      ariaLabel: d.name ++ ", " ++ value ++ " " ++ units ++ ", " ++ Enums.dimensionKindToString(d.kind),
+      onClick: _ => dispatch(RowTapped(d.id)),
+      children: <>
+        <span className="annotate-dim-glyph" ariaHidden=true> {React.string(kindGlyph(d.kind))} </span>
+        <span className="list-row-body">
+          <span className="list-row-title annotate-dim-name"> {React.string(d.name)} </span>
+        </span>
+        <span className="list-row-trailing annotate-dim-figures">
+          <span className="annotate-dim-value"> {React.string(value ++ " " ++ units)} </span>
+          <span className="annotate-dim-tol">
+            {React.string("± " ++ NumberParse.format(d.tolerance, l.part.units))}
+          </span>
+        </span>
+      </>,
+    },
+  )
+}
+
+// The inset grouped list (DESIGN.md §11.1), rows in creation order (`dims`
+// is createdAt-ascending), or the one-line empty state — which is not a
+// list item, so the container claims `role="list"` only when it has rows.
+let dimensionList = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
+  let empty = Array.length(l.dims) == 0
+  <div className="annotate-dimensions">
+    <Ui.ListGroup header="Dimensions" asList={!empty} testId="dimension-list">
+      {empty
+        ? <p className="annotate-dim-empty" dataTestId="dimension-empty">
+            {React.string("No dimensions on this face yet.")}
+          </p>
+        : l.dims->Array.map(d => dimensionRow(m, l, d, ~dispatch))->React.array}
+    </Ui.ListGroup>
+  </div>
+}
+
 // The control area (DESIGN.md §11.1 "Sheets", §11.2): an opaque, in-flow
 // `.panel` — reading, name + chips, kind + tolerance, Save, Clear/Delete.
 let panel = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
@@ -1644,6 +1771,7 @@ let panel = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
           : React.null}
       </div>
     </div>
+    {dimensionList(m, l, ~dispatch)}
     // DESIGN.md §9: "Dimension saved: name value" after a save. Always in
     // the tree so assistive tech is already listening when the text lands.
     <p className="visually-hidden" ariaLive=#polite dataTestId="annotate-live">
