@@ -355,3 +355,15 @@ the hands-on timer.
   > 20 % over five parts → do the next snap upgrade (Canny edge map, then Hough lines);
   < 5 % → leave snap alone.
 - [ ] No UI beyond the two readouts. Not implemented yet; try after the five-part dogfood starts.
+
+### A9 — Dimension list on the annotate screen (select from the list, not only the photo)
+
+Two dimensions drawn on top of each other are hard to pick out by tapping the photo. Every saved
+dimension of the face is also listed under the control panel; the list and the canvas select the
+same thing.
+
+- [ ] Below the panel, an inset grouped list (`data-testid="dimension-list"`) of this face's saved dimensions in creation order: one row per dimension (`dimension-row`, `data-id="<dim id>"`) showing the kind glyph (⌀ / ↓ / none), the name in mono, the value with unit, and ± tolerance in `cc-text-2`. Empty state: one Footnote line "No dimensions on this face yet." The list is part of the page scroll, never fixed.
+- [ ] Tapping a row selects that dimension for edit exactly as tapping it on the canvas does (panel fills with its values, Save reads "Update", Delete appears, the canvas highlights it, A6's fit applies to its segment). Tapping the selected row again deselects (same as Clear). The selected row is marked (`aria-selected="true"`, `cc-teal-wash` background, teal left rule).
+- [ ] Selection made on the canvas highlights the matching row and scrolls it into view (`scrollIntoView({block: "nearest"})`, instant under reduced motion). Saving, deleting and Clear update the list immediately.
+- [ ] Focus order per DESIGN.md §9: … → Save → the list. Rows are real `<button>`s with an accessible name "<name>, <value> <unit>, <kind>".
+- [ ] Playwright: save two dimensions with identical endpoints; tapping the second row makes `delete` visible and the panel's reading equal the second value; Delete removes only that one (`dimension-count` 1, the remaining row is the first); tapping the canvas on the shared line selects one and its row gets `aria-selected`; the list is empty-state on a fresh face.
