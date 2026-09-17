@@ -2091,3 +2091,23 @@ that text. Branch `agent/a10-folders`, not pushed.
   ignores the folder, so `<slug>.ccpart.zip` names can collide across folders (N6, stated in the
   spec); `a11y.spec.js` needed no change (the search field sits after the bar's Edit/"+" in DOM
   order, so "first Tab lands on a real control" still holds).
+
+## 2026-09-17 — Focus-steal race on the create form (integration)
+
+- **Symptom.** `parts.spec.js` "folder field: a//b normalises…" failed about half the time in
+  isolation with `.shell-subtitle` not found after creating a part in `a//b`; it had passed on the
+  A10 agent's branch. A 24-run reproduction (throwaway Playwright script, not committed) showed
+  the failing runs with name `Normaliseda//b`, path `""`, `document.activeElement` = `part-name`.
+- **Root cause (app, not test).** P2a's `focusWhenReady` refocuses `part-name` on every attempt
+  across six animation frames after "New part" (needed because the first mounted node is replaced
+  a frame later). Playwright's `fill` focuses `part-path` and then inserts text into *whatever is
+  focused*; an attempt landing in that gap yanked focus back, so the folder text went into the
+  Name field and the part was created at root. A thumb that taps Folder within ~100 ms of
+  "New part" hits the same window on a phone.
+- **Fix.** `Canvas.userIsTypingElsewhere(target)` (new `document.activeElement` / `tagName`
+  bindings): the retry loop stops for good the moment an `INPUT`/`TEXTAREA`/`SELECT` other than
+  the target has focus. Buttons deliberately don't count — on desktop the tap that opened the
+  form leaves focus on the button, and the form field should still win. No spec change.
+- **Verified.** `npx rescript build` clean under `+a`; reproduction 24/24 clean on the fixed
+  bundle (was 1–2 failures per 8); `npm test` 244/244; `npm run build` clean; Chromium e2e
+  **47/47 twice** (`E2E_PORT=4310`).

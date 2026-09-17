@@ -183,3 +183,28 @@ let prefersReducedMotion = (): bool =>
 // otherwise.
 type scrollIntoViewOptions = {block: string, behavior: string}
 @send external scrollIntoView: (Dom.element, scrollIntoViewOptions) => unit = "scrollIntoView"
+
+@val external document: Dom.document = "document"
+
+@get @return(nullable) external activeElement: Dom.document => option<Dom.element> = "activeElement"
+
+@get external tagName: Dom.element => string = "tagName"
+
+// True when a text-entry control other than `el` has focus right now: the
+// user (or a test driver) moved on, so a deferred focus cmd must not steal
+// it back. Buttons deliberately don't count — on desktop the tap that opened
+// a form leaves focus on the button, and the form field should still win.
+let userIsTypingElsewhere = (el: option<Dom.element>): bool =>
+  switch activeElement(document) {
+  | None => false
+  | Some(active) =>
+    let editable = switch tagName(active) {
+    | "INPUT" | "TEXTAREA" | "SELECT" => true
+    | _ => false
+    }
+    editable &&
+    switch el {
+    | Some(target) => active !== target
+    | None => true
+    }
+  }

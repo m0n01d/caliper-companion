@@ -130,12 +130,19 @@ let describeError = (_exn: exn): string => "Something went wrong talking to stor
 // read-only from Canvas.res): once the DOM has actually settled, the last
 // attempt lands on whatever node is really there by then.
 let rec focusWhenReady = (id: string, attemptsLeft: int): unit => {
-  switch Canvas.byTestId(id) {
-  | Some(el) => el->Canvas.focus
-  | None => ()
-  }
-  if attemptsLeft > 0 {
-    Canvas.requestAnimationFrame(_ => focusWhenReady(id, attemptsLeft - 1))->ignore
+  let target = Canvas.byTestId(id)
+  // Stop the moment another field has focus: the user tapped it before these
+  // frames ran out. Seen as a Playwright `fill` on Folder landing in Name
+  // (the loop yanked focus back mid-fill) — a quick thumb on a phone does
+  // exactly the same thing.
+  if !Canvas.userIsTypingElsewhere(target) {
+    switch target {
+    | Some(el) => el->Canvas.focus
+    | None => ()
+    }
+    if attemptsLeft > 0 {
+      Canvas.requestAnimationFrame(_ => focusWhenReady(id, attemptsLeft - 1))->ignore
+    }
   }
 }
 
