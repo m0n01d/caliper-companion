@@ -1,0 +1,77 @@
+# XcodeGen spec — regenerate the Xcode project with `xcodegen generate` (brew install xcodegen).
+# The .xcodeproj is deliberately not committed; this file is the source of truth.
+name: CaliperCompanion
+options:
+  bundleIdPrefix: com.m0n01d
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+packages:
+  CaliperCore:
+    path: CaliperCore
+targets:
+  CaliperCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: CaliperCompanion
+        excludes:
+          - "Info.plist"
+    dependencies:
+      - package: CaliperCore
+        product: CaliperCore
+      - package: CaliperCore
+        product: CaliperFlow
+    info:
+      path: CaliperCompanion/Info.plist
+      properties:
+        CFBundleDisplayName: Caliper Companion
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: Photographs each face of the part you are measuring. The photo is a labeled sketch, never measured.
+        NSMotionUsageDescription: Records how level the phone was at the moment of capture.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.m0n01d.CaliperCompanion
+        SWIFT_EMIT_LOC_STRINGS: YES
+  CaliperCompanionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [CaliperCompanionTests]
+    dependencies:
+      - target: CaliperCompanion
+  CaliperCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [CaliperCompanionUITests]
+    dependencies:
+      - target: CaliperCompanion
+schemes:
+  CaliperCompanion:
+    build:
+      targets:
+        CaliperCompanion: all
+        CaliperCompanionTests: [test]
+        CaliperCompanionUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - CaliperCompanionTests
+        - CaliperCompanionUITests
