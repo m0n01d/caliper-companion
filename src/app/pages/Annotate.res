@@ -1488,11 +1488,11 @@ let hintText = (m: model, l: loaded): string =>
 
 let kindOptions: array<(string, string)> = [("length", "Length"), ("diameter", "Diameter"), ("depth", "Depth")]
 
-// The stage (DESIGN.md §11.2): the canvas on the photo mat, the flat scrim
-// toolbar top-right (Snap pill, count, zoom out, zoom readout, zoom in), the
-// placement hint top-left, and the hidden test readouts. The canvas wrapper is the
-// `role="img"` group of §9's focus order; the toolbar sits outside it so
-// its buttons stay real controls.
+// The stage (DESIGN.md §11.2): the canvas on the photo mat, the placement
+// hint top-left (the only chrome left over the photo — the Snap/zoom
+// toolbar now lives in the panel's tools strip, see `toolsStrip`), and the
+// hidden test readouts. The canvas wrapper is the `role="img"` group of
+// §9's focus order.
 let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   let scene = {
     bitmap: Some(l.bitmap),
@@ -1515,7 +1515,6 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     snapped: snappedState(m.marks),
   }
   let count = Array.length(l.dims)
-  let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
   let groupLabel =
     faceKindLabel(l.face.kind) ++
     " face, " ++
@@ -1525,35 +1524,48 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
       <CanvasView scene dispatch />
     </div>
     <div className="annotate-overlay">
-      <div className="annotate-tools">
-        // SPEC §8a A5 bullet 3: the Snap toggle — a pill that is a button.
-        <button
-          type_="button"
-          className="pill annotate-snap"
-          dataTestId="snap-toggle"
-          ariaPressed={l.settings.snap ? #"true" : #"false"}
-          ariaLabel={l.settings.snap ? "Snap taps to edges: on" : "Snap taps to edges: off"}
-          onClick={_ => dispatch(SnapToggled)}>
-          <Icon name=Ruler size=16 />
-          {React.string("Snap")}
-        </button>
-        <Ui.Pill testId="dimension-count"> {React.string(Int.toString(count))} </Ui.Pill>
-        <Ui.Button
-          variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
-          <Icon name=ZoomOut />
-        </Ui.Button>
-        <Ui.Pill mono=true testId="zoom"> {React.string(Float.toFixed(zoom, ~digits=2))} </Ui.Pill>
-        <Ui.Button
-          variant=Ui.Button.Icon testId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
-          <Icon name=ZoomIn />
-        </Ui.Button>
-      </div>
-      <div className="annotate-hint"> <Ui.Pill> {React.string(hintText(m, l))} </Ui.Pill> </div>
+      <Ui.Pill> {React.string(hintText(m, l))} </Ui.Pill>
     </div>
     <span hidden=true dataTestId="pending-points"> {React.string(pendingPointsText(m.pending))} </span>
     <span hidden=true dataTestId="dimension-points" ariaBusy=m.moving>
       {React.string(dimensionPointsText(l.dims))}
     </span>
+  </div>
+}
+
+// The tools strip (DESIGN.md §11.2 "Annotate", design review A1): Snap,
+// dimension count, zoom out, zoom readout, zoom in — a 44 px opaque strip
+// at the top of `.panel`, in flow, right-aligned. It used to float over the
+// photo in a scrim capsule; moved here so nothing but the hint pill sits on
+// the photo. It lands before the Reading field in DOM order, so its
+// buttons fall between the canvas and `reading` in tab order — a known,
+// accepted departure from §9's focus order (canvas → reading with nothing
+// between); everything else in that order is unchanged.
+let toolsStrip = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
+  let count = Array.length(l.dims)
+  let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
+  <div className="annotate-tools">
+    // SPEC §8a A5 bullet 3: the Snap toggle — a pill that is a button.
+    <button
+      type_="button"
+      className="pill annotate-snap"
+      dataTestId="snap-toggle"
+      ariaPressed={l.settings.snap ? #"true" : #"false"}
+      ariaLabel={l.settings.snap ? "Snap taps to edges: on" : "Snap taps to edges: off"}
+      onClick={_ => dispatch(SnapToggled)}>
+      <Icon name=Ruler size=16 />
+      {React.string("Snap")}
+    </button>
+    <Ui.Pill testId="dimension-count"> {React.string(Int.toString(count))} </Ui.Pill>
+    <Ui.Button
+      variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
+      <Icon name=ZoomOut />
+    </Ui.Button>
+    <Ui.Pill mono=true testId="zoom"> {React.string(Float.toFixed(zoom, ~digits=2))} </Ui.Pill>
+    <Ui.Button
+      variant=Ui.Button.Icon testId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
+      <Icon name=ZoomIn />
+    </Ui.Button>
   </div>
 }
 
@@ -1665,6 +1677,7 @@ let panel = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   let nothingToClear = !editing && m.pending.p1->Option.isNone && m.reading == "" && m.name == ""
 
   <div className="panel annotate-panel">
+    {toolsStrip(m, l, ~dispatch)}
     <Ui.Field label="Reading" htmlFor="annotate-reading" mono=true error=?readingError errorTestId="reading-error">
       <div className="annotate-reading">
         {Canvas.Input.make({

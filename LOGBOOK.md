@@ -1748,3 +1748,53 @@ rename only, no layout changes.
   bullet instead of literal §2, since it's a Part-screen fact, not a token-table fact.
 - Screenshots and the export-spec run: see the handoff report (paths and numbers kept out of this
   file to avoid duplicating what's already there).
+
+## 2026-09-17 — P2c — annotate do-now fixes (agent/p2-annotate)
+
+The Annotate "do now" fixes from `docs/design/review-2026-09-17.md` A1/A2/§2, on top of P1's Dark
+Sky tokens. View/CSS only — no gesture, update or msg changes; every testid and data attribute is
+unchanged.
+
+- **A1, tools strip.** The Snap pill/count/zoom-out/zoom-readout/zoom-in toolbar moved out of the
+  stage's scrim overlay into a new `toolsStrip` view, rendered as the first child of `.panel` —
+  a 44 px opaque `cc-surface` strip, 8 px gap, right-aligned. Only the hint pill (`Ui.Pill`, plain
+  `<span>`, no controls) is left over the photo, top-left, in its own scrim capsule as before.
+  `.annotate-overlay` lost its old reversed-row/wrap layout (it only ever positioned one pill now)
+  but kept `pointer-events: none` so a tap under the hint still reaches the canvas underneath.
+  DOM order is now canvas → tools strip → Reading, so the strip's buttons fall between the canvas
+  and `reading` in tab order — a small, accepted departure from §9's literal focus order (which has
+  nothing between them); everything else in that order (reading → name → chips → kind → tolerance
+  → Save → dims list) is unchanged. No testid or msg moved: `snap-toggle`, `dimension-count`,
+  `zoom-out`, `zoom`, `zoom-in` render exactly as before, just relocated — confirmed by the full
+  e2e suite (`export.spec.js`/`faces.spec.js` click `zoom-in`/`zoom-out` and read `zoom`,
+  `dimension-count`, `snap-toggle` by testid, position-independent). `docs/testids.md` needed no
+  edit.
+- **A2, tolerance 124 → 104 px.** `.annotate-kind-row > .field:last-child` narrowed to 104 px
+  (review: "± 0.10 mm" needs ≈ 96). The page-scoped `.annotate-kind .segmented-option` override
+  (4 px padding, 14 px font) is dropped entirely — the extra 20 px freed by the narrower tolerance
+  field lets `Ui.Segmented`'s own global metrics (12 px padding, Subhead 15 semibold) fit
+  "Diameter" without clipping. Verified by screenshot at 390×844 and 360×740 (`shot.mjs` in the
+  handoff report): at 390 the segmented control now gets ≈243 px (was 222), and at 360 the kind row
+  still wraps (`@media (max-width: 360px)`, untouched) so the control gets the full 328 px content
+  width regardless.
+- **Rhythm.** `.annotate .panel` gets its own `gap: var(--cc-space-4)` (16, was the shared
+  `.panel`'s 12) so the page's direct sections (tools strip, reading, name, kind row, errors,
+  actions, dimension list) sit 16 px apart; `.annotate-dimensions`'s existing `margin-top:
+  var(--cc-space-2)` (8) now stacks on top of that for 24 px total before the dimension list, as
+  the brief asked. Non-scale leftovers cleared: the tools strip's `gap: 6px` → `var(--cc-space-2)`
+  (8), the Snap pill's `padding: 0 8px 0 6px` → `0 var(--cc-space-2)`, the count pill's
+  `padding: 0 6px` → `0 var(--cc-space-2)`, `.annotate-tolerance`'s `gap: 6px` → `var(--cc-space-1)`
+  (4) and its input's `padding: … 10px` → `… var(--cc-space-2)` (8) — narrowed further than the
+  general 14 px input-padding convention (DESIGN.md §11.1's one allowed exception) because the
+  104 px tolerance field has no room for 14 px each side alongside "±", the digits and "mm";
+  verified "0.10" doesn't clip at 390 or 360. `.annotate-reading input`'s `14px` side padding is
+  untouched — that's the exception DESIGN.md §11.1 names. Stage sizing
+  (`min(300px, --vv-height × 0.5)`, min 200) and the A6/A9 hooks are untouched, as required.
+- **Verification.** `npx rescript build` clean, `npm test` (217/217), `npm run build`, and
+  `E2E_PORT=3830 npx playwright test --config=e2e/playwright.config.js --project=chromium`
+  (44/44, chromium project) all green. Screenshots (loaded/pending at 390×844, loaded/pending at
+  360×740) taken against `vite preview --port 3831` with a Playwright script seeding a real part +
+  `fixtures/hinge_pin/end.jpg`; looked at all four — tools strip reads as one continuous surface
+  with the panel below it, the count no longer sits on a handle, "Diameter" doesn't clip at either
+  width, and the strip doesn't wrap at 360. Stale preview processes killed by PID before each run.
+  Paths are in the handoff report, not this repo.

@@ -69,46 +69,36 @@
 }
 
 /* Absolute inside the stage — never fixed, so the keyboard can't break it.
-   Reversed row: the toolbar (first in the DOM, so its buttons follow the
-   canvas in the focus order) sits at the right, the hint at the left, and
-   on a phone too narrow for both the hint wraps under the toolbar. Pills
-   let taps through to the canvas; only the buttons catch them. */
+   Nothing but the placement hint sits over the photo now (design review
+   2026-09-17 A1): the Snap/zoom toolbar moved into the panel's own tools
+   strip (`.annotate-tools`, below), so this is just a top-left scrim pill.
+   `pointer-events: none` so a tap under the hint still reaches the canvas —
+   the pill is a `<span>`, never a control. */
 .annotate-overlay {
   position: absolute;
   top: var(--cc-space-2);
-  right: var(--cc-space-2);
   left: var(--cc-space-2);
-  display: flex;
-  flex-direction: row-reverse;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--cc-space-2);
   pointer-events: none;
 }
 
-.annotate-overlay button {
-  pointer-events: auto;
-}
-
-/* One flat scrim capsule group — count, zoom-out, readout, zoom-in — rather
-   than four separate scrim blobs touching each other. `align-items: center`
-   is load-bearing: this is a flex ROW, so its default cross-axis alignment
-   is `stretch`, which was stretching the count Ui.Pill to the 44 px height
-   of its button siblings; a near-square box at `border-radius: 999px`
-   (capsule) renders as a circle, which is the reported "oversized black
-   disc" bug. Centering instead lets the pill size to its own content. */
+/* The tools strip (design review A1): Snap, dimension count, zoom out, zoom
+   readout, zoom in, as a 44 px opaque strip at the top of `.panel` — in
+   flow, not over the photo. `align-items: center` is load-bearing: this is
+   a flex ROW, so its default cross-axis alignment is `stretch`, which would
+   stretch the count Ui.Pill to the row's height; a near-square box at
+   `border-radius: 999px` (capsule) renders as a circle at that height,
+   which is the "oversized black disc" bug centering avoids. */
 .annotate-tools {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 4px;
-  border-radius: var(--cc-radius-capsule);
-  background: var(--cc-scrim);
+  justify-content: flex-end;
+  gap: var(--cc-space-2);
+  min-height: var(--cc-tap-min);
+  background: var(--cc-surface);
 }
 
-/* The group supplies the one scrim background; its children stay
-   transparent so nothing paints a second, overlapping capsule. */
-.annotate-tools .btn-icon,
+/* The strip supplies the one opaque background; its pill children stay
+   transparent so nothing paints a second, overlapping capsule on top of it. */
 .annotate-tools .pill {
   background: transparent;
   border-color: transparent;
@@ -117,24 +107,24 @@
 /* The count reads as a compact mono figure, not a full-size hint pill. */
 .annotate-tools [data-testid="dimension-count"] {
   min-width: 20px;
-  padding: 0 6px;
+  padding: 0 var(--cc-space-2);
   justify-content: center;
   font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .annotate-tools [data-testid="zoom"] {
-  padding: 0 4px;
+  padding: 0 var(--cc-space-1);
 }
 
 /* SPEC §8a A5: the Snap toggle is a pill that is a real button, inside the
-   same scrim capsule as the zoom controls. It keeps the 44 px tap height
-   (DESIGN.md §2) but reads as a pill, not a capsule button: on = accent text
-   (the active-dimension colour), off = cc-text-2. */
+   strip. It keeps the 44 px tap height (DESIGN.md §2) but reads as a pill,
+   not a capsule button: on = accent text (the active-dimension colour),
+   off = cc-text-2. */
 .annotate-tools .annotate-snap {
   min-height: var(--cc-tap-min);
-  padding: 0 8px 0 6px;
-  gap: 4px;
+  padding: 0 var(--cc-space-2);
+  gap: var(--cc-space-1);
   border: 0;
   background: transparent;
   color: var(--cc-text-2);
@@ -150,13 +140,15 @@
   height: 16px;
 }
 
-.annotate-hint {
-  margin-right: auto;
-}
-
 /* ── Panel ─────────────────────────────────────────────────────────── */
+/* Sections 16 px apart (design review 2026-09-17 §2, DESIGN.md §11.1
+   "Vertical rhythm"), not the shared `.panel`'s 12 px in-section gap —
+   this page's direct children (tools strip, reading, name, kind row,
+   errors, actions, dimension list) are page-level sections, not siblings
+   inside one section. */
 .annotate .panel {
   flex: 1 0 auto;
+  gap: var(--cc-space-4);
   padding: var(--cc-space-4) calc(var(--cc-page-x) + env(safe-area-inset-right))
     calc(var(--cc-space-4) + env(safe-area-inset-bottom))
     calc(var(--cc-page-x) + env(safe-area-inset-left));
@@ -191,13 +183,14 @@
   gap: var(--cc-space-2);
 }
 
-/* Kind + tolerance share a row, so the segmented control only gets the
-   width left after the 124 px tolerance field — still too little for
-   Ui.Segmented's base metrics (design wave 3a: 12 px padding, 4 px gap,
-   Subhead 15 semibold) to fit "Diameter" without clipping on a 390 px phone
-   with a wide fallback font (headless/non-Apple platforms; SF Pro Text
-   isn't there to fall back from). Kept as a page-scoped override — smaller
-   padding and font, same call wave 1 and wave 2 both made here. */
+/* Kind + tolerance share a row. Tolerance narrowed 124 → 104 px (design
+   review 2026-09-17 A2: "± 0.10 mm" needs ≈ 96 px) so the segmented control
+   gets enough width for Ui.Segmented's base metrics (12 px padding, 4 px
+   gap, Subhead 15 semibold, global.css) to fit "Diameter" without clipping
+   on a 390 px phone with a wide fallback font (headless/non-Apple
+   platforms; SF Pro Text isn't there to fall back from) — verified by
+   screenshot at 390 and 360; the page-scoped padding/font override wave 1
+   and wave 2 added is no longer needed and is dropped. */
 .annotate-kind-row {
   display: flex;
   align-items: flex-start;
@@ -208,27 +201,21 @@
   flex: 1 1 auto;
 }
 
-.annotate-kind .segmented-option {
-  padding: 0 var(--cc-space-1);
-  font-size: 14px;
-  letter-spacing: -0.01em;
-}
-
 .annotate-kind-row > .field:last-child {
   flex: 0 0 auto;
-  width: 124px;
+  width: 104px;
 }
 
 .annotate-tolerance {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--cc-space-1);
 }
 
 .annotate-tolerance input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: var(--cc-space-2) 10px;
+  padding: var(--cc-space-2) var(--cc-space-2);
   font-size: var(--cc-size-body);
 }
 
