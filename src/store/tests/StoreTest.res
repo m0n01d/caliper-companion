@@ -301,17 +301,53 @@ describe("Store — settings", () => {
     let initial = await Store.getSettings(store)
     expect(initial)->toEqual(Store.defaultSettings)
 
-    let updated: Store.settings = {wedge: true, lastToleranceMm: 0.2, lastToleranceIn: 0.008}
+    let updated: Store.settings = {
+      wedge: true,
+      snap: false,
+      lastToleranceMm: 0.2,
+      lastToleranceIn: 0.008,
+    }
     await Store.putSettings(store, updated)
     let fetched = await Store.getSettings(store)
     expect(fetched)->toEqual(updated)
 
     // A second write (e.g. toggling wedge back) must not 409 — putSettings
     // fetches the current _rev internally.
-    let updated2 = {...updated, wedge: false}
+    let updated2 = {...updated, wedge: false, snap: true}
     await Store.putSettings(store, updated2)
     let fetched2 = await Store.getSettings(store)
     expect(fetched2)->toEqual(updated2)
+
+    await Store.destroy(store)
+  })
+
+  // SPEC §8a A5: `snap` defaults on. A settings doc written before the field
+  // existed (the owner's phone has one) has no `snap` at all and must read
+  // back as on — written through a raw handle because Store itself can no
+  // longer produce such a doc.
+  testAsync("a settings doc written without snap reads back with snap = true", async () => {
+    let dir = freshDbPath()
+    let store = Store.make(~name=dir)
+
+    let raw = PouchDb.make(dir, {})
+    let doc: PouchDb.doc = Dict.make()
+    Dict.set(doc, "_id", JSON.Encode.string("settings"))
+    Dict.set(doc, "type", JSON.Encode.string("settings"))
+    Dict.set(doc, "partId", JSON.Encode.string(""))
+    Dict.set(doc, "wedge", JSON.Encode.bool(true))
+    Dict.set(doc, "lastToleranceMm", JSON.Encode.float(0.3))
+    Dict.set(doc, "lastToleranceIn", JSON.Encode.float(0.01))
+    Dict.set(doc, "updatedAt", JSON.Encode.string(Clock.nowIso()))
+    let _ = await PouchDb.put(raw, doc)
+
+    let fetched = await Store.getSettings(store)
+    expect(fetched)->toEqual({
+      Store.wedge: true,
+      snap: true,
+      lastToleranceMm: 0.3,
+      lastToleranceIn: 0.01,
+    })
+    expect(Store.defaultSettings.snap)->toBe(true)
 
     await Store.destroy(store)
   })

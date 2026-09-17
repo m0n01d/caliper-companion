@@ -1,19 +1,27 @@
 // Settings — `#/settings`, SPEC M4 last bullet. The wedge-dongle toggle
-// (`settings.wedge`) and the current default tolerances, read-only.
+// (`settings.wedge`), the edge-snap toggle (`settings.snap`, SPEC §8a A5 —
+// the same field the annotate toolbar's Snap pill flips) and the current
+// default tolerances, read-only.
 
 type model = {
   loaded: bool,
   wedge: bool,
+  snap: bool,
   lastToleranceMm: float,
   lastToleranceIn: float,
   error: option<string>,
 }
 
+// Which toggle an in-flight write belongs to, so a failure reverts the
+// right one (both rows write the whole settings record).
+type flipped = Wedge | Snap
+
 type msg =
   | SettingsLoaded(Store.settings)
   | LoadFailed(string)
   | ToggleWedge
-  | SaveFinished(result<unit, string>)
+  | ToggleSnap
+  | SaveFinished(flipped, result<unit, string>)
 
 let store = () => Store.shared()
 
@@ -26,6 +34,7 @@ let init = (): (model, Tea.cmd<msg>) => (
   {
     loaded: false,
     wedge: Store.defaultSettings.wedge,
+    snap: Store.defaultSettings.snap,
     lastToleranceMm: Store.defaultSettings.lastToleranceMm,
     lastToleranceIn: Store.defaultSettings.lastToleranceIn,
     error: None,
@@ -35,12 +44,27 @@ let init = (): (model, Tea.cmd<msg>) => (
   )),
 )
 
+let toSettings = (model: model): Store.settings => {
+  wedge: model.wedge,
+  snap: model.snap,
+  lastToleranceMm: model.lastToleranceMm,
+  lastToleranceIn: model.lastToleranceIn,
+}
+
+let saveCmd = (model: model, flipped: flipped): Tea.cmd<msg> =>
+  Tea.fromPromise(
+    () => Store.putSettings(store(), toSettings(model)),
+    () => SaveFinished(flipped, Ok()),
+    e => SaveFinished(flipped, Error(describeError(e))),
+  )
+
 let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
   | SettingsLoaded(s) => (
       {
         loaded: true,
         wedge: s.wedge,
+        snap: s.snap,
         lastToleranceMm: s.lastToleranceMm,
         lastToleranceIn: s.lastToleranceIn,
         error: None,
@@ -49,30 +73,24 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     )
   | LoadFailed(msg) => ({...model, loaded: true, error: Some(msg)}, Tea.none)
   | ToggleWedge =>
-    let next = !model.wedge
-    let settings: Store.settings = {
-      wedge: next,
-      lastToleranceMm: model.lastToleranceMm,
-      lastToleranceIn: model.lastToleranceIn,
-    }
-    (
-      {...model, wedge: next},
-      Tea.fromPromise(() => Store.putSettings(store(), settings), () => SaveFinished(Ok()), e =>
-        SaveFinished(Error(describeError(e)))
-      ),
-    )
-  | SaveFinished(Ok()) => (model, Tea.none)
+    let next = {...model, wedge: !model.wedge}
+    (next, saveCmd(next, Wedge))
+  | ToggleSnap =>
+    let next = {...model, snap: !model.snap}
+    (next, saveCmd(next, Snap))
+  | SaveFinished(_, Ok()) => (model, Tea.none)
   // Revert the optimistic flip and surface the failure — the checkbox is
   // the only "yes it saved" signal the user gets in v0.
-  | SaveFinished(Error(msg)) => ({...model, wedge: !model.wedge, error: Some(msg)}, Tea.none)
+  | SaveFinished(Wedge, Error(msg)) => ({...model, wedge: !model.wedge, error: Some(msg)}, Tea.none)
+  | SaveFinished(Snap, Error(msg)) => ({...model, snap: !model.snap, error: Some(msg)}, Tea.none)
   }
 
 let title = (_model: model): string => "Settings"
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
-// DESIGN.md §11.2: inset grouped rows, a real Ui.Toggle (wedge-toggle stays
-// the checkbox's id), and a second read-only group for the default
-// tolerances (hig-brief §2 Settings: "switch style only inside a list row,
+// DESIGN.md §11.2: inset grouped rows, real Ui.Toggles (wedge-toggle stays
+// the checkbox's id; snap-setting-toggle is A5's), and a read-only group
+// for the default tolerances (hig-brief §2 Settings: "switch style only inside a list row,
 // no separate label needed — row content supplies context").
 let view = (model: model, ~dispatch: msg => unit): React.element =>
   <div className="stack-lg">
@@ -92,6 +110,22 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
           testId="wedge-toggle"
           ariaLabel="Readings come from a wedge dongle"
           onChange={_ => dispatch(ToggleWedge)}
+        />
+      </div>
+    </Ui.ListGroup>
+    <Ui.ListGroup
+      footer="Taps on the annotate canvas move to the nearest visible edge. The Snap pill on that screen flips the same setting.">
+      <div className="list-row">
+        <span className="list-row-body">
+          <span className="t-body"> {React.string("Snap taps to edges")} </span>
+        </span>
+        <Ui.Toggle
+          checked={model.snap}
+          disabled={!model.loaded}
+          id="snap-setting-toggle-input"
+          testId="snap-setting-toggle"
+          ariaLabel="Snap taps to edges"
+          onChange={_ => dispatch(ToggleSnap)}
         />
       </div>
     </Ui.ListGroup>

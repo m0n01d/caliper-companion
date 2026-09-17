@@ -85,8 +85,11 @@ let deleteDimension: (t, string) => promise<unit>
 //
 // Singleton doc `_id: "settings"`, type "settings".
 
+// `snap` (SPEC §8a A5, default on): docs written before the field existed
+// read back with the default.
 type settings = {
   wedge: bool,
+  snap: bool,
   lastToleranceMm: float,
   lastToleranceIn: float,
 }
