@@ -85,7 +85,7 @@ h3 {
 }
 
 a {
-  color: var(--cc-amber);
+  color: var(--cc-accent);
   text-decoration: none;
 }
 
@@ -95,7 +95,7 @@ a {
    so this doesn't fight it); this rule is for the ones that aren't, chiefly
    `Ui.ListRow`'s `~href` anchor and `Part.res`'s face-slot tiles. */
 a:focus-visible {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
 
@@ -279,8 +279,8 @@ a:focus-visible {
   color: var(--cc-text-2);
 }
 
-.text-teal {
-  color: var(--cc-teal);
+.text-live {
+  color: var(--cc-live);
 }
 
 .text-error {
@@ -328,7 +328,7 @@ button:active,
 button:focus-visible,
 .btn:focus-visible,
 .btn:focus-within:has(input:focus-visible) {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
 
@@ -358,21 +358,21 @@ button[aria-disabled="true"]:active,
 }
 
 .btn-primary {
-  background: var(--cc-amber);
-  border-color: var(--cc-amber);
-  color: var(--cc-amber-ink);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  color: var(--cc-accent-ink);
 }
 
 .btn-primary:active {
-  background: var(--cc-amber-pressed);
-  border-color: var(--cc-amber-pressed);
+  background: var(--cc-accent-pressed);
+  border-color: var(--cc-accent-pressed);
   opacity: 1;
 }
 
 .btn-primary:disabled:active,
 .btn-primary[aria-disabled="true"]:active {
-  background: var(--cc-amber);
-  border-color: var(--cc-amber);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
   opacity: 0.4;
 }
 
@@ -440,7 +440,7 @@ button[aria-disabled="true"]:active,
 .shell-topbar .btn-icon {
   background: transparent;
   border-color: transparent;
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .btn-row {
@@ -562,7 +562,7 @@ button.list-row:focus-visible {
    clips overflow, so an outward ring on a row at the top/bottom edge would
    get cut off by the card's own rounded corners. */
 .list-row-link:focus-visible {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: -2px;
 }
 
@@ -581,7 +581,7 @@ button.list-row:focus-visible {
 }
 
 .list-row-meta-live {
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .list-row-chevron {
@@ -665,7 +665,7 @@ input:focus,
 select:focus,
 textarea:focus,
 .field-input:focus {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 0;
 }
 
@@ -759,9 +759,9 @@ textarea:disabled {
 
 .chip-selected,
 .chip[aria-pressed="true"] {
-  background: var(--cc-amber);
-  border-color: var(--cc-amber);
-  color: var(--cc-amber-ink);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  color: var(--cc-accent-ink);
 }
 
 /* ── 8. Segmented control (capsule, concentric selection) ────────────── */
@@ -786,7 +786,7 @@ textarea:disabled {
   flex: 0 0 auto;
 }
 
-/* 12 px side padding + the container's 4 px gap so the selected amber
+/* 12 px side padding + the container's 4 px gap so the selected accent
    capsule never touches the next label (the annotate kind row used to show
    "Length" touching "Diameter"). `white-space: nowrap` is needed for
    `text-overflow: ellipsis` to actually trigger instead of the option
@@ -808,8 +808,8 @@ textarea:disabled {
 }
 
 .segmented-option[aria-pressed="true"] {
-  background: var(--cc-amber);
-  color: var(--cc-amber-ink);
+  background: var(--cc-accent);
+  color: var(--cc-accent-ink);
 }
 
 .segmented-option:focus-visible {
@@ -877,7 +877,7 @@ textarea:disabled {
 }
 
 .toggle input:checked + .toggle-track {
-  background: var(--cc-amber);
+  background: var(--cc-accent);
 }
 
 .toggle input:checked + .toggle-track .toggle-knob {
@@ -885,7 +885,7 @@ textarea:disabled {
 }
 
 .toggle input:focus-visible + .toggle-track {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
 
@@ -900,10 +900,10 @@ textarea:disabled {
   gap: var(--cc-space-3);
   width: 100%;
   padding: 10px 14px;
-  border: 1px solid var(--cc-teal-border);
+  border: 1px solid var(--cc-live-border);
   border-radius: var(--cc-radius);
-  background: var(--cc-teal-wash);
-  color: var(--cc-teal-ink);
+  background: var(--cc-live-wash);
+  color: var(--cc-live-ink);
   font: var(--cc-text-footnote);
   text-align: left;
   white-space: normal;
@@ -913,7 +913,7 @@ textarea:disabled {
   display: flex;
   flex: 0 0 auto;
   margin-top: -1px;
-  color: var(--cc-teal);
+  color: var(--cc-live);
 }
 
 .warning-row-text {
@@ -953,7 +953,7 @@ button.warning-row {
 .pill-mono {
   font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--cc-teal);
+  color: var(--cc-live);
 }
 
 .slot {
@@ -971,7 +971,7 @@ button.warning-row {
 
 .slot-captured {
   background: var(--cc-surface-2);
-  border: 2px solid var(--cc-teal);
+  border: 2px solid var(--cc-live);
   overflow: hidden;
 }
 
@@ -986,7 +986,7 @@ button.warning-row {
   border-radius: calc(var(--cc-radius-sm) - 2px);
 }
 
-/* DESIGN.md §9 "Color is never the only signal": the teal ring already
+/* DESIGN.md §9 "Color is never the only signal": the live ring already
    differs from the empty slot's dashed border by *shape*, not just hue, but
    a small check badge makes "captured" unambiguous even before its thumbnail
    image has loaded (there's a gap between the face record resolving and its
@@ -1004,7 +1004,7 @@ button.warning-row {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--cc-teal);
+  background: var(--cc-live);
   color: var(--cc-ground);
   border: 2px solid var(--cc-ground);
 }
@@ -1092,7 +1092,7 @@ button.warning-row {
 .a2hs-hint-icon {
   display: flex;
   flex: 0 0 auto;
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .a2hs-hint-text {

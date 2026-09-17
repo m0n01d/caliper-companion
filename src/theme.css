@@ -12,27 +12,28 @@
      UA stylesheet render in their dark variants. */
   color-scheme: dark;
 
-  /* ── Colour (DESIGN.md §2) ─────────────────────────────────────────── */
-  --cc-ground: #17181a;
-  --cc-surface: #232527;
-  --cc-surface-2: #2c2f32;
-  --cc-field: #1e2022;
-  --cc-border: #34373b;
-  --cc-text: #f4f2ec;
-  --cc-text-2: #b9b5ab;
-  --cc-text-3: #8f8b81;
-  --cc-amber: #f2a33a;
-  --cc-amber-pressed: #db8f2a; /* §6: primary button pressed, amber −10% L */
-  --cc-amber-ink: #2b1a02;
-  --cc-teal: #4fd1b1;
-  --cc-teal-wash: #163b33;
-  --cc-teal-ink: #cff5ea;
-  --cc-teal-border: #1f4a41;
-  --cc-error: #f26b4e;
-  --cc-error-ink: #2b0e08;
-  --cc-error-wash: rgb(242 107 78 / 0.2); /* §4 warning row (error): cc-error at 20% */
-  --cc-photo-mat: #2a2c2f;
-  --cc-scrim: #1a1b1dcc;
+  /* ── Colour (DESIGN.md §2, Dark Sky palette per
+     docs/design/palettes-2026-09-17.md §2/§5, applied 2026-09-17) ────── */
+  --cc-ground: #15181d;
+  --cc-surface: #20242a;
+  --cc-surface-2: #2a2f36;
+  --cc-field: #1b1f25;
+  --cc-border: #343a43;
+  --cc-text: #eef1f5;
+  --cc-text-2: #afb7c1;
+  --cc-text-3: #87909b;
+  --cc-accent: #ff7f2a; /* Dark Sky: Fusion-icon orange family (icon is #ff6b00) */
+  --cc-accent-pressed: #ff6b00; /* §6: pressed = the Fusion icon orange itself, −8 L */
+  --cc-accent-ink: #2a1200;
+  --cc-live: #5ac1f2; /* Dark Sky: Autodesk-blue 300/400 family, Fusion sketch blue */
+  --cc-live-wash: #0e2d42;
+  --cc-live-ink: #cdeaf7; /* = Autodesk autodeskBlue-100 */
+  --cc-live-border: #174a6b;
+  --cc-error: #f47070;
+  --cc-error-ink: #2b0a0a;
+  --cc-error-wash: rgb(244 112 112 / 0.2); /* §4 warning row (error): cc-error at 20% */
+  --cc-photo-mat: #242930;
+  --cc-scrim: #171a1ecc;
 
   /* ── Type (DESIGN.md §11.1: system stack, HIG "Large" Dynamic Type step) ─ */
   --cc-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
@@ -94,10 +95,10 @@
   --cc-shutter: 76px;
 
   /* ── Glass (docs/design/liquid-glass-web.md §3, verbatim) ─────────────── */
-  --glass-fill: rgba(35, 37, 39, 0.72); /* cc-surface at ~72% */
-  --glass-fill-strong: rgba(23, 24, 26, 0.82); /* cc-ground at ~82%, for over-photo chrome */
-  --glass-stroke: rgba(244, 242, 236, 0.1); /* cc-text at 10%, hairline edge */
-  --glass-highlight: rgba(244, 242, 236, 0.16); /* top inset highlight */
+  --glass-fill: rgba(32, 36, 42, 0.72); /* cc-surface at ~72% */
+  --glass-fill-strong: rgba(21, 24, 29, 0.82); /* cc-ground at ~82%, for over-photo chrome */
+  --glass-stroke: rgba(238, 241, 245, 0.1); /* cc-text at 10%, hairline edge */
+  --glass-highlight: rgba(238, 241, 245, 0.16); /* top inset highlight */
   --glass-blur: 20px;
   --glass-saturate: 1.6;
   --glass-radius-sm: 14px; /* matches cc-radius-lg neighborhood, rounder than opaque cards */

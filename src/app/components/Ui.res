@@ -328,7 +328,7 @@ module Toggle = {
     </label>
 }
 
-// Flat scrim pill over the photo (§4): hints, or `mono` for the teal
+// Flat scrim pill over the photo (§4): hints, or `mono` for the live
 // readout. Never glass — it sits on the live canvas.
 module Pill = {
   @react.component
@@ -348,21 +348,21 @@ module Pill = {
   }
 }
 
-// Warning row (§4): Teal = reconciliation note (check icon), Error = kind
+// Warning row (§4): Live = reconciliation note (check icon), Error = kind
 // conflict (alert icon). With `onClick` it is a button (§6: tap scrolls the
 // table to the flagged rows).
 module WarningRow = {
-  type tone = Teal | Error
+  type tone = Live | Error
 
   @react.component
   let make = (
-    ~tone: tone=Teal,
+    ~tone: tone=Live,
     ~onClick: option<JsxEvent.Mouse.t => unit>=?,
     ~testId: option<string>=?,
     ~children: React.element,
   ) => {
     let (className, icon) = switch tone {
-    | Teal => ("warning-row", <Icon name=CircleCheck size=20 />)
+    | Live => ("warning-row", <Icon name=CircleCheck size=20 />)
     | Error => ("warning-row warning-row-error", <Icon name=TriangleAlert size=20 />)
     }
     let body =

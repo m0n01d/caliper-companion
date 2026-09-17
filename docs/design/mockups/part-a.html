@@ -31,15 +31,16 @@
   }
   .face-card:active { opacity: 0.6; }
   .face-card img { width: 100%; height: 100%; object-fit: cover; }
-  .face-card-captured::after {                          /* 2 px teal ring, inside */
+  .face-card-captured::after {                          /* 2 px live ring, inside */
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    border: 2px solid var(--cc-teal); border-radius: inherit;
+    border: 2px solid var(--cc-live); border-radius: inherit;
   }
   .face-card-scrim {
     position: absolute; left: 0; right: 0; bottom: 0;
     display: flex; flex-direction: column; gap: 1px;
     padding: 36px 12px 10px;
-    background: linear-gradient(to top, rgba(26, 27, 29, 0.94) 0 44px, rgba(26, 27, 29, 0));
+    /* Dark Sky cc-ground/cc-scrim rgb (docs/design/palettes-2026-09-17.md §5) */
+    background: linear-gradient(to top, rgba(23, 26, 30, 0.94) 0 44px, rgba(23, 26, 30, 0));
   }
   .face-card-label { font: var(--cc-text-headline); text-transform: capitalize; }
   .face-card-meta  { font: var(--cc-text-caption-1); color: var(--cc-text-2); font-variant-numeric: tabular-nums; }
@@ -47,7 +48,7 @@
     position: absolute; top: 10px; right: 10px;
     display: flex; align-items: center; justify-content: center;
     width: 22px; height: 22px; border-radius: 50%;
-    background: var(--cc-teal); color: var(--cc-ground);
+    background: var(--cc-live); color: var(--cc-ground);
   }
   .face-card-empty {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--cc-space-2);
@@ -77,7 +78,7 @@
   .feat-name { display: flex; flex-direction: column; gap: 2px; }
   .feat-name .name { overflow-wrap: anywhere; }
   .feat-faces { font: var(--cc-text-footnote); color: var(--cc-text-2); font-family: var(--cc-font-ui); }
-  .feat-faces-multi { color: var(--cc-teal); }
+  .feat-faces-multi { color: var(--cc-live); }
   .unit { font: var(--cc-text-footnote); color: var(--cc-text-2); margin-left: 3px; }
   .tol { font: 400 var(--cc-size-footnote) / var(--cc-leading-body) var(--cc-font-mono); color: var(--cc-text-2); }
   .flag { display: inline-flex; color: var(--cc-error); vertical-align: -3px; margin-right: 4px; }
@@ -85,7 +86,7 @@
 
   .bar-action {                                          /* HIG trailing text action */
     min-height: var(--cc-tap-min); padding: 0 var(--cc-space-2);
-    background: transparent; border-color: transparent; color: var(--cc-amber);
+    background: transparent; border-color: transparent; color: var(--cc-accent);
     font: var(--cc-text-body);
   }
   .timer { text-align: center; }
