@@ -135,3 +135,123 @@ Running log of decisions, judgment calls, and hand-off state. Newest entry last.
   `npm run build` (`dist/sw.js` stamped with a real `CACHE` version and `PRECACHE_URLS`),
   `npm test` (existing `SmokeTest` still green — nothing in `src/core` touched), `npm run e2e`
   (3/3 passing on chromium, 3/3 failing to *launch* — not fail assertions — on webkit).
+
+## 2026-09-17 — M2 UI / M6 (agent/m2-ui)
+
+Built out `PartsList`, `Part`, `Settings`, `Debug` (SPEC M2 UI criteria, M4's wedge toggle, M6's
+timer + CSV criteria). All four keep the exact page contract (`model`/`msg`/`init`/`update`/
+`title`/`back`/`view`) so `Main.res` needed no changes.
+
+- **PartsList** (`#/`): create (inline form, `Slug.make` for the slug), rename and delete-with-
+  confirm inline per row, empty state, loading/error text. Row tap navigates via a dispatched
+  `RowTapped` msg → `Route.push`, gated so it's a no-op while that row is mid-rename/-confirm;
+  the Rename/Delete buttons call `ReactEvent.Mouse.stopPropagation` so they don't also fire the
+  row navigation. Added three ids beyond the existing contract (`docs/testids.md`, under Parts
+  list): `part-rename-input`/`part-rename-save`/`part-rename-cancel` for the inline rename form,
+  `part-delete-confirm`/`part-delete-cancel` for the confirm strip — the prior contract named the
+  triggering buttons but not the form/strip contents.
+- **Part** (`#/parts/:id`): faces row (`Store.facesOf`, thumbnails via `Store.getFaceImage` →
+  object URL — see `Download.res`), features table (`Reconcile.reconcile`), warning row, export,
+  timer. `init` batches five cmds: part/faces/dimensions/timer loads plus `Timers.everySecond(Tick)`
+  for the running-timer readout.
+  - **Kind-conflict display, SPEC's "never a blank section"**: `reconcileForDisplay` computes
+    `Reconcile.conflicts` first, filters out every dimension whose name conflicts, then reconciles
+    the rest — guaranteed conflict-free by construction, so the table always renders whatever
+    features aren't in conflict, and the conflicting names still show up in the warning row
+    alongside flagged names. Simpler than trying to salvage a partial reconcile from a raw
+    dimension list, and matches the bullet's "if practical" language.
+  - **Judgment call — object URLs are never revoked.** SPEC explicitly allows this for v0
+    ("revoked when the page model is replaced isn't required"); noted here per that instruction.
+    `Download.objectUrlOfImage` just wraps `URL.createObjectURL` on the face-image blob.
+  - **Judgment call — the per-second timer interval is never cleared.** `Timers.everySecond`
+    starts a `setInterval` from `init` and there is no matching `clearInterval` anywhere; a stray
+    `Tick` dispatched after the user has navigated to another page is absorbed by `Main.res`'s
+    existing catch-all `| _ => (model, Tea.none)` branch per page-msg case. SPEC's wording ("fine
+    to leave the interval running") reads as accepting exactly this v0 shortcut rather than asking
+    for a real page-lifecycle unmount hook, which `Tea.res` doesn't have one of today.
+  - Export button wires straight to the `Export.run` stub and maps its `result` per the spec's
+    exact message table; it's currently always `Error(Failed("Export is not implemented yet"))`
+    until the M5 agent lands the real implementation — the UI plumbing is complete and doesn't need
+    revisiting once that lands, only the message text will change.
+- **Settings** (`#/settings`): `wedge-toggle` bound to `Store.getSettings`/`putSettings`
+  (`settings.wedge`), optimistic toggle with revert-on-failure, default tolerances shown read-only.
+- **Debug** (`#/debug`): `Store.listTimers(~limit=20)`, part name resolved per-row via
+  `Store.getPart` (falls back to the id — including for a deleted part, satisfying "deleted → the
+  id" without a separate branch, since a missing doc and this fallback look identical). CSV via a
+  new `Download.res` (`save: (~name, ~mime, ~text) => unit`, Blob + object URL + a throwaway
+  anchor) — RFC-4180 quoting only when a field actually needs it (comma/quote/newline), verified
+  against a part name containing both a comma and a quote (see the scratch check below).
+- **New binding files**: `src/bindings/Download.res` (Blob/object-URL helpers — the CSV download
+  anchor *and* the face-thumbnail object URLs, since both are "wrap a Blob in a URL", just from two
+  different call sites with two different, nominally distinct blob types feeding the same
+  `URL.createObjectURL` global) and `src/bindings/Timers.res` (`setInterval` binding for the
+  timer tick). Neither reaches for `%raw`/`Obj.magic`; `Store.res` already sets the precedent this
+  codebase follows for small local `JsExn`-adjacent externals living outside `bindings/` when a
+  page module needs one and it's not a browser API.
+- **Judgment call — no shared `describeError` helper.** All four pages carry an identical
+  `describeError = (_exn) => "Something went wrong talking to storage. Try again."` rather than a
+  shared module, because the file-ownership list for this track has nowhere to put one (no
+  `src/app/pages/Errors.res` or similar was granted). Trivial to factor out later if a shared pages
+  helper module gets added to a future track's ownership list.
+
+### Environment gap hit while verifying — not a Store gap, a Vite/dependency one
+
+`npm run build` (and therefore `npm run e2e`, which builds first) fails **before any of this
+track's code runs**, on the very first production build that actually needs to bundle the
+`Store → PouchDb → pouchdb-find` import chain:
+
+```
+[UNLOADABLE_DEPENDENCY] Could not load node_modules/pouchdb-find/dist/pouchdb.find.js
+  src/bindings/PouchDb.res.mjs:5:25 — import PouchdbFind from "pouchdb-find"
+  No such file or directory (os error 2)
+```
+
+Root cause, confirmed by inspection (not guessed): `vite.config.js`'s `resolve.alias` (line 45)
+points `pouchdb-find` at `./node_modules/pouchdb-find/dist/pouchdb.find.js`, but the installed
+`pouchdb-find@9.0.0` package (per `package-lock.json`) ships only `lib/index.js` /
+`lib/index-browser.js` — no `dist/` at all. The actual prebuilt UMD bundle the alias wants *does*
+exist on disk, just under the sibling `pouchdb` package instead:
+`node_modules/pouchdb/dist/pouchdb.find.js` (confirmed by reading its header comment — literally
+"// pouchdb-find plugin 9.0.0..."). This is a known pouchdb-monorepo packaging quirk (the aggregate
+`pouchdb` npm package bundles prebuilt dist files for several official plugins; the standalone
+`pouchdb-find` package on npm hasn't shipped its own `dist/` for a while). The one-line fix, for
+whoever owns `vite.config.js` (not in this track's file-ownership list, so not made here):
+
+```diff
+- 'pouchdb-find': path.resolve('./node_modules/pouchdb-find/dist/pouchdb.find.js'),
++ 'pouchdb-find': path.resolve('./node_modules/pouchdb/dist/pouchdb.find.js'),
+```
+
+Reproduced identically under both `vite build` and plain `vite` (dev server) — the alias is
+resolved eagerly by Vite's dependency optimizer either way, so there's no dev/build split to route
+around, and nothing about it is specific to a browser (Node import of the same alias target fails
+the same way). It also predates this track: the M6 app-shell LOGBOOK entry above reports a clean
+`npm run build`, but at that point no page imported `Store` yet, so nothing had ever asked Vite to
+resolve `pouchdb-find` — this track's pages are the first code to actually reach that import at
+build time, which is why the gap surfaces here rather than earlier.
+
+Per this file's own instruction for a missing `Store` function ("STOP and report; don't work
+around it") applied to the same spirit here: `vite.config.js` isn't in this track's file-ownership
+list and `node_modules` is the shared symlink into `/home/user/caliper-companion` that every
+worktree points at and the brief says never to touch — so neither got edited. What got verified
+instead, directly against the compiled `.res.mjs` output under plain Node (bypassing Vite
+entirely, the same way `StoreTest.res` already runs PouchDB under Node's LevelDB adapter):
+- `PartsList.relativeDate`, `Part.formatHandsOn` (including the negative-clamp case),
+  `Debug.csvQuote`/`csvOf` (including RFC-4180 quoting and the trailing newline) — pure functions,
+  checked against hand-computed expected strings.
+- `Part.reconcileForDisplay` — a four-dimension fixture with one flagged pair and one kind
+  conflict; confirmed the conflicting name is excluded from the returned features and still
+  reported as a conflict.
+- The full `Store` round trip every page drives: `createPart`/`listParts`/`putPart`/`getPart`/
+  `deletePart`, `getSettings`/`putSettings`, `startTimer`/`stopTimer`/`listTimers`/
+  `handsOnSeconds`, then feeding a real timer row into `Debug.csvOf` — all against a real
+  Node/LevelDB PouchDB instance in a temp dir, all green.
+
+That's real behavioral coverage of every non-view code path this track added, short of actually
+clicking through a rendered page. `npx rescript build` (clean, 47 modules) and `npm test` (107/107)
+are both green. `e2e/specs/parts.spec.js` is written and ready (create → navigate → empty part
+screen; rename persists; delete-with-confirm returns to the empty state; settings toggle persists;
+Debug CSV download's first line is the RFC-4180 header) but **could not be run** — `npx playwright
+test --config=e2e/playwright.config.js --project=chromium` needs `npm run build`'s `dist/` first,
+which needs the fix above. Whoever picks this back up should re-run it once `vite.config.js` is
+fixed; nothing in the spec itself depends on that fix, only on being able to build.

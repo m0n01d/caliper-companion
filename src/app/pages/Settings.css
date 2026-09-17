@@ -1,1 +1,28 @@
 /* Settings — page-scoped styles. Owned by the Settings module; global tokens live in src/theme.css. */
+
+.settings-page .page-error {
+  color: var(--color-danger);
+  background: var(--color-rust-tint);
+  border: 1px solid var(--color-rust);
+  border-radius: var(--radius-card);
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.settings-page .help-text {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.tolerance-readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  background: var(--color-cream);
+  border: 1px solid var(--color-tan);
+  border-radius: var(--radius-card);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-forest-mid);
+}

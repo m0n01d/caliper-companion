@@ -1,27 +1,107 @@
-// Settings — stub (SPEC M6). A later agent wires the wedge-dongle toggle to
-// the part's `readingSource` default (SPEC M4).
+// Settings — `#/settings`, SPEC M4 last bullet. The wedge-dongle toggle
+// (`settings.wedge`) and the current default tolerances, read-only.
 
-type model = unit
-type msg = ToggleWedgeSource
+type model = {
+  loaded: bool,
+  wedge: bool,
+  lastToleranceMm: float,
+  lastToleranceIn: float,
+  error: option<string>,
+}
 
-let init = (): (model, Tea.cmd<msg>) => ((), Tea.none)
+type msg =
+  | SettingsLoaded(Store.settings)
+  | LoadFailed(string)
+  | ToggleWedge
+  | SaveFinished(result<unit, string>)
+
+let store = () => Store.shared()
+
+// See PartsList.res's `describeError` — same reasoning, duplicated rather
+// than shared because there's no page-shared module in the file-ownership
+// list for this track to add one to.
+let describeError = (_exn: exn): string => "Something went wrong talking to storage. Try again."
+
+let init = (): (model, Tea.cmd<msg>) => (
+  {
+    loaded: false,
+    wedge: Store.defaultSettings.wedge,
+    lastToleranceMm: Store.defaultSettings.lastToleranceMm,
+    lastToleranceIn: Store.defaultSettings.lastToleranceIn,
+    error: None,
+  },
+  Tea.fromPromise(() => Store.getSettings(store()), s => SettingsLoaded(s), e => LoadFailed(
+    describeError(e),
+  )),
+)
 
 let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
-  // Disabled in the view below; wired up once a part/Store exists (SPEC M4).
-  | ToggleWedgeSource => (model, Tea.none)
+  | SettingsLoaded(s) => (
+      {
+        loaded: true,
+        wedge: s.wedge,
+        lastToleranceMm: s.lastToleranceMm,
+        lastToleranceIn: s.lastToleranceIn,
+        error: None,
+      },
+      Tea.none,
+    )
+  | LoadFailed(msg) => ({...model, loaded: true, error: Some(msg)}, Tea.none)
+  | ToggleWedge =>
+    let next = !model.wedge
+    let settings: Store.settings = {
+      wedge: next,
+      lastToleranceMm: model.lastToleranceMm,
+      lastToleranceIn: model.lastToleranceIn,
+    }
+    (
+      {...model, wedge: next},
+      Tea.fromPromise(() => Store.putSettings(store(), settings), () => SaveFinished(Ok()), e =>
+        SaveFinished(Error(describeError(e)))
+      ),
+    )
+  | SaveFinished(Ok()) => (model, Tea.none)
+  // Revert the optimistic flip and surface the failure — the checkbox is
+  // the only "yes it saved" signal the user gets in v0.
+  | SaveFinished(Error(msg)) => ({...model, wedge: !model.wedge, error: Some(msg)}, Tea.none)
   }
 
 let title = (_model: model): string => "Settings"
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
-let view = (_model: model, ~dispatch: msg => unit): React.element =>
-  <div className="page">
-    <p className="page-name"> {React.string("Settings")} </p>
+let view = (model: model, ~dispatch: msg => unit): React.element =>
+  <div className="page settings-page">
+    {switch model.error {
+    | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
+    | None => React.null
+    }}
     <label className="toggle-row">
       <span> {React.string("Readings come from a wedge dongle")} </span>
       <input
-        type_="checkbox" checked=false disabled=true onChange={_ => dispatch(ToggleWedgeSource)}
+        type_="checkbox"
+        dataTestId="wedge-toggle"
+        checked={model.wedge}
+        disabled={!model.loaded}
+        onChange={_ => dispatch(ToggleWedge)}
       />
     </label>
+    <p className="help-text">
+      {React.string(
+        "A keyboard-wedge dongle types readings; saved dimensions are tagged `wedge`.",
+      )}
+    </p>
+    <div className="tolerance-readonly">
+      <p>
+        {React.string(
+          "Default tolerance (mm): ±" ++ NumberParse.format(model.lastToleranceMm, Types.Mm),
+        )}
+      </p>
+      <p>
+        {React.string(
+          "Default tolerance (in): ±" ++
+          NumberParse.format(model.lastToleranceIn, Types.Inch),
+        )}
+      </p>
+    </div>
   </div>

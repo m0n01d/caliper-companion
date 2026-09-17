@@ -1,1 +1,98 @@
 /* PartsList — page-scoped styles. Owned by the PartsList module; global tokens live in src/theme.css. */
+
+.parts-list-page .create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--color-cream);
+  border: 1px solid var(--color-tan);
+  border-radius: var(--radius-card);
+}
+
+.field-label {
+  font-size: 13px;
+  color: var(--color-forest-mid);
+  font-weight: 600;
+}
+
+.field-error {
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.create-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.page-error {
+  color: var(--color-danger);
+  background: var(--color-rust-tint);
+  border: 1px solid var(--color-rust);
+  border-radius: var(--radius-card);
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.part-list li.part-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.part-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.part-row-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.units-badge {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-moss);
+  border: 1px solid var(--color-tan);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.part-row-updated {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.part-row-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.part-row-actions button {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.row-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.row-edit input[type='text'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}

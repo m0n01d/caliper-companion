@@ -7,6 +7,9 @@ stable; add to this list before you rely on a new one.
 - `new-part` — button that opens the create form
 - `part-name` — text input · `part-units` — `<select>` with `mm` / `in` · `part-create` — submit
 - `part-row` — one per part in the list (contains the name); `part-rename`, `part-delete` inside a row
+- `part-rename-input`, `part-rename-save`, `part-rename-cancel` — inline rename form (shown in place
+  of a row's normal contents after `part-rename`)
+- `part-delete-confirm`, `part-delete-cancel` — inline confirm strip (shown after `part-delete`)
 - `parts-empty` — the empty state
 
 ## Part (`#/parts/:id`)
