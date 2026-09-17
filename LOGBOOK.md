@@ -1225,3 +1225,91 @@ confirmed restyled off it, and fixed two visible layout defects. Files: `src/glo
   `vite preview --port 3311`, reviewed by eye each iteration — caught and fixed the chevron-stacking
   regression and the features-table `table-layout: fixed` failure this way, neither of which any
   existing spec would have caught.
+
+## 2026-09-17 — A5 snap wiring + save race (agent/a5-wiring)
+
+The UI half of SPEC §8a A5 (bullets 2–4, 6) on top of `agent/w2-edgesnap`'s pure module, plus two
+robustness fixes. Files: `Annotate.res`/`.css`, `annotate/Draw.res` (`snapRing`),
+`bindings/Canvas.res` (`asSnapBitmap`), `store/Store.res`+`.resi`+`tests/StoreTest.res`
+(`settings.snap`, flake fix), `pages/Settings.res` (row), `e2e/specs/annotate.spec.js` (+5, 15
+total), `docs/testids.md`. Five commits: settings.snap; wiring + toggle + feedback; e2e; save race;
+store flake.
+
+- **Patch and cast.** `load` builds the 1024-px luma patch right after the oriented decode
+  (`ImageData.lumaPatchOf` through `Canvas.asSnapBitmap`, the one sanctioned `%identity` cast, with
+  the same justification as `ImageDecode.asCanvasBitmap`; Canvas.res's header now names it) and
+  caches the patch's edge floor (`EdgeSnap.cutoff`) beside it in `loaded`. A patch that fails to
+  build only disables snapping. Building it inside `load` (not as a later cmd) means the canvas
+  never exists without it — no "tap before the patch arrived" window for tests or thumbs.
+- **Radius math.** Window in patch px = `css / viewport.scale × (patch.width / imageW)`: screen →
+  image px through the viewport scale, image → patch px through the patch/image ratio. At the
+  390×844 fit scale on top.jpg (0.224, patch ratio 0.64) 24 css px = 68.6 patch px; at 8× fit it's
+  8.6. Finger-sized on screen at any zoom, as the brief asked.
+- **Two calls the module left open — both decided against the real top.jpg patch, not by eye.** I
+  dumped the actual 1024×768 luma the page builds (Chromium `drawImage` + `getImageData`, same
+  Rec.601 rounding) and ran the compiled `EdgeSnap.res.mjs` over every tap the specs make. Two
+  findings forced app-side rules. (1) *A tap already on an edge is left alone*: `snapPoint`/`snapPair`
+  pick the **strongest** gradient in the window, and the fixture's hole (black on the bar, step 100)
+  beats the bar's own edge (step 85). An exact-edge tap at (0.30, 0.35) — export.spec's `pin_dia`,
+  a spec this track doesn't own — was pulled onto the hole (0.28, 0.40) at a flat 24 px, and even at
+  16 px. So `onEdge`: if the tap's own patch pixel clears the cached floor it is not a miss, and it
+  stays (mark `Unsnapped`, no ring). Snapping corrects near-misses; pulling a good tap onto a
+  stronger neighbour is worse than not snapping. (2) *Two windows, near then full*: `[16, 24]` css
+  px. SPEC bullet 6's own test — a tap 12 px inside the left edge — landed on the hole (21 px away)
+  at a flat 24 px (`0.2676`, not `0.17`). Searching 16 px first lets a nearer edge beat a stronger
+  one further out; the 24 px reach is kept for a tap that missed by more. For `snapPair` the walk
+  is repeated per window and each end keeps its first hit. With both rules every existing spec
+  passes with snap **on** (its default) — no spec outside this track's ownership was touched.
+- **Observation for the EdgeSnap owner (not fixed here, not this track's file).** `snapPoint`'s
+  argmax has no distance weighting, so along a straight edge the winner is decided by whichever
+  pixel is noisiest — a first tap can slide *along* the edge by up to the radius. The synthetic
+  fixture hides it (a flat colour step has exactly equal magnitudes along the edge, so the
+  nearest-to-tap tie-break wins: y stays 0.4505); a real photo won't. A distance-weighted score, or
+  restricting the first tap to the normal direction once an edge is found, would fix it. Also:
+  `snapPoint`/`snapPair` recompute `medianGradient` (49k samples + sort) on every call, so the
+  two-window search costs 2–4 medians per tap; a `~floor` parameter would let the page pass the
+  cached one.
+- **Marks.** `snapMark = Unsnapped | Snapped | Dragged` per pending point. `Dragged` is set when a
+  drag of a pending handle or body is *released* (a cancelled drag reverts the points, so their marks
+  stand) and is sticky: `snapSecond` skips a `Dragged` p1. Selecting a saved dimension resets both.
+  `data-snapped="p1,p2"` reports `Snapped` only.
+- **Ring.** `Draw.snapRing`: a second amber circle (halo underneath) growing 1.0→1.6× the handle
+  radius while fading, 150 ms, driven by the same rAF effect as the A6 tween — `tweenCmd` became
+  `frames(~ms, gen, tick)`, used by both. Reduced motion ticks straight to 1, which removes the
+  ring before it renders (the effect's dispatch batches with the tap's own update). One ring
+  animation carries both ends of a `snapPair`.
+- **Toggle.** `snap-toggle` is a `<button class="pill annotate-snap">` inside the scrim capsule
+  (`Ui.Pill` is a span; the toolbar's group rule already makes children transparent), Ruler icon at
+  16 px (no magnet in `Icon.res`, not this track's file), 44 px tall for the tap target, amber text
+  on / `cc-text-2` off. Persists via `putSettings`; a failed write flips back with the inline error.
+  `Saved(Ok)` keeps `snap` from the live settings rather than the save's snapshot, so a flip during
+  an in-flight save isn't undone. **Layout consequence:** the capsule can't fit a fifth control beside
+  the hint at 390 px, so the hint pill now wraps under the toolbar there (wave 2's 360 px fallback,
+  `.annotate-overlay`'s `flex-wrap`) — screenshot-checked, nothing clips or overlaps, pills still let
+  taps through. If the conductor wants the hint back on one line at 390, the count pill or the zoom
+  readout has to give; not decided here.
+- **Settings row.** "Snap taps to edges" (`snap-setting-toggle`, `Ui.Toggle`) in its own
+  `Ui.ListGroup` with a footer pointing at the pill. `SaveFinished` now carries which toggle flipped
+  so the revert is the right one.
+- **Save race.** `begin` clears the entry, starts the A6 restore *and* returns focus to the canvas at
+  `trySave`/`DeleteClicked`, keeping the cleared entry in `inFlight`. `Saved(Ok)` only reloads dims and
+  announces — it no longer calls `endAutoFit` (a pair placed during the flight is legitimate and
+  keeps its fit; the old call was the wipe). `Saved(Error)`/`Deleted(Error)` restore the entry with
+  its fit **only if the user hasn't started a new one** (`entryUntouched`); otherwise theirs stands
+  and the failure is only the error line. Judgment call: never clobber fresh input to bring back old.
+- **Store flake, reproduced then fixed.** 25 runs of the store file under CPU contention (two busy
+  node loops) hit it once: `deletePart … expected 2 to be 1`. Cause: `Store.make` kicks off
+  `ensureIndexes` in the background, each index is a `_design/` doc, and `allDocs().total_rows`
+  counts design docs — the second index write landed between the test's `before` and `after` counts
+  (one design doc before, two after). Fix: `await Store.ensureIndexes(store)` (idempotent, and the
+  indexes test already does the same concurrently) before the first count. Also: `listParts orders
+  updatedAt descending` could tie in the same millisecond (then sorts in random uuid order) — the
+  test now waits for `Clock.nowIso()` to pass `b.updatedAt` before re-saving `a` and asserts the
+  strict order; and every Store a test opens is registered and destroyed in a local `afterEach`
+  (binding added in the test file — `core/Vitest.res` isn't this track's), so a failed assertion no
+  longer leaves a LevelDB handle open. 25 more contention runs after the fix: 0 failures.
+- **Verification.** `npx rescript build` clean under `+a`; `npm test` 194/194; `npm run build` clean;
+  `E2E_PORT=3410 … --project=chromium` **35/35** (30 existing + 5 A5), export/faces specs passing
+  with snap on; screenshots at 390×844 (Snap on, ring mid-flight, snapped pair fitted, Snap off, 360
+  wrap, Settings row) in the scratchpad, reviewed by eye. **Unverified here:** WebKit/phone — the
+  ring's feel and the pill under a thumb.
