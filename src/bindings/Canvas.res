@@ -209,6 +209,24 @@ let userIsTypingElsewhere = (el: option<Dom.element>): bool =>
     }
   }
 
+// True when focus now sits on a third element: a real control (not `<body>`)
+// that is neither `since` (whatever had focus when the deferred focus cmd
+// started — typically the button that was just tapped, which the target
+// should still win over) nor `target` itself. The companion to
+// `userIsTypingElsewhere` for the case where the user moved on to a
+// *button*: two overlapping focus loops (open a field, tap Create within a
+// few frames) otherwise let the older loop yank focus back to a field the
+// newer one is about to unmount (SPEC §8a A12a's New Folder field; see
+// LOGBOOK).
+let focusMovedElsewhere = (~since: option<Dom.element>, ~target: option<Dom.element>): bool =>
+  switch activeElement(document) {
+  | None => false
+  | Some(active) =>
+    tagName(active) != "BODY" &&
+    since->Option.mapOr(true, s => active !== s) &&
+    target->Option.mapOr(true, t => active !== t)
+  }
+
 // ── Viewport readout (Debug page) ──────────────────────────────────────
 // Live reads at each use site (`@val` externals inline), for the numbers
 // iOS standalone can disagree with itself about.

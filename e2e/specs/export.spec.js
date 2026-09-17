@@ -45,7 +45,17 @@ async function createPart(page, name, folder) {
   await page.getByTestId('new-part').click()
   await page.getByTestId('part-name').fill(name)
   if (folder !== undefined) {
-    await page.getByTestId('part-path').fill(folder) // SPEC §8a A10
+    // SPEC §8a A12a: the Folder field is a picker now — walk the path's
+    // segments, making each with New Folder (a new one nests under the
+    // selection), then Done. Same walk as parts.spec.js's `pickFolder`.
+    await page.getByTestId('part-folder-row').click()
+    for (const segment of folder.split('/')) {
+      await page.getByTestId('folder-new').click()
+      await page.getByTestId('folder-new-name').fill(segment)
+      await page.getByTestId('folder-new-create').click()
+      await expect(page.getByTestId('folder-new-name')).toHaveCount(0)
+    }
+    await page.getByTestId('folder-picker-done').click()
   }
   await page.getByTestId('part-create').click()
   // See header comment (1): assumes create navigates to the new part page.

@@ -102,4 +102,20 @@ await d.saveAs(path.join(outDir, d.suggestedFilename()))
 await shot('11-part-exported')
 await page.goto(`${baseURL}/#/`)
 await shot('12-parts-list')
+
+// SPEC §8a A12a: the folder picker from the create form — two nested
+// folders made through New Folder (each nests under the selection), then
+// the field opened once more so the shot shows it.
+await byId('new-part').click()
+await byId('part-name').fill('Window switch bezel')
+await byId('part-folder-row').click()
+for (const segment of ['Miata', 'Interior']) {
+  await byId('folder-new').click()
+  await byId('folder-new-name').fill(segment)
+  await byId('folder-new-create').click()
+  await expectVisible(byId('folder-new'))
+}
+await byId('folder-new').click()
+await byId('folder-new-name').fill('Dashboard')
+await shot('13-folder-picker')
 await browser.close()

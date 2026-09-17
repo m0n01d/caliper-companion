@@ -189,6 +189,80 @@ let destroy = async (t: t): unit => {
   let _ = await PouchDb.destroy(t.db)
 }
 
+// -- folders (SPEC §8a A12a) ------------------------------------------------
+//
+// `_id = "folder:" ++ path`, body `{type, path, createdAt, updatedAt}`. The
+// path is already normalised, validated and snapped by the page (A10's
+// rule: this module never normalises — checking *existence* is not
+// normalising). The root ("") is never a doc.
+
+let folderPrefix = "folder:"
+let folderId = (path: string): string => folderPrefix ++ path
+
+module FolderDoc = {
+  let toDoc = (path: string, ~now: string): PouchDb.doc => {
+    let d = Dict.make()
+    setStr(d, "_id", folderId(path))
+    setStr(d, "type", "folder")
+    setStr(d, "path", path)
+    setStr(d, "createdAt", now)
+    setStr(d, "updatedAt", now)
+    d
+  }
+
+  // The `path` field is the truth; an id-only fallback keeps a hand-edited
+  // doc readable.
+  let pathOf = (row: PouchDb.allDocsRow): string =>
+    switch row.doc->Nullable.toOption->Option.flatMap(d => getStr(d, "path")) {
+    | Some(path) => path
+    | None => String.slice(row.id, ~start=String.length(folderPrefix))
+    }
+}
+
+let folderRows = async (t: t): array<PouchDb.allDocsRow> =>
+  await allDocsRange(t, ~startkey=folderPrefix, ~endkey=prefixEnd(folderPrefix))
+
+let listFolders = async (t: t): array<string> => {
+  let rows = await folderRows(t)
+  rows
+  ->Array.map(FolderDoc.pathOf)
+  ->Array.filter(path => path != "")
+  ->Array.toSorted((a, b) => String.compare(String.toLowerCase(a), String.toLowerCase(b)))
+}
+
+// One `allDocs` range on `folder:`, then one `bulkDocs` of every path in
+// `paths` and every `Folder.ancestors` of them that has no doc yet. PouchDB
+// reports a per-doc failure *inside* the result array (nothing throws), so
+// a 409 there — a concurrent writer beat us to it — counts as already
+// existing and is left out of the returned list. Returns the paths this
+// call created, ancestors first.
+let ensureFolders = async (t: t, ~paths: array<string>): array<string> => {
+  let existing = await listFolders(t)
+  let wanted = []
+  paths->Array.forEach(path =>
+    Array.concat(Folder.ancestors(path), [path])->Array.forEach(p =>
+      if p != "" && !Array.includes(existing, p) && !Array.includes(wanted, p) {
+        Array.push(wanted, p)
+      }
+    )
+  )
+  if Array.length(wanted) == 0 {
+    []
+  } else {
+    let now = Clock.nowIso()
+    let results = await PouchDb.bulkDocs(t.db, wanted->Array.map(p => FolderDoc.toDoc(p, ~now)))
+    // Results come back in input order; `ok: true` is the one success shape.
+    wanted->Array.filterWithIndex((_, i) =>
+      switch results[i] {
+      | Some(r) => getBool(r, "ok") == Some(true)
+      | None => false
+      }
+    )
+  }
+}
+
+let ensureFolder = async (t: t, ~path: string): array<string> => await ensureFolders(t, ~paths=[path])
+
 // -- parts ------------------------------------------------------------------
 
 module PartDoc = {
@@ -254,15 +328,23 @@ let createPart = async (
     createdAt: now,
     updatedAt: now,
   }
+  // A12a: every path a part carries has a folder doc (and its ancestors).
+  if path != "" {
+    let _ = await ensureFolder(t, ~path)
+  }
   let _ = await PouchDb.put(t.db, PartDoc.toDoc(~rev=None, part))
   part
 }
 
-let putPart = async (t: t, part: Types.part): Types.part =>
+let putPart = async (t: t, part: Types.part): Types.part => {
+  if part.path != "" {
+    let _ = await ensureFolder(t, ~path=part.path)
+  }
   await readModifyWrite(t, part.id, existing => {
     let updated = {...part, updatedAt: Clock.nowIso()}
     (PartDoc.toDoc(~rev=revOf(existing), updated), updated)
   })
+}
 
 let getPart = async (t: t, id: string): option<Types.part> =>
   switch await getDocRaw(t, id) {

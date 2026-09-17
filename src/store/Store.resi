@@ -22,13 +22,37 @@ let destroy: t => promise<unit>
 // including redundantly after `make`'s own background call.
 let ensureIndexes: t => promise<unit>
 
+// -- folders (SPEC §8a A12a) ------------------------------------------------
+//
+// Explicit folder docs, app-internal (never exported): `_id = "folder:" ++
+// path`, body `{type: "folder", path, createdAt, updatedAt}` (`updatedAt` =
+// `createdAt` until a rename bumps it — §5's every-doc rule). `path` is
+// always normalised, validated and snapped by the page before it gets here;
+// this module checks *existence* only, it never normalises (A10's rule).
+// The root ("") is never a doc.
+
+// Every folder doc's path, sorted case-insensitively.
+let listFolders: t => promise<array<string>>
+
+// One `allDocs` range on `folder:`, then one `bulkDocs` of every path in
+// `paths` and every `Folder.ancestors` of them that has no doc. A per-doc
+// 409 in the `bulkDocs` result (a concurrent writer) counts as already
+// existing. Returns the paths this call created, ancestors first; `[]` when
+// everything already existed. Idempotent.
+let ensureFolders: (t, ~paths: array<string>) => promise<array<string>>
+
+// `ensureFolders([path])`.
+let ensureFolder: (t, ~path: string) => promise<array<string>>
+
 // -- parts ------------------------------------------------------------------
 
 // id, createdAt = updatedAt = now, anchors = []. `slug` is M1's Slug.make
 // output — not available to this module, so the caller supplies it. `path`
 // (SPEC §8a A10, "" = root) is stored as given: the caller runs
 // `Folder.normalize → validate → snap` first; this module never normalises.
-// Part docs written before A10 have no `path` and read back as "".
+// Part docs written before A10 have no `path` and read back as "". A12a: a
+// non-empty path gets `ensureFolder` before the part is written, so every
+// path a part carries always has a folder doc.
 let createPart: (
   t,
   ~name: string,
@@ -39,6 +63,7 @@ let createPart: (
 
 // Bumps updatedAt; returns the stored record (including the bumped
 // updatedAt). Used for both edits (rename, notes) and explicit re-saves.
+// A12a: like `createPart`, a non-empty path gets `ensureFolder` first.
 let putPart: (t, Types.part) => promise<Types.part>
 
 let getPart: (t, string) => promise<option<Types.part>>

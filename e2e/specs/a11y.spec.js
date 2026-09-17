@@ -14,6 +14,8 @@ import {test, expect} from '@playwright/test'
 
 const FIXTURE_TOP = 'fixtures/hinge_pin/top.jpg'
 
+const optionFor = (page, path) => page.locator(`[data-testid="folder-option"][data-path="${path}"]`)
+
 async function createPart(page, name) {
   await page.goto('/')
   await page.getByTestId('new-part').click()
@@ -185,6 +187,52 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await page.getByTestId('recapture-cancel').click()
     await expect(page.getByTestId('recapture-confirm')).toHaveCount(0)
     await expect(page.getByTestId('shutter')).toBeFocused()
+  })
+
+  // SPEC §8a A12a (review S7): the folder picker's options are real
+  // <button role="option">s — Tab reaches them, `aria-selected` tells the
+  // truth, and the selected one is focused when the picker opens.
+  test('parts list — folder picker: options are role=option buttons, Tab-reachable, aria-selected truthful, the selected one focused on open', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-folder-row').click()
+    const options = page.getByTestId('folder-option')
+    await expect(options).toHaveCount(1)
+    await expect(options.first()).toBeFocused()
+    await page.getByTestId('folder-new').click()
+    await page.getByTestId('folder-new-name').fill('Miata')
+    await page.getByTestId('folder-new-create').click()
+    await expect(options).toHaveCount(2)
+    await expect(options.nth(1)).toBeFocused()
+    for (const option of await options.all()) {
+      expect(await option.evaluate(el => el.tagName)).toBe('BUTTON')
+      await expect(option).toHaveAttribute('role', 'option')
+      const label = await option.getAttribute('aria-label')
+      expect(label?.length ?? 0).toBeGreaterThan(0)
+    }
+    await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false')
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true')
+    await expectEveryButtonNamed(page)
+
+    // DOM order in the bar is Cancel → Done → the options, so two Tabs from
+    // Cancel land on the first option; Space selects it.
+    await page.getByTestId('folder-picker-cancel').focus()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('folder-picker-done')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(options.nth(0)).toBeFocused()
+    await page.keyboard.press('Space')
+    await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true')
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'false')
+
+    // Reopening focuses whichever option is selected, not always the first.
+    await optionFor(page, 'Miata').click()
+    await page.getByTestId('folder-picker-done').click()
+    await expect(page.getByTestId('part-folder-row')).toBeFocused()
+    await page.getByTestId('part-folder-row').click()
+    await expect(optionFor(page, 'Miata')).toBeFocused()
   })
 
   test('parts list — rename autofocuses its draft input; deleting a part sends focus to New part', async ({

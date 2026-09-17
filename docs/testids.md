@@ -32,16 +32,33 @@ stable; add to this list before you rely on a new one.
   `Miata / Interior · 2`; rendered uppercase by `.list-group-header`, so `textContent` is the
   mixed-case spelling and `innerText` the uppercase one). **Absent for the root section**, so a
   list with no folders has zero headers
-- `part-path` — the Folder text input (`autocapitalize="words" autocorrect="off" enterkeyhint="done"`,
-  placeholder `Miata/Interior`) in **both** the create form and the inline rename strip (they
-  share one `PartForm`; the create form's name input stays `part-name`, the rename strip's
-  `part-rename-input`). Free text with `/`; `a//b` saves as `a/b` (`Folder.normalize`) and a case-
-  only variant of an existing folder snaps to its spelling · `part-path-chip` — one `Ui.Chip` per
-  existing folder under the field (at most 8, newest `updatedAt` first, `aria-pressed` when the
-  field already holds it); tapping fills the field and refocuses it, never submits ·
-  `part-path-error` — the inline rule while the field is invalid (`?`, a leading `-`, `..`, > 32
-  chars per segment, > 6 deep); the primary (`part-create` / `part-rename-save`) is
-  `aria-disabled` meanwhile
+- `part-folder-row` — the **Folder row** (SPEC §8a A12a) in **both** the create form (a `list-row`
+  `<button>` with a chevron: title "Folder", trailing value the chosen folder in display form —
+  `Miata / Interior` — or `None` at root) and the inline rename strip (the same `<button>`, drawn
+  as a field under a "Folder" label instead of a row). Tapping it opens the picker; Done and
+  Cancel both return focus here. ~~`part-path`~~, ~~`part-path-chip`~~, ~~`part-path-error`~~ are
+  retired — the free-text Folder field and its chips are gone
+- **Folder picker** (A12a) — takes over the page while open (list, search, Edit/"+" hidden; the
+  create form or the rename strip it came from is restored on return). Bar: `.shell-title` reads
+  `Choose Folder` (centred Headline, no Large Title) between `folder-picker-cancel` (leading text
+  action; replaces `settings-link` while open) and `folder-picker-done` (trailing) ·
+  `folder-picker-list` — the one `role="listbox"` container · `folder-option` — one
+  `<button type="button" role="option">` per row: root first (`data-path=""`,
+  `aria-label="None, top level"`, visible "None" / "Top level"), then every folder as a flat tree
+  (explicit folders ∪ the parts' paths ∪ their ancestors, depth-first, case-insensitive within a
+  level) with `data-path="<stored path>"`, `aria-label="<display path>"` (`Miata / Interior`),
+  visible text the leaf, `padding-left` = 16 + depth × 20 px, `aria-selected` truthful, a Check
+  glyph on the selected row; a tap selects (no navigation); opening focuses the selected option ·
+  `folder-new` — the secondary "New Folder" capsule under the list, `aria-disabled` (with the
+  Footnote `folder-new-depth`, "Folders go six deep.") once the selection is six deep ·
+  `folder-new-name` — the inline one-segment input it reveals (`autocapitalize="words"
+  autocorrect="off" enterkeyhint="done"`, placeholder `Folder name`, focused on open; Enter
+  creates) · `folder-new-create` (primary, `aria-disabled` while empty or invalid) ·
+  `folder-new-cancel` (focus back to `folder-new`) · `folder-new-error` — the inline rule once
+  the field holds something invalid (`a/b`, `?`, > 32 chars). Create = `Folder.join` under the
+  selection, `Folder.snap` against the listed paths (`interior` under `Miata` selects the
+  existing `Interior`, no twin), `Store.ensureFolder`; the result becomes the selection and takes
+  focus. A folder created here is a real `folder:` doc even if the picker is then Cancelled
 
 ## Part (`#/parts/:id`)
 - `.shell-subtitle` (a class, not a testid — `Shell.res` owns it) — the part's folder path in

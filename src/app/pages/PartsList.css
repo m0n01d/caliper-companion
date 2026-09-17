@@ -99,11 +99,68 @@
   gap: var(--cc-space-6);
 }
 
-/* A10: the Folder field's suggestion chips sit under the input (S5). The
-   chip row scrolls horizontally on its own; a small top gap separates it
-   from the input's 44 px box without reading as a new field. */
-.part-path-chips {
-  margin-top: var(--cc-space-2);
+/* SPEC §8a A12a — the Folder row and the picker. In the create form the
+   row is a `.list-row` <button> (title "Folder", the chosen folder as the
+   trailing value, chevron) inside the inset group; `button.list-row`
+   (global.css) already gives it the pressed highlight and cursor. The value
+   ellipsises so a deep path never wraps the row. */
+.part-folder-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.part-folder-row .part-folder-value {
+  max-width: 60%;
+}
+
+/* The same control inside a rename strip (review N4: no `.list-row` inside
+   the row's own `.list-row`): a button drawn like the Name input above it —
+   the field's box, border and radius — with the value leading and the
+   chevron trailing, under a Caption label. */
+.part-folder-field {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-3);
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-2) 14px;
+  background: var(--cc-field);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  color: var(--cc-text);
+  font: var(--cc-text-body);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.part-folder-field .part-folder-value {
+  flex: 1 1 auto;
+}
+
+/* Picker options: a fixed-width glyph slot keeps the titles aligned (the
+   root "None" row leaves it empty); the indent itself is inline
+   `padding-left` (`16 + depth × 20 px`, PartsList.res). The Check on the
+   selected row is the one accent in the list. */
+.folder-option-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  width: 22px;
+  color: var(--cc-text-2);
+}
+
+.folder-option-check {
+  color: var(--cc-accent);
+}
+
+/* The bar's Done is the emphasised action of the Cancel/Done pair (HIG
+   picker bars); `.bar-action` (Part.css) gives both the accent colour. */
+.bar-action-strong {
+  font-weight: 600;
 }
 
 /* Chromium keeps its own `::-webkit-search-cancel-button` even with

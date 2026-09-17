@@ -15,12 +15,20 @@
 // path, and one `PartForm` (Name + Folder + chips of existing folders)
 // serves both create and the inline rename — editing the folder is how a
 // part moves. Grouping and filtering are derived in `view` from
-// `model.parts`; nothing new is stored and Store never sees a raw path.
+// `model.parts`; Store never sees a raw path.
+//
+// A12a (SPEC §8a, docs/design/a12-folders-review.md): folders are explicit
+// `folder:` docs now (`Store.ensureFolders`), and the form's free-text
+// Folder field became a **Folder row** that opens a picker — a sub-view
+// that takes over the page (list, search and bar actions hidden) with a
+// flat tree of every folder, a Check on the selected one, and a New Folder
+// field under it. The picker remembers where it came from (the create form
+// or one row's rename strip) and Done/Cancel return there. A one-shot
+// migration after `PartsLoaded` prefix-snaps A10 part paths against each
+// other and makes sure every one of them has a doc.
 
-// What both forms edit (review S4). `path` is the raw text as typed: the
-// view runs `Folder.validate` on it live for the inline rule + disabled
-// primary, and `update` normalises/snaps it once more on submit before it
-// reaches Store.
+// What both forms edit (review S4). `path` is the folder the picker chose:
+// already normalised, validated and snapped, never raw text (A12a).
 type formDraft = {
   name: string,
   path: string,
@@ -37,6 +45,19 @@ type rowState =
   | Normal
   | Renaming(formDraft)
   | ConfirmingDelete
+
+// A12a: where the picker returns to on Done / Cancel — the create form's
+// draft or one row's rename draft. A12b adds a `ForMove`.
+type pickerTarget =
+  | ForCreate
+  | ForRename(string)
+
+type picker = {
+  target: pickerTarget,
+  selected: string,
+  // `Some(draft)` while the New Folder field is open under the list.
+  newFolder: option<string>,
+}
 
 type model = {
   loaded: bool,
@@ -63,19 +84,26 @@ type model = {
   // (`Main.pageForRoute` re-inits this page per route change — review N4,
   // accepted for v0.1; `Route.Parts` may gain a `q` later if it bites).
   query: string,
+  // A12a: every explicit folder path (`folder:` docs), from `FoldersLoaded`
+  // after the one-shot migration and grown by what the picker creates.
+  folders: array<string>,
+  // A12a: `Some` while the folder picker has taken over the page.
+  picker: option<picker>,
 }
 
 type msg =
   | PartsLoaded(array<Types.part>)
   | LoadFailed(string)
+  // A12a: the migration's result — every explicit folder path, plus the
+  // (rare) parts whose spelling it re-snapped and re-saved.
+  | FoldersLoaded(array<string>, array<Types.part>)
+  | FoldersFailed(string)
   | PartImageLoaded(string, option<string>)
   | EditToggled
   | QueryChanged(string)
   | QueryCleared
   | NewPartClicked
   | FormNameChanged(string)
-  | FormPathChanged(string)
-  | FormPathPicked(string)
   | FormUnitsChanged(Types.units)
   | FormCancel
   | CreateSubmit
@@ -84,8 +112,6 @@ type msg =
   | RowTapped(string)
   | RenameStart(string)
   | RenameDraftChanged(string, string)
-  | RenamePathChanged(string, string)
-  | RenamePathPicked(string, string)
   | RenameCancel(string)
   | RenameSubmit(string)
   | RenameSaved(Types.part)
@@ -95,6 +121,17 @@ type msg =
   | DeleteConfirm(string)
   | DeleteDone(string)
   | DeleteFailed(string)
+  // A12a: the folder picker.
+  | PickerOpen(pickerTarget)
+  | PickerSelect(string)
+  | PickerDone
+  | PickerCancel
+  | NewFolderOpen
+  | NewFolderChanged(string)
+  | NewFolderCancel
+  | NewFolderCreate
+  | NewFolderCreated(string, array<string>)
+  | NewFolderFailed(string)
 
 let store = () => Store.shared()
 
@@ -129,32 +166,47 @@ let describeError = (_exn: exn): string => "Something went wrong talking to stor
 // few animation frames (`Canvas.requestAnimationFrame`, already exported
 // read-only from Canvas.res): once the DOM has actually settled, the last
 // attempt lands on whatever node is really there by then.
-let rec focusWhenReady = (id: string, attemptsLeft: int): unit => {
-  let target = Canvas.byTestId(id)
+// Takes a CSS selector rather than a testid (A12a): the picker's options
+// share one testid and are told apart by `data-path`. `since` is whatever
+// had focus when the cmd started (the tapped button, usually).
+let rec focusWhenReady = (selector: string, ~since: option<Dom.element>, attemptsLeft: int): unit => {
+  let target = Canvas.querySelector(selector)
   // Stop the moment another field has focus: the user tapped it before these
   // frames ran out. Seen as a Playwright `fill` on Folder landing in Name
   // (the loop yanked focus back mid-fill) — a quick thumb on a phone does
-  // exactly the same thing.
-  if !Canvas.userIsTypingElsewhere(target) {
+  // exactly the same thing. Likewise the moment focus has moved to any
+  // third control (A12a): tapping the New Folder field's Create within a
+  // few frames of opening it otherwise let this loop refocus the field
+  // right before it unmounted, and the *next* focus cmd then saw a field
+  // with focus and gave up — the created option never got focus.
+  if !Canvas.userIsTypingElsewhere(target) && !Canvas.focusMovedElsewhere(~since, ~target) {
     switch target {
     | Some(el) => el->Canvas.focus
     | None => ()
     }
     if attemptsLeft > 0 {
-      Canvas.requestAnimationFrame(_ => focusWhenReady(id, attemptsLeft - 1))->ignore
+      Canvas.requestAnimationFrame(_ => focusWhenReady(selector, ~since, attemptsLeft - 1))->ignore
     }
   }
 }
 
-let focusTestId = (id: string): Tea.cmd<msg> =>
-  Tea.effect(_dispatch =>
+let focusSelector = (selector: string): Tea.cmd<msg> =>
+  Tea.effect(_dispatch => {
+    let since = Canvas.activeElement(Canvas.document)
     Promise.resolve()
     ->Promise.then(() => {
-        focusWhenReady(id, 6)
+        focusWhenReady(selector, ~since, 6)
         Promise.resolve()
       })
     ->ignore
-  )
+  })
+
+let focusTestId = (id: string): Tea.cmd<msg> => focusSelector(`[data-testid="${id}"]`)
+
+// A folder path never holds `"` or `\` (`Folder.segmentRe`), so it can sit
+// in a double-quoted attribute selector as is.
+let focusFolderOption = (path: string): Tea.cmd<msg> =>
+  focusSelector(`[data-testid="folder-option"][data-path="${path}"]`)
 
 let init = (): (model, Tea.cmd<msg>) => (
   {
@@ -168,6 +220,8 @@ let init = (): (model, Tea.cmd<msg>) => (
     partImages: Dict.make(),
     announcement: "",
     query: "",
+    folders: [],
+    picker: None,
   },
   Tea.fromPromise(() => Store.listParts(store()), parts => PartsLoaded(parts), e => LoadFailed(
     describeError(e),
@@ -219,8 +273,8 @@ let byUpdatedAtDesc = (a: Types.part, b: Types.part): Ordering.t =>
 
 // Distinct non-root folders in `parts` order. `parts` is updatedAt desc
 // (`Store.listParts`; `RenameSaved` re-sorts, review S6), so first-seen
-// order *is* "newest updatedAt of any part in that folder, desc" — the chip
-// order review S5 asks for — with no second pass and no new Store call.
+// order *is* "newest updatedAt of any part in that folder, desc" — with no
+// second pass and no new Store call.
 let foldersOf = (parts: array<Types.part>): array<string> => {
   let seen = []
   parts->Array.forEach(p =>
@@ -231,16 +285,77 @@ let foldersOf = (parts: array<Types.part>): array<string> => {
   seen
 }
 
-let maxChips = 8
-
-// `normalize → validate → snap` (SPEC A10 bullet 1) — the one place a
-// typed path becomes a stored one. `Error` only reaches `update` if a
-// submit slips past the disabled primary; the view's own live check is what
-// the user sees.
-let resolvePath = (raw: string, ~parts: array<Types.part>): result<string, Folder.error> =>
-  Folder.validate(raw)->Result.map(normalized =>
-    Folder.snap(normalized, ~existing=foldersOf(parts))
+// A12a migration for A10 data, run **once** from `PartsLoaded` (never on a
+// re-render). Existing folder docs seed the running set (their spelling is
+// canonical); then each distinct part path, in `parts` order (updatedAt
+// desc — the most recently touched spelling wins), is prefix-snapped
+// against what has been seen so far and any part whose spelling changed is
+// `putPart`ed (rare: A10's whole-path snap let `Miata/Interior` and
+// `miata/Exterior` coexist). One `ensureFolders` over the result, then the
+// full doc list becomes `model.folders`. Sequential on purpose: parallel
+// `ensureFolder`s would race on shared ancestors (review S3).
+let migrateFoldersCmd = (parts: array<Types.part>): Tea.cmd<msg> =>
+  Tea.fromPromise(
+    async () => {
+      let store = store()
+      let seen = await Store.listFolders(store)
+      let changed = []
+      parts->Array.forEach(p =>
+        if p.path != "" {
+          let snapped = Folder.snap(p.path, ~existing=seen)
+          if !Array.includes(seen, snapped) {
+            Array.push(seen, snapped)
+          }
+          if snapped != p.path {
+            Array.push(changed, {...p, path: snapped})
+          }
+        }
+      )
+      let saved = []
+      for i in 0 to Array.length(changed) - 1 {
+        switch changed[i] {
+        | Some(p) => Array.push(saved, await Store.putPart(store, p))
+        | None => ()
+        }
+      }
+      let _ = await Store.ensureFolders(store, ~paths=seen)
+      let folders = await Store.listFolders(store)
+      (folders, saved)
+    },
+    ((folders, saved)) => FoldersLoaded(folders, saved),
+    e => FoldersFailed(describeError(e)),
   )
+
+// A12a: what the picker lists (root aside) — explicit folder docs ∪ the
+// loaded parts' paths ∪ their ancestors ∪ the current selection, as a
+// depth-first flat tree. The same set is what a new folder name snaps
+// against, so `interior` under `Miata` finds the existing `Interior`.
+let pickerPaths = (model: model, picker: picker): array<string> =>
+  Folder.tree(Array.concat(Array.concat(model.folders, foldersOf(model.parts)), [picker.selected]))
+
+// Explicit folders after the picker created some: docs ∪ created ∪ the
+// path itself (a per-doc 409 means it exists even if it isn't in `created`).
+let withFolders = (folders: array<string>, added: array<string>): array<string> =>
+  Array.concat(folders, added)
+  ->Array.filter(p => p != "")
+  ->Array.reduce([], (acc, p) => {
+    if !Array.includes(acc, p) {
+      Array.push(acc, p)
+    }
+    acc
+  })
+  ->Array.toSorted((a, b) => String.compare(String.toLowerCase(a), String.toLowerCase(b)))
+
+// The draft path the picker starts from for its target.
+let draftPathFor = (model: model, target: pickerTarget): string =>
+  switch target {
+  | ForCreate => model.form->Option.map(f => f.draft.path)->Option.getOr("")
+  | ForRename(id) =>
+    switch rowStateOf(model, id) {
+    | Renaming(draft) => draft.path
+    | Normal | ConfirmingDelete => ""
+    }
+  }
 
 // Case-insensitive substring on the name, the stored path and its display
 // form — so "miata / int" matches what the section header shows, too.
@@ -278,12 +393,28 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
   | PartsLoaded(parts) => (
       {...model, loaded: true, parts, error: None},
-      // One cmd per part (see `loadFirstFaceImageCmd`'s doc comment); this
-      // only ever runs off the one `PartsLoaded` that follows `init`'s own
-      // `Store.listParts` — never re-triggered by a later re-render.
-      Tea.batch(parts->Array.map(p => loadFirstFaceImageCmd(p.id))),
+      // One cmd per part (see `loadFirstFaceImageCmd`'s doc comment) plus
+      // the A12a folder migration; this only ever runs off the one
+      // `PartsLoaded` that follows `init`'s own `Store.listParts` — never
+      // re-triggered by a later re-render.
+      Tea.batch(
+        Array.concat(parts->Array.map(p => loadFirstFaceImageCmd(p.id)), [migrateFoldersCmd(parts)]),
+      ),
     )
   | LoadFailed(msg) => ({...model, loaded: true, error: Some(msg)}, Tea.none)
+  | FoldersLoaded(folders, saved) => (
+      {
+        ...model,
+        folders,
+        parts: Array.length(saved) == 0
+          ? model.parts
+          : model.parts
+            ->Array.map(p => saved->Array.find(s => s.id == p.id)->Option.getOr(p))
+            ->Array.toSorted(byUpdatedAtDesc),
+      },
+      Tea.none,
+    )
+  | FoldersFailed(msg) => ({...model, error: Some(msg)}, Tea.none)
   | PartImageLoaded(partId, Some(url)) =>
     let next = Dict.copy(model.partImages)
     Dict.set(next, partId, url)
@@ -306,16 +437,6 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       },
       Tea.none,
     )
-  | FormPathChanged(path) => (
-      {...model, form: model.form->Option.map(f => {...f, draft: {...f.draft, path}})},
-      Tea.none,
-    )
-  // A chip fills the field and hands focus back to it (never submits), so
-  // "/Sub" can be appended straight away (review S5).
-  | FormPathPicked(path) => (
-      {...model, form: model.form->Option.map(f => {...f, draft: {...f.draft, path}})},
-      focusTestId("part-path"),
-    )
   | FormUnitsChanged(units) => ({...model, form: model.form->Option.map(f => {...f, units})}, Tea.none)
   | FormCancel => ({...model, form: None}, Tea.none)
   | CreateSubmit =>
@@ -326,24 +447,23 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       if trimmed == "" {
         ({...model, form: Some({...f, error: Some("Name can't be empty")})}, Tea.none)
       } else {
-        switch resolvePath(f.draft.path, ~parts=model.parts) {
-        | Error(_) => (model, Tea.none)
-        | Ok(path) => (
-            {...model, form: Some({...f, submitting: true, error: None})},
-            Tea.fromPromise(
-              () =>
-                Store.createPart(
-                  store(),
-                  ~name=trimmed,
-                  ~slug=Slug.make(trimmed),
-                  ~path,
-                  ~units=f.units,
-                ),
-              part => PartCreated(part),
-              e => CreateFailed(describeError(e)),
-            ),
-          )
-        }
+        // The draft's path came out of the picker (already snapped), so it
+        // goes to Store as is; `createPart` ensures its folder doc (A12a).
+        (
+          {...model, form: Some({...f, submitting: true, error: None})},
+          Tea.fromPromise(
+            () =>
+              Store.createPart(
+                store(),
+                ~name=trimmed,
+                ~slug=Slug.make(trimmed),
+                ~path=f.draft.path,
+                ~units=f.units,
+              ),
+            part => PartCreated(part),
+            e => CreateFailed(describeError(e)),
+          ),
+        )
       }
     }
   | PartCreated(part) => (
@@ -377,38 +497,21 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       )
     | Normal | ConfirmingDelete => (model, Tea.none)
     }
-  | RenamePathChanged(id, path) =>
-    switch rowStateOf(model, id) {
-    | Renaming(draft) => (
-        {...model, rowStates: setRowState(model, id, Renaming({...draft, path}))},
-        Tea.none,
-      )
-    | Normal | ConfirmingDelete => (model, Tea.none)
-    }
-  | RenamePathPicked(id, path) =>
-    switch rowStateOf(model, id) {
-    | Renaming(draft) => (
-        {...model, rowStates: setRowState(model, id, Renaming({...draft, path}))},
-        focusTestId("part-path"),
-      )
-    | Normal | ConfirmingDelete => (model, Tea.none)
-    }
   | RenameCancel(id) => ({...model, rowStates: setRowState(model, id, Normal)}, Tea.none)
   | RenameSubmit(id) =>
     switch (rowStateOf(model, id), model.parts->Array.find(p => p.id == id)) {
     | (Renaming(draft), Some(part)) =>
       let trimmed = String.trim(draft.name)
-      switch (trimmed == "", resolvePath(draft.path, ~parts=model.parts)) {
-      | (true, _) | (_, Error(_)) => (model, Tea.none)
-      | (false, Ok(path)) => (
-          model,
-          Tea.fromPromise(
-            () => Store.putPart(store(), {...part, name: trimmed, path}),
-            p => RenameSaved(p),
-            e => RenameFailed(describeError(e)),
-          ),
-        )
-      }
+      trimmed == ""
+        ? (model, Tea.none)
+        : (
+            model,
+            Tea.fromPromise(
+              () => Store.putPart(store(), {...part, name: trimmed, path: draft.path}),
+              p => RenameSaved(p),
+              e => RenameFailed(describeError(e)),
+            ),
+          )
     | _ => (model, Tea.none)
     }
   | RenameSaved(part) => (
@@ -451,12 +554,138 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       focusTestId("new-part"),
     )
   | DeleteFailed(msg) => ({...model, rowError: Some(msg)}, Tea.none)
+  // ---- A12a: the folder picker ----------------------------------------
+  | PickerOpen(target) =>
+    let selected = draftPathFor(model, target)
+    (
+      {...model, picker: Some({target, selected, newFolder: None}), rowError: None},
+      // DESIGN.md §9: opening the picker focuses the selected option.
+      focusFolderOption(selected),
+    )
+  | PickerSelect(path) => (
+      {...model, picker: model.picker->Option.map(p => {...p, selected: path})},
+      Tea.none,
+    )
+  // Done applies the selection to the target's draft and returns there;
+  // Create / Save then proceed exactly as before. Cancel discards only the
+  // picker's selection — never the form's other fields. Both send focus
+  // back to the Folder row (with two rename strips open that is the first
+  // `part-folder-row` in the DOM — the same accepted edge as
+  // `part-rename-input`'s focus).
+  | PickerDone =>
+    switch model.picker {
+    | None => (model, Tea.none)
+    | Some({target: ForCreate, selected}) => (
+        {
+          ...model,
+          form: model.form->Option.map(f => {...f, draft: {...f.draft, path: selected}}),
+          picker: None,
+        },
+        focusTestId("part-folder-row"),
+      )
+    | Some({target: ForRename(id), selected}) =>
+      let rowStates = switch rowStateOf(model, id) {
+      | Renaming(draft) => setRowState(model, id, Renaming({...draft, path: selected}))
+      | Normal | ConfirmingDelete => model.rowStates
+      }
+      ({...model, rowStates, picker: None}, focusTestId("part-folder-row"))
+    }
+  | PickerCancel => ({...model, picker: None}, focusTestId("part-folder-row"))
+  | NewFolderOpen => (
+      {...model, picker: model.picker->Option.map(p => {...p, newFolder: Some("")})},
+      focusTestId("folder-new-name"),
+    )
+  | NewFolderChanged(draft) => (
+      {...model, picker: model.picker->Option.map(p => {...p, newFolder: Some(draft)})},
+      Tea.none,
+    )
+  | NewFolderCancel => (
+      {...model, picker: model.picker->Option.map(p => {...p, newFolder: None})},
+      focusTestId("folder-new"),
+    )
+  // `join` under the selection, `snap` against everything the picker knows
+  // (so `interior` under `Miata` selects the existing `Interior` instead of
+  // making a twin), then `ensureFolder`. `Error` only reaches here if a
+  // submit slips past the disabled Create; the depth cap disables the
+  // capsule before the field can even open.
+  | NewFolderCreate =>
+    switch model.picker {
+    | Some({selected, newFolder: Some(draft)} as picker)
+      if Folder.depth(selected) < Folder.maxDepth =>
+      switch Folder.validateSegment(draft) {
+      | Error(_) => (model, Tea.none)
+      | Ok(name) =>
+        let path = Folder.snap(
+          Folder.join(~parent=selected, ~name),
+          ~existing=pickerPaths(model, picker),
+        )
+        (
+          model,
+          Tea.fromPromise(
+            () => Store.ensureFolder(store(), ~path),
+            created => NewFolderCreated(path, created),
+            e => NewFolderFailed(describeError(e)),
+          ),
+        )
+      }
+    | _ => (model, Tea.none)
+    }
+  // The created (or snapped-onto) folder becomes the selection; the field
+  // closes and focus moves to its option. It is a real folder from here on
+  // — Cancelling the picker afterwards does not undo it.
+  | NewFolderCreated(path, created) => (
+      {
+        ...model,
+        folders: withFolders(model.folders, Array.concat(created, [path])),
+        picker: model.picker->Option.map(p => {...p, selected: path, newFolder: None}),
+        rowError: None,
+      },
+      focusFolderOption(path),
+    )
+  | NewFolderFailed(msg) => ({...model, rowError: Some(msg)}, Tea.none)
   }
 
-let title = (_model: model): string => "Parts"
+// A12a (review B3): while the picker is open the bar carries a centred
+// Headline "Choose Folder" between Cancel and Done, the HIG picker shape;
+// otherwise the root's static Large Title "Parts".
+let title = (model: model): string =>
+  switch model.picker {
+  | Some(_) => "Choose Folder"
+  | None => "Parts"
+  }
+let largeTitle = (model: model): bool => model.picker->Option.isNone
 let back = (_model: model): option<Route.t> => None
 
 let subtitle = (_model: model): option<string> => None
+
+// Bar leading slot. Normally the gear: Settings and Debug have no other way
+// in from an installed app (no URL bar), so the Parts root carries one bar
+// button on the root (HIG); Settings then links on to Debug. While the
+// picker is open it is a Cancel text action instead — `Shell.back` can only
+// push a route, and cancelling is a page message.
+let leading = (model: model, ~dispatch: msg => unit): option<React.element> =>
+  switch model.picker {
+  | Some(_) =>
+    Some(
+      <Ui.Button
+        variant=Ui.Button.Plain
+        className="bar-action"
+        testId="folder-picker-cancel"
+        onClick={_ => dispatch(PickerCancel)}>
+        {React.string("Cancel")}
+      </Ui.Button>,
+    )
+  | None =>
+    Some(
+      <a
+        className="btn btn-icon"
+        href={Route.href(Route.Settings)}
+        ariaLabel="Settings"
+        dataTestId="settings-link">
+        <Icon name=Settings size=22 />
+      </a>,
+    )
+  }
 
 // Bar trailing actions (DESIGN.md §11.2, review-2026-09-17.md P1/P3): the
 // Edit/Done text action and, once the list is non-empty, the "+" icon
@@ -468,8 +697,20 @@ let subtitle = (_model: model): option<string> => None
 // keeps `getByTestId('new-part')` a single-element (Playwright strict-mode)
 // match either way.
 let actions = (model: model, ~dispatch: msg => unit): option<React.element> =>
-  model.loaded && model.form->Option.isNone && Array.length(model.parts) > 0
-    ? Some(
+  switch model.picker {
+  | Some(_) =>
+    Some(
+      <Ui.Button
+        variant=Ui.Button.Plain
+        className="bar-action bar-action-strong"
+        testId="folder-picker-done"
+        onClick={_ => dispatch(PickerDone)}>
+        {React.string("Done")}
+      </Ui.Button>,
+    )
+  | None =>
+    model.loaded && model.form->Option.isNone && Array.length(model.parts) > 0
+      ? Some(
         <>
           <Ui.Button
             variant=Ui.Button.Plain
@@ -487,7 +728,8 @@ let actions = (model: model, ~dispatch: msg => unit): option<React.element> =>
           </Ui.Button>
         </>,
       )
-    : None
+      : None
+  }
 
 // "today" for same-calendar-day, else the platform's short date string —
 // good enough for a glance; SPEC only asks for "relative-ish".
@@ -508,52 +750,27 @@ let unitsSegOptions: array<(string, string)> =
 let inputValue = (e: JsxEvent.Form.t): string => e->Canvas.Form.target->Canvas.value
 
 // A10 (review S4): the one form both create and the inline rename render —
-// Name, then Folder with its chips of existing folders and the rule inline
-// (`part-path-error`, primary disabled while invalid), then the caller's
-// own extra rows (create's units) and its primary/cancel pair. `grouped`
-// renders the fields as inset grouped rows (the create form, DESIGN.md
-// §11.2); the rename strip lays them out plainly inside its row. Field ids
-// take `idSuffix` so two open rename strips never share a DOM id; the
-// create form keeps its pre-A10 `part-name-input` id (suffix "").
+// Name, then the Folder row (A12a: a button that opens the picker, showing
+// the chosen folder in display form or "None"), then the caller's own extra
+// rows (create's units) and its primary/cancel pair. `grouped` renders the
+// fields as inset grouped rows (the create form, DESIGN.md §11.2) — there
+// the Folder row is a `.list-row` with a chevron; the rename strip lays
+// them out plainly inside its row, where the same control is a
+// `.part-folder-field` button under a Caption label (review N4: no row
+// inside a row). Field ids take `idSuffix` so two open rename strips never
+// share a DOM id; the create form keeps its pre-A10 `part-name-input` id
+// (suffix "").
 module PartForm = {
-  let pathError = (draft: formDraft): option<string> =>
-    switch Folder.validate(draft.path) {
-    | Ok(_) => None
-    | Error(e) => Some(Folder.errorMessage(e))
-    }
-
-  let chips = (~draft: formDraft, ~folders: array<string>, ~onPick: string => unit): option<
-    React.element,
-  > =>
-    Array.length(folders) == 0
-      ? None
-      : Some(
-          <div className="part-path-chips">
-            <Ui.ChipRow>
-              {folders
-              ->Array.map(path =>
-                <Ui.Chip
-                  key=path
-                  testId="part-path-chip"
-                  selected={Folder.normalize(draft.path) == path}
-                  onClick={_ => onPick(path)}>
-                  {React.string(Folder.display(path))}
-                </Ui.Chip>
-              )
-              ->React.array}
-            </Ui.ChipRow>
-          </div>,
-        )
+  let folderValue = (draft: formDraft): string =>
+    draft.path == "" ? "None" : Folder.display(draft.path)
 
   let view = (
     ~draft: formDraft,
     ~idSuffix: string,
     ~nameTestId: string,
     ~nameError: option<string>,
-    ~folders: array<string>,
     ~onName: string => unit,
-    ~onPath: string => unit,
-    ~onPick: string => unit,
+    ~onFolder: unit => unit,
     ~extraRows: array<React.element>,
     ~primaryLabel: string,
     ~primaryTestId: string,
@@ -564,8 +781,6 @@ module PartForm = {
     ~grouped: bool,
   ): React.element => {
     let nameId = "part-name-input" ++ idSuffix
-    let pathId = "part-path-input" ++ idSuffix
-    let pathErr = pathError(draft)
     let nameField =
       <Ui.Field label="Name" htmlFor=nameId error=?nameError>
         <input
@@ -578,44 +793,52 @@ module PartForm = {
           onChange={evt => onName(ReactEvent.Form.target(evt)["value"])}
         />
       </Ui.Field>
-    let pathField =
-      <Ui.Field
-        label="Folder"
-        htmlFor=pathId
-        error=?pathErr
-        errorTestId="part-path-error"
-        after=?{chips(~draft, ~folders, ~onPick)}>
-        {Canvas.Input.make({
-          dataTestId: "part-path",
-          id: pathId,
-          type_: "text",
-          autoCapitalize: "words",
-          autoCorrect: "off",
-          autoComplete: "off",
-          spellCheck: false,
-          enterKeyHint: "done",
-          placeholder: "Miata/Interior",
-          ariaInvalid: pathErr->Option.isSome,
-          value: draft.path,
-          onChange: e => onPath(inputValue(e)),
-        })}
-      </Ui.Field>
-    let rows = Array.concat([nameField, pathField], extraRows)
-    let keyed = (className: string) =>
-      rows
+    let chevron = <span className="list-row-chevron"> <Icon name=ChevronRight size=20 /> </span>
+    let folderRow = grouped
+      ? <button
+          type_="button"
+          className="list-row part-folder-row"
+          dataTestId="part-folder-row"
+          onClick={_ => onFolder()}>
+          <span className="list-row-body">
+            <span className="list-row-title"> {React.string("Folder")} </span>
+          </span>
+          <span className="list-row-trailing part-folder-value">
+            {React.string(folderValue(draft))}
+          </span>
+          chevron
+        </button>
+      : <div className="field">
+          <span className="field-label"> {React.string("Folder")} </span>
+          <button
+            type_="button"
+            className="part-folder-field"
+            dataTestId="part-folder-row"
+            onClick={_ => onFolder()}>
+            <span className="part-folder-value"> {React.string(folderValue(draft))} </span>
+            chevron
+          </button>
+        </div>
+    let keyedExtra = (className: string) =>
+      extraRows
       ->Array.mapWithIndex((row, i) => <div key={Int.toString(i)} className> row </div>)
       ->React.array
     let fields = grouped
-      ? <Ui.ListGroup> {keyed("list-row parts-form-row")} </Ui.ListGroup>
-      : <div className="stack"> {keyed("parts-form-field")} </div>
+      ? <Ui.ListGroup>
+          <div className="list-row parts-form-row"> nameField </div>
+          folderRow
+          {keyedExtra("list-row parts-form-row")}
+        </Ui.ListGroup>
+      : <div className="stack">
+          <div className="parts-form-field"> nameField </div>
+          <div className="parts-form-field"> folderRow </div>
+          {keyedExtra("parts-form-field")}
+        </div>
     <div className="stack">
       fields
       <div className="btn-row">
         <Ui.Button
-          variant=Ui.Button.Primary
-          testId=primaryTestId
-          disabled={submitting || pathErr->Option.isSome}
-          onClick={_ => onSubmit()}>
+          variant=Ui.Button.Primary testId=primaryTestId disabled=submitting onClick={_ => onSubmit()}>
           {React.string(primaryLabel)}
         </Ui.Button>
         <Ui.Button variant=Ui.Button.Secondary testId=?cancelTestId onClick={_ => onCancel()}>
@@ -656,16 +879,14 @@ let unitsRow = (form: createForm, ~dispatch: msg => unit): React.element =>
     </select>
   </div>
 
-let renderForm = (model: model, form: createForm, ~dispatch: msg => unit): React.element =>
+let renderForm = (form: createForm, ~dispatch: msg => unit): React.element =>
   PartForm.view(
     ~draft=form.draft,
     ~idSuffix="",
     ~nameTestId="part-name",
     ~nameError=form.error,
-    ~folders=foldersOf(model.parts)->Array.slice(~start=0, ~end=maxChips),
     ~onName=name => dispatch(FormNameChanged(name)),
-    ~onPath=path => dispatch(FormPathChanged(path)),
-    ~onPick=path => dispatch(FormPathPicked(path)),
+    ~onFolder=() => dispatch(PickerOpen(ForCreate)),
     ~extraRows=[unitsRow(form, ~dispatch)],
     ~primaryLabel=form.submitting ? "Creating…" : "Create",
     ~primaryTestId="part-create",
@@ -709,7 +930,7 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
 
   switch state {
   // A10: the rename strip is the same `PartForm` as create (minus units),
-  // so editing the Folder here is how a part moves between sections.
+  // so picking a Folder here is how a part moves between sections.
   | Renaming(draft) =>
     <div key={part.id} className="list-row" role="listitem" dataTestId="part-row">
       <div className="part-row-edit">
@@ -718,10 +939,8 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
           ~idSuffix="-" ++ part.id,
           ~nameTestId="part-rename-input",
           ~nameError=None,
-          ~folders=foldersOf(model.parts)->Array.slice(~start=0, ~end=maxChips),
           ~onName=name => dispatch(RenameDraftChanged(part.id, name)),
-          ~onPath=path => dispatch(RenamePathChanged(part.id, path)),
-          ~onPick=path => dispatch(RenamePathPicked(part.id, path)),
+          ~onFolder=() => dispatch(PickerOpen(ForRename(part.id))),
           ~extraRows=[],
           ~primaryLabel="Save",
           ~primaryTestId="part-rename-save",
@@ -841,6 +1060,159 @@ let renderList = (model: model, ~dispatch: msg => unit): React.element => {
   </>
 }
 
+// ---- A12a: the folder picker ---------------------------------------------
+
+// An option is a real <button> (focusable, Enter/Space for free — review
+// S7) carrying `role="option"`, `data-path` and `aria-selected`, which
+// `JsxDOM.domProps` cannot express — so, like Annotate's `RowButton`, it is
+// created through the `react/jsx-runtime` call with exactly the attributes
+// the spec names. `aria-label` is the full display path (the visible text
+// is only the leaf), so VoiceOver hears the hierarchy the indent shows.
+module OptionButton = {
+  type props = {
+    @as("type") type_: string,
+    className: string,
+    role: string,
+    @as("data-testid") dataTestId: string,
+    @as("data-path") dataPath: string,
+    @as("aria-selected") ariaSelected: bool,
+    @as("aria-label") ariaLabel: string,
+    style: JsxDOMStyle.t,
+    onClick: JsxEvent.Mouse.t => unit,
+    children: React.element,
+  }
+
+  @module("react/jsx-runtime") external jsxKeyed: (string, props, string) => React.element = "jsx"
+
+  let make = (~key: string, props: props): React.element => jsxKeyed("button", props, key)
+}
+
+// The row's own 16 px padding plus `depth × 20 px` (SPEC A12a): the root
+// "None" sits at depth 0, top-level folders one step in under it.
+let optionIndentPx = 20
+let rowPaddingPx = 16
+
+let renderFolderOption = (picker: picker, path: string, ~dispatch: msg => unit): React.element => {
+  let isRoot = path == ""
+  let selected = picker.selected == path
+  OptionButton.make(
+    ~key=isRoot ? "/" : path,
+    {
+      type_: "button",
+      className: "list-row folder-option",
+      role: "option",
+      dataTestId: "folder-option",
+      dataPath: path,
+      ariaSelected: selected,
+      ariaLabel: isRoot ? "None, top level" : Folder.display(path),
+      style: {
+        paddingLeft: Int.toString(rowPaddingPx + Folder.depth(path) * optionIndentPx) ++ "px",
+      },
+      onClick: _ => dispatch(PickerSelect(path)),
+      children: <>
+        <span className="folder-option-glyph" ariaHidden=true>
+          {isRoot ? React.null : <Icon name=Folder size=22 />}
+        </span>
+        <span className="list-row-body">
+          <span className="list-row-title"> {React.string(isRoot ? "None" : Folder.leaf(path))} </span>
+          {isRoot
+            ? <span className="list-row-meta"> {React.string("Top level")} </span>
+            : React.null}
+        </span>
+        {selected
+          ? <span className="list-row-trailing folder-option-check"> <Icon name=Check size=20 /> </span>
+          : React.null}
+      </>,
+    },
+  )
+}
+
+// Under the list: a secondary New Folder capsule that reveals an inline
+// one-segment field (`Folder.validateSegment` live: Create disabled while
+// invalid or empty, the rule inline once there is something to judge), or
+// — at six deep already — the capsule disabled with a Footnote saying why.
+let renderNewFolder = (picker: picker, ~dispatch: msg => unit): React.element => {
+  let maxed = Folder.depth(picker.selected) >= Folder.maxDepth
+  switch picker.newFolder {
+  | None =>
+    <div className="stack folder-picker-new">
+      <Ui.Button
+        variant=Ui.Button.Secondary
+        block=true
+        testId="folder-new"
+        disabled=maxed
+        onClick={_ => dispatch(NewFolderOpen)}>
+        <Icon name=FolderPlus size=20 />
+        {React.string("New Folder")}
+      </Ui.Button>
+      {maxed
+        ? <p className="t-footnote muted" dataTestId="folder-new-depth">
+            {React.string("Folders go six deep.")}
+          </p>
+        : React.null}
+    </div>
+  | Some(draft) =>
+    let invalid = Folder.validateSegment(draft)->Result.isError
+    let error = switch Folder.validateSegment(draft) {
+    | Error(e) if String.trim(draft) != "" => Some(Folder.errorMessage(e))
+    | Error(_) | Ok(_) => None
+    }
+    <div className="stack folder-picker-new">
+      <Ui.Field
+        label="New folder" htmlFor="folder-new-name-input" error=?error errorTestId="folder-new-error">
+        {Canvas.Input.make({
+          dataTestId: "folder-new-name",
+          id: "folder-new-name-input",
+          type_: "text",
+          autoCapitalize: "words",
+          autoCorrect: "off",
+          autoComplete: "off",
+          spellCheck: false,
+          enterKeyHint: "done",
+          placeholder: "Folder name",
+          ariaInvalid: error->Option.isSome,
+          value: draft,
+          onChange: e => dispatch(NewFolderChanged(inputValue(e))),
+          onKeyDown: e =>
+            if JsxEvent.Keyboard.key(e) == "Enter" {
+              e->JsxEvent.Keyboard.preventDefault
+              if !invalid {
+                dispatch(NewFolderCreate)
+              }
+            },
+        })}
+      </Ui.Field>
+      <div className="btn-row">
+        <Ui.Button
+          variant=Ui.Button.Primary
+          testId="folder-new-create"
+          disabled=invalid
+          onClick={_ => dispatch(NewFolderCreate)}>
+          {React.string("Create")}
+        </Ui.Button>
+        <Ui.Button
+          variant=Ui.Button.Secondary testId="folder-new-cancel" onClick={_ => dispatch(NewFolderCancel)}>
+          {React.string("Cancel")}
+        </Ui.Button>
+      </div>
+    </div>
+  }
+}
+
+// The picker takes over the page the way the create form does: one
+// `role="listbox"` group — root first, then every known folder as a flat
+// tree (children after their parent, indented) — and the New Folder area.
+let renderPicker = (model: model, picker: picker, ~dispatch: msg => unit): React.element =>
+  <div className="stack-lg folder-picker" dataTestId="folder-picker">
+    <Ui.ListGroup role="listbox" testId="folder-picker-list">
+      {renderFolderOption(picker, "", ~dispatch)}
+      {pickerPaths(model, picker)
+      ->Array.map(path => renderFolderOption(picker, path, ~dispatch))
+      ->React.array}
+    </Ui.ListGroup>
+    {renderNewFolder(picker, ~dispatch)}
+  </div>
+
 // DESIGN.md §7 / §11.2: "one line of copy … and the primary button; no
 // illustration" — the empty state's own capsule. Once the list is
 // non-empty, "+" lives in the bar instead (`actions` above, P3); this
@@ -874,9 +1246,10 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
     }}
-    {switch model.form {
-    | Some(f) => renderForm(model, f, ~dispatch)
-    | None =>
+    {switch (model.picker, model.form) {
+    | (Some(picker), _) => renderPicker(model, picker, ~dispatch)
+    | (None, Some(f)) => renderForm(f, ~dispatch)
+    | (None, None) =>
       <div className="stack">
         {if !model.loaded {
           <p className="t-footnote muted"> {React.string("Loading parts…")} </p>
