@@ -224,6 +224,11 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
 let title = (_model: model): string => "Parts"
 let back = (_model: model): option<Route.t> => None
 
+// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
+// optional trailing bar action. Default none; pages override.
+let subtitle = (_model: model): option<string> => None
+let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
 // "today" for same-calendar-day, else the platform's short date string —
 // good enough for a glance; SPEC only asks for "relative-ish".
 let relativeDate = (iso: string): string => {

@@ -191,6 +191,11 @@ let title = (model: model): string =>
   }
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
+// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
+// optional trailing bar action. Default none; pages override.
+let subtitle = (_model: model): option<string> => None
+let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
 // -- view helpers -----------------------------------------------------------
 
 let pad2 = (n: int): string => Int.toString(n)->String.padStart(2, "0")

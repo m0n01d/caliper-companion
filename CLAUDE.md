@@ -60,7 +60,8 @@ Ambiguous criterion → simplest reading, note it in the commit body, keep going
 - **Side effects are `Tea.cmd` values**, never run inside `update` or `view`. `Tea.fromPromise` wraps
   a Store/DOM promise into a cmd that dispatches a msg on completion. `Tea.effect` for fire-and-forget.
 - **Pages follow elm-spa:** `src/app/pages/<Page>.res` exports `type model`, `type msg`, `init`,
-  `update`, `view`. `src/app/Main.res` owns routing (`Route.res`, hash-based) and composes pages with
+  `update`, `view`, plus the Shell slots `title`, `back`, `subtitle` (option) and `actions`
+  (option, a trailing bar element). `src/app/Main.res` owns routing (`Route.res`, hash-based) and composes pages with
   `Tea.map`. Cross-page navigation is a `Route.push` cmd, never a direct call into another page.
 - **`core/` is pure**: no DOM, no React, no PouchDB imports. Everything in it is unit-tested.
 

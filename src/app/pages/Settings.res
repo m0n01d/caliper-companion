@@ -88,6 +88,11 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
 let title = (_model: model): string => "Settings"
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
+// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
+// optional trailing bar action. Default none; pages override.
+let subtitle = (_model: model): option<string> => None
+let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
 // DESIGN.md §11.2: inset grouped rows, real Ui.Toggles (wedge-toggle stays
 // the checkbox's id; snap-setting-toggle is A5's), and a read-only group
 // for the default tolerances (hig-brief §2 Settings: "switch style only inside a list row,

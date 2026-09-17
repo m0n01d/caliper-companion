@@ -107,35 +107,47 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   }
 
 let view = (model: model, ~dispatch: msg => unit): React.element => {
-  let (title, back, body) = switch model.page {
+  let (title, back, subtitle, actions, body) = switch model.page {
   | PartsList(pageModel) => (
       PartsList.title(pageModel),
       PartsList.back(pageModel),
+      PartsList.subtitle(pageModel),
+      PartsList.actions(pageModel, ~dispatch=m => dispatch(PartsListMsg(m))),
       PartsList.view(pageModel, ~dispatch=m => dispatch(PartsListMsg(m))),
     )
   | Part(pageModel) => (
       Part.title(pageModel),
       Part.back(pageModel),
+      Part.subtitle(pageModel),
+      Part.actions(pageModel, ~dispatch=m => dispatch(PartMsg(m))),
       Part.view(pageModel, ~dispatch=m => dispatch(PartMsg(m))),
     )
   | Capture(pageModel) => (
       Capture.title(pageModel),
       Capture.back(pageModel),
+      Capture.subtitle(pageModel),
+      Capture.actions(pageModel, ~dispatch=m => dispatch(CaptureMsg(m))),
       Capture.view(pageModel, ~dispatch=m => dispatch(CaptureMsg(m))),
     )
   | Annotate(pageModel) => (
       Annotate.title(pageModel),
       Annotate.back(pageModel),
+      Annotate.subtitle(pageModel),
+      Annotate.actions(pageModel, ~dispatch=m => dispatch(AnnotateMsg(m))),
       Annotate.view(pageModel, ~dispatch=m => dispatch(AnnotateMsg(m))),
     )
   | Settings(pageModel) => (
       Settings.title(pageModel),
       Settings.back(pageModel),
+      Settings.subtitle(pageModel),
+      Settings.actions(pageModel, ~dispatch=m => dispatch(SettingsMsg(m))),
       Settings.view(pageModel, ~dispatch=m => dispatch(SettingsMsg(m))),
     )
   | Debug(pageModel) => (
       Debug.title(pageModel),
       Debug.back(pageModel),
+      Debug.subtitle(pageModel),
+      Debug.actions(pageModel, ~dispatch=m => dispatch(DebugMsg(m))),
       Debug.view(pageModel, ~dispatch=m => dispatch(DebugMsg(m))),
     )
   }
@@ -146,7 +158,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
   }
 
   <div className="app-frame">
-    <Shell title back largeTitle> {body} </Shell>
+    <Shell title back ?subtitle ?actions largeTitle> {body} </Shell>
     <A2hsHint />
   </div>
 }

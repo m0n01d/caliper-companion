@@ -88,6 +88,11 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
 let title = (_model: model): string => "Debug"
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
+// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
+// optional trailing bar action. Default none; pages override.
+let subtitle = (_model: model): option<string> => None
+let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
 // DESIGN.md §11.2: an inset grouped list of timers — part name Body,
 // start/stop Footnote, hands-on mono trailing — plus a secondary capsule
 // for the CSV export. `timer-row` stays on each row for parts.spec.js.

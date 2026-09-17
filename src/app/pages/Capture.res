@@ -590,6 +590,11 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
 let title = (_model: model): string => "Capture"
 let back = (model: model): option<Route.t> => Some(Route.Part(model.partId))
 
+// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
+// optional trailing bar action. Default none; pages override.
+let subtitle = (_model: model): option<string> => None
+let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
 // -- view --------------------------------------------------------------
 // DESIGN.md §11.2 "Capture": chips (top) → slot row → shutter/library, the
 // inline custom-face card, or the inline recapture card → camera note. One

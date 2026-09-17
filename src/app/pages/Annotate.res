@@ -1242,6 +1242,11 @@ let title = (m: model): string =>
 
 let back = (m: model): option<Route.t> => Some(Route.Part(m.partId))
 
+// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
+// optional trailing bar action. Default none; pages override.
+let subtitle = (_model: model): option<string> => None
+let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
 // ── CanvasView — the one DOM-ref spot ──────────────────────────────────
 //
 // Owns the <canvas>, reports its CSS size + DPR, forwards pointer events
