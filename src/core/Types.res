@@ -31,7 +31,14 @@ type dimension = {
 type face = {
   id: string, // "face:" ++ uuid
   partId: string,
+  // `kind` is the sketch-plane hint Fusion needs (top→XY, side→XZ, end→YZ,
+  // detail→XY); `label` is the face's unique-per-part slug (same rule as
+  // feature names, SPEC §6.2). For the four default faces
+  // `label == Enums.faceKindToString(kind)`, so their export paths are
+  // unchanged; a custom face ("left_side", kind Side) gets its own paths.
+  // SPEC §8a A7 — additive schema delta, owner-approved.
   kind: faceKind,
+  label: string,
   imageAttachment: string, // attachment name on this doc, e.g. "image.jpg"
   pixelWidth: int,
   pixelHeight: int, // oriented dimensions

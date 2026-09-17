@@ -148,6 +148,7 @@ let encodeFace = (f: Types.face): JSON.t =>
       ("id", JSON.String(f.id)),
       ("partId", JSON.String(f.partId)),
       ("kind", JSON.String(Enums.faceKindToString(f.kind))),
+      ("label", JSON.String(f.label)),
       ("imageAttachment", JSON.String(f.imageAttachment)),
       ("pixelWidth", JSON.Number(Int.toFloat(f.pixelWidth))),
       ("pixelHeight", JSON.Number(Int.toFloat(f.pixelHeight))),
@@ -185,10 +186,14 @@ let decodeFace = (json: JSON.t): option<Types.face> =>
         Some(outline),
         Some(capturedAt),
       ) =>
+      // SPEC §8a A7: `label` is additive. A face object written before A7
+      // has none; it reads back as the default face of its kind.
+      let label = strField(fields, "label")->Option.getOr(Enums.faceKindToString(kind))
       Some({
         id,
         partId,
         kind,
+        label,
         imageAttachment,
         pixelWidth,
         pixelHeight,

@@ -55,13 +55,17 @@ let encodePart = (part: Types.part): JSON.t =>
 
 let encodeFaceExport = (fe: faceExport): JSON.t => {
   let f = fe.face
-  let kindStr = Enums.faceKindToString(f.kind)
+  // SPEC §8a A7: `label` sits right after `kind` and names the bundle
+  // paths. Default faces have `label == kind`, so their paths are exactly
+  // the pre-A7 ones ("faces/top.jpg"); a consumer that ignores `label`
+  // still works for them.
   JSON.Object(
     Dict.fromArray([
       ("id", JSON.String(f.id)),
-      ("kind", JSON.String(kindStr)),
-      ("image", JSON.String("faces/" ++ kindStr ++ ".jpg")),
-      ("annotated", JSON.String("faces/" ++ kindStr ++ "_dimensioned.png")),
+      ("kind", JSON.String(Enums.faceKindToString(f.kind))),
+      ("label", JSON.String(f.label)),
+      ("image", JSON.String("faces/" ++ f.label ++ ".jpg")),
+      ("annotated", JSON.String("faces/" ++ f.label ++ "_dimensioned.png")),
       ("pixelWidth", JSON.Number(Int.toFloat(f.pixelWidth))),
       ("pixelHeight", JSON.Number(Int.toFloat(f.pixelHeight))),
       ("renderScale", JSON.Number(fe.renderScale)),
@@ -131,10 +135,13 @@ let make = (
   switch Reconcile.reconcile(dimensions) {
   | Error(err) => Error(err)
   | Ok(features) =>
+    // Kind order (top, side, end, detail), then label — so two faces of the
+    // same kind (SPEC §8a A7) still export deterministically.
     let sortedFaces =
-      faces->Array.toSorted((a: faceExport, b: faceExport) =>
-        Int.compare(faceKindRank(a.face.kind), faceKindRank(b.face.kind))
-      )
+      faces->Array.toSorted((a: faceExport, b: faceExport) => {
+        let byKind = Int.compare(faceKindRank(a.face.kind), faceKindRank(b.face.kind))
+        Ordering.isEqual(byKind) ? String.compare(a.face.label, b.face.label) : byKind
+      })
     let json = JSON.Object(
       Dict.fromArray([
         ("schema", JSON.String(schema)),
