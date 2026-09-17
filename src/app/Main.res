@@ -140,8 +140,13 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
     )
   }
 
+  let largeTitle = switch model.page {
+  | PartsList(_) => true
+  | _ => false
+  }
+
   <div className="app-frame">
-    <Shell title back> {body} </Shell>
+    <Shell title back largeTitle> {body} </Shell>
     <A2hsHint />
   </div>
 }
