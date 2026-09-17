@@ -2180,3 +2180,97 @@ that text. Branch `agent/a10-folders`, not pushed.
   reach both pages through the UI and walk Back → Settings → Parts; a11y "first Tab on the root
   lands on a real control" still holds (it is now the gear). Screenshot tour regenerated
   (`12-parts-list`, `09-settings`, `10-debug` show the three changes).
+
+## 2026-09-17 — A12a folder picker (agent/a12-folders)
+
+SPEC §8a A12a built to the pre-build review (`docs/design/a12-folders-review.md`, BUILD WITH
+EDITS — B3/B4, S3/S4/S7/S9/S10, N2/N3/N4 are the ones this half touches). Three commits on
+`agent/a12-folders` (store + helpers, page + picker, e2e + docs + screenshots); not pushed. A12b
+(selection toolbar, folder rename/delete) is untouched — `Ui.ListGroup` only gained `~role`, so
+its `~headerTrailing`/`~headerEl` still slot in beside it.
+
+- **Store.** `folder:` docs `{type, path, createdAt, updatedAt}` (N3), root never a doc.
+  `ensureFolders(~paths)` is one `allDocs` range on `folder:` + one `bulkDocs` of every missing
+  path and ancestor; PouchDB reports a per-doc failure *inside* the result array, so `ok: true`
+  is the one success shape and anything else (a 409 from a concurrent writer) counts as already
+  existing and is left out of the returned "created" list. Returned order is input order,
+  ancestors first (`["a", "a/b", "a/b/c", "a/x"]`). `createPart`/`putPart` call `ensureFolder`
+  for a non-empty path before the part write. Five StoreTests. No 409 test: forcing a real
+  per-doc conflict needs a writer interleaved between the range read and the bulk write, which
+  the LevelDB harness can't stage without reaching into Store's private handle — the code path
+  is three lines and reads the documented result shape.
+- **`Folder`.** `parent`/`leaf`/`ancestors`/`depth`/`join`/`isUnder` (strict — `isUnder("a",
+  ~folder="a")` is false; everything is under the root)/`rebase` (also rewrites `path == from`
+  itself, which A12b's `renameFolder` needs)/`validateSegment` (B4). **Beyond the spec's list:**
+  `tree(paths)` — paths ∪ ancestors, deduped, root dropped, depth-first — and its comparator
+  `compareTree` live in core rather than the page so the picker's ordering rule is tabled and
+  under the 100 % gate; a case-twin pair (impossible after `snap`, but the sort must stay total)
+  breaks the tie on the exact spelling *per segment*, so a twin still keeps its own children under
+  it. `snap` is prefix-wise (S4): each prefix snaps against `existing` ∪ every existing path's own
+  ancestors, so `miata/exterior` lands under `Miata` even though only `Miata/Interior` exists.
+  Core stays at 100 % lines (`compareTree`'s `(None, _)` arms needed a direct tabled test —
+  V8's sort never called it from that side).
+- **Migration** runs once off `PartsLoaded`, sequentially inside one promise (S3). Judgment
+  calls: the running set is **seeded with the existing folder docs** (their spelling is
+  canonical, so a second launch can't re-snap what the first one settled), and "`updatedAt`
+  order" is read as `parts` order — updatedAt **desc** — so the most recently touched spelling
+  wins a twin. **Deviation:** the message is `FoldersLoaded(folders, saved)`, not
+  `FoldersLoaded(array<string>)` — `putPart` bumps `updatedAt` and changes `path` on the re-snapped
+  parts, and the page would otherwise show them at their stale spelling/position until reload.
+  `saved` is `[]` on every store that never held A10 twins. A failure lands in `model.error`.
+- **Picker.** Page-local `picker: option<{target: ForCreate | ForRename(id), selected,
+  newFolder}>`; the view switches on `(picker, form)` so it takes over the page exactly as the
+  create form does. Options are `<button role="option">`s built through the `react/jsx-runtime`
+  record pattern Annotate's `RowButton` set (S7: `data-path`, `aria-selected`, `aria-label` =
+  display path, `style.paddingLeft` = 16 + depth × 20 — `JsxDOM.domProps` can't express the
+  data attribute). The listed set is `Folder.tree(folders ∪ parts' paths ∪ [selected])` — parts'
+  paths are unioned in so a picker opened before `FoldersLoaded` lands still shows every folder
+  in use. Create = `join` → `snap` against that same set → `ensureFolder`; the selection becomes
+  the snapped path and `folders` gains `created ∪ [path]` (the path itself too, so a 409'd doc
+  still shows). `folder-new-error` shows only once the field is non-empty — Create is disabled
+  while empty either way, and a rule under a blank field on open is noise. The Folder row is a
+  native `<button>` (implicit `role="button"`; no redundant ARIA); in the rename strip the
+  `.parts-form-field` wrapper div holds a `.part-folder-field` button drawn like the Name input
+  (N4). `title`/`largeTitle`/`leading`/`actions` all switch on `picker`; `Main.view` reads
+  `largeTitle` and `leading` from the page (B3), and the Settings gear moved from `Main.res` into
+  `PartsList.leading` — `shell.spec.js` still finds it.
+- **Focus race, new guard.** `focusWhenReady` keeps `Canvas.userIsTypingElsewhere` (today's
+  fix) and adds `Canvas.focusMovedElsewhere(~since, ~target)`: stop once focus sits on a third
+  control — neither what had focus when the cmd started nor the target. Found by the e2e, not
+  guessed: opening the New Folder field starts a 6-frame loop on `folder-new-name`; tapping
+  Create within those frames (Playwright does, a fast thumb can) let the *older* loop refocus the
+  field one frame after the tap, so the *newer* loop for the created option saw an editable with
+  focus and gave up — then the field unmounted and focus fell to `<body>`. Verified with a
+  throwaway focusin/MutationObserver probe (scratchpad, not committed): before, the trace ended
+  on `BODY`; after, on `BUTTON#folder-option[Miata]`. The A10 case (a `fill` on the next field)
+  still stops the loop, and the desktop "tap leaves focus on the button that opened the form"
+  case still lets the field win, since that button is the `since` element.
+- **e2e.** `parts.spec.js`: the A10 describe keeps its first test rewritten for the picker (the
+  rename move now goes row → picker → option → Done → Save, and asserts the take-over: bar
+  title, no rows, no search); its second (`a//b`/`?`/snap on `part-path`) is retired as the spec
+  says and its `?`/snap cases live in the new "folders — picker (SPEC §8a A12a)" describe (3
+  tests: nesting + Done + create + rename-move with the 20 px indent measured; `a/b` and `?`
+  inline, `interior` snapping onto `Interior`, a created-then-Cancelled `Archive` surviving a
+  reload; six-deep disables `folder-new` with the Footnote). `createPartIn`/`pickFolder` walk the
+  segments (select the option if it exists, else New Folder). `a11y.spec.js` +1 (role/tagName/
+  aria-selected, Tab from Cancel → Done → first option, Space selects, reopening focuses the
+  selected option). **Deviation:** the spec lists `export.spec.js` as unchanged, but its own
+  `createPart` helper filled `part-path`; that helper now walks the picker (six lines), its
+  assertions are untouched and the JSON/CSV contract is unchanged (golden diff: none).
+- **Verified.** `npx rescript build` clean under `+a`; `npm test` **244 → 265**; core 100 %
+  lines (`Folder.res.mjs` 100/100/100/100); `npm run build` clean; Chromium e2e
+  `E2E_PORT=4320` **47 → 50, green twice** (42.6 s, 42.8 s). Between those two runs one full run
+  and one `shell.spec.js`-only run died with a Chromium **SIGSEGV** at `browser.newContext`
+  (`chrome-headless-shell` native stack, no assertion involved). Reproduced against a `git
+  archive` build of the untouched base `265674a` in the scratchpad: 1 of 5 `shell.spec.js` runs
+  failed the same way. Sandbox/browser, pre-existing, not this branch — flagging so nobody
+  chases it as an A12a regression. `features.json`, `parameters.csv`, `fixtures/` untouched.
+  Screenshot tour regenerated (`node scripts/screenshot-tour.mjs docs/screenshots
+  http://localhost:4320`), `13-folder-picker.png` added (picker with `Miata` → `Interior` and
+  the New folder field open); `02-parts-create.png` and `13-folder-picker.png` looked at,
+  nothing needed fixing; the tour's `.ccpart.zip` deleted.
+- **Not done / A12b.** Empty leaf folders as `· 0` sections (an `Archive` made in the picker
+  then Cancelled is a real doc but invisible on the list until A12b — the picker shows it);
+  `moveParts`/`deleteParts`/`renameFolder`/`deleteFolder`; `Shell ~footer`; per-row delete stays.
+  The `EdgeSnapTest` wall-clock flake under `--coverage` (A10 entry) fired once here too, on the
+  full-suite coverage run only; the `src/core` coverage run and plain `npm test` were clean.

@@ -102,15 +102,48 @@ test.describe('parts', () => {
 
 // SPEC §8a A10 — folders. The list groups parts into one inset section per
 // folder (root first, never with a header), a search field filters by name
-// or path, and the shared create/rename form's Folder field moves a part.
+// or path, and the shared create/rename form's Folder row moves a part.
 // Named parts per docs/design/a10-folders-review.md S7 so "search `bezel`
 // filters to one" is a real assertion.
+//
+// A12a: the Folder field is a picker. `pickFolder` walks a path's segments
+// — selecting the `folder-option` when it exists, else making it with New
+// Folder (a new folder nests under whatever is selected, so the walk keeps
+// the parent selected) — then taps Done.
+const optionFor = (page, path) => page.locator(`[data-testid="folder-option"][data-path="${path}"]`)
+
+async function pickFolder(page, folder) {
+  await page.getByTestId('part-folder-row').click()
+  await expect(page.getByTestId('folder-picker-list')).toBeVisible()
+  const segments = folder === '' ? [] : folder.split('/')
+  let path = ''
+  for (const segment of segments) {
+    path = path === '' ? segment : `${path}/${segment}`
+    const option = optionFor(page, path)
+    if ((await option.count()) === 0) {
+      await page.getByTestId('folder-new').click()
+      await page.getByTestId('folder-new-name').fill(segment)
+      await page.getByTestId('folder-new-create').click()
+    } else {
+      await option.click()
+    }
+    await expect(option).toHaveAttribute('aria-selected', 'true')
+  }
+  if (segments.length === 0) {
+    await optionFor(page, '').click()
+  }
+  await page.getByTestId('folder-picker-done').click()
+  await expect(page.getByTestId('part-folder-row')).toContainText(
+    folder === '' ? 'None' : segments.join(' / '),
+  )
+}
+
 async function createPartIn(page, name, folder) {
   await page.goto('/')
   await page.getByTestId('new-part').click()
   await page.getByTestId('part-name').fill(name)
   if (folder !== undefined) {
-    await page.getByTestId('part-path').fill(folder)
+    await pickFolder(page, folder)
   }
   await page.getByTestId('part-create').click()
   await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
@@ -156,16 +189,22 @@ test.describe('parts — folders (SPEC §8a A10)', () => {
     await expect(search).toBeFocused()
     await expect(page.getByTestId('part-row')).toHaveCount(3)
 
-    // Rename's Folder field moves the part; the root section disappears
-    // and the moved part re-sorts to the top of its new section (S6).
+    // The rename strip's Folder row opens the picker (A12a); choosing the
+    // existing folder moves the part: the root section disappears and the
+    // moved part re-sorts to the top of its new section (S6).
     await page.getByTestId('parts-edit').click()
     await sections.nth(0).getByTestId('part-rename').click()
     await expect(page.getByTestId('part-rename-input')).toHaveValue('Hinge pin')
-    await expect(page.getByTestId('part-path')).toHaveValue('')
-    // The chips list the existing folders; tapping one fills the field.
-    await expect(page.getByTestId('part-path-chip')).toHaveCount(1)
-    await page.getByTestId('part-path-chip').click()
-    await expect(page.getByTestId('part-path')).toHaveValue('Miata/Interior')
+    await expect(page.getByTestId('part-folder-row')).toContainText('None')
+    await page.getByTestId('part-folder-row').click()
+    // The picker takes over the page: bar title, no list, no search.
+    await expect(page.locator('.shell-title')).toHaveText('Choose Folder')
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(page.getByTestId('parts-search')).toHaveCount(0)
+    await optionFor(page, 'Miata/Interior').click()
+    await page.getByTestId('folder-picker-done').click()
+    await expect(page.getByTestId('part-folder-row')).toContainText('Miata / Interior')
+    await expect(page.getByTestId('part-folder-row')).toBeFocused()
     await page.getByTestId('part-rename-save').click()
     await expect(page.getByTestId('parts-section')).toHaveCount(1)
     await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 3')
@@ -176,35 +215,157 @@ test.describe('parts — folders (SPEC §8a A10)', () => {
     await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 3')
     await expect(page.getByTestId('part-row').first()).toContainText('Hinge pin')
   })
+})
 
-  test('folder field: a//b normalises, ? is rejected inline, a different case snaps to the existing spelling', async ({
+// SPEC §8a A12a — the folder picker: a take-over screen with a flat tree of
+// every folder, a New Folder field that nests under the selection and snaps
+// onto an existing spelling, and Cancel/Done that return to the form.
+test.describe('parts — folders — picker (SPEC §8a A12a)', () => {
+  test('New Folder nests under the selection; Done fills the row; create and rename go through the picker', async ({
     page,
   }) => {
-    // Review B1: doubled slashes normalise rather than reject.
-    await createPartIn(page, 'Normalised', 'a//b')
-    await expect(page.locator('.shell-subtitle')).toHaveText('a / b')
     await page.goto('/')
-    const header = page.getByTestId('parts-section-header')
-    await expect(header).toHaveText('a / b · 1')
-    // `.list-group-header` renders uppercase — what the eye sees.
-    await expect(header).toHaveText('A / B · 1', {useInnerText: true})
-
     await page.getByTestId('new-part').click()
-    await page.getByTestId('part-name').fill('Rejected')
-    await page.getByTestId('part-path').fill('a/?/b')
-    await expect(page.getByTestId('part-path-error')).toBeVisible()
-    await expect(page.getByTestId('part-path-error')).toContainText('"?"')
-    await expect(page.getByTestId('part-create')).toBeDisabled()
+    await page.getByTestId('part-name').fill('Window switch bezel')
+    await expect(page.getByTestId('part-folder-row')).toContainText('None')
+    await page.getByTestId('part-folder-row').click()
 
-    // Review S2: `A/B` typed on a new part snaps into the existing `a/b`.
-    await page.getByTestId('part-path').fill('A/B')
-    await expect(page.getByTestId('part-path-error')).toHaveCount(0)
-    await expect(page.getByTestId('part-create')).toBeEnabled()
+    // Bar (review B3): centred "Choose Folder" between Cancel and Done —
+    // no Large Title, no gear, no Edit/"+".
+    await expect(page.locator('.shell-title')).toHaveText('Choose Folder')
+    await expect(page.locator('.shell-large-title')).toHaveCount(0)
+    await expect(page.getByTestId('folder-picker-cancel')).toBeVisible()
+    await expect(page.getByTestId('folder-picker-done')).toBeVisible()
+    await expect(page.getByTestId('settings-link')).toHaveCount(0)
+    await expect(page.getByTestId('parts-edit')).toHaveCount(0)
+    await expect(page.getByTestId('folder-picker-list')).toHaveAttribute('role', 'listbox')
+    const options = page.getByTestId('folder-option')
+    await expect(options).toHaveCount(1)
+    await expect(options.first()).toHaveAttribute('data-path', '')
+    await expect(options.first()).toHaveAttribute('aria-label', 'None, top level')
+    await expect(options.first()).toHaveAttribute('aria-selected', 'true')
+    await expect(options.first()).toBeFocused()
+
+    // New Folder: the field opens focused, Create is disabled while empty,
+    // the created folder becomes the selection and takes focus.
+    await page.getByTestId('folder-new').click()
+    await expect(page.getByTestId('folder-new-name')).toBeFocused()
+    await expect(page.getByTestId('folder-new-name')).toHaveAttribute('placeholder', 'Folder name')
+    await expect(page.getByTestId('folder-new-create')).toBeDisabled()
+    await page.getByTestId('folder-new-name').fill('Miata')
+    await page.getByTestId('folder-new-create').click()
+    await expect(options).toHaveCount(2)
+    await expect(optionFor(page, 'Miata')).toHaveAttribute('aria-selected', 'true')
+    await expect(optionFor(page, 'Miata')).toBeFocused()
+    await expect(page.getByTestId('folder-new-name')).toHaveCount(0)
+
+    // With Miata selected, the next one nests under it (Enter creates too).
+    await page.getByTestId('folder-new').click()
+    await page.getByTestId('folder-new-name').fill('Interior')
+    await page.getByTestId('folder-new-name').press('Enter')
+    await expect(options).toHaveCount(3)
+    await expect(options.nth(0)).toHaveAttribute('data-path', '')
+    await expect(options.nth(1)).toHaveAttribute('data-path', 'Miata')
+    await expect(options.nth(2)).toHaveAttribute('data-path', 'Miata/Interior')
+    await expect(options.nth(2)).toHaveAttribute('aria-label', 'Miata / Interior')
+    await expect(options.nth(2)).toHaveAttribute('aria-selected', 'true')
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'false')
+    // Visible text is the leaf; the child sits one 20 px step in from its parent.
+    await expect(options.nth(1)).toHaveText('Miata')
+    await expect(options.nth(2)).toHaveText('Interior')
+    const padding = loc => loc.evaluate(el => parseFloat(getComputedStyle(el).paddingLeft))
+    expect((await padding(options.nth(2))) - (await padding(options.nth(1)))).toBe(20)
+    expect((await padding(options.nth(1))) - (await padding(options.nth(0)))).toBe(20)
+
+    // Done returns to the form with the row filled and focused; Name intact.
+    await page.getByTestId('folder-picker-done').click()
+    await expect(page.locator('.shell-title')).toHaveText('Parts')
+    await expect(page.getByTestId('part-folder-row')).toContainText('Miata / Interior')
+    await expect(page.getByTestId('part-folder-row')).toBeFocused()
+    await expect(page.getByTestId('part-name')).toHaveValue('Window switch bezel')
     await page.getByTestId('part-create').click()
     await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
-    await expect(page.locator('.shell-subtitle')).toHaveText('a / b')
+    await expect(page.locator('.shell-subtitle')).toHaveText('Miata / Interior')
     await page.goto('/')
+    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 1')
+
+    // A root part, moved through the rename strip's own Folder row.
+    await createPartIn(page, 'Hinge pin')
+    await page.goto('/')
+    await expect(page.getByTestId('parts-section')).toHaveCount(2)
+    await page.getByTestId('parts-edit').click()
+    await page.getByTestId('parts-section').nth(0).getByTestId('part-rename').click()
+    await page.getByTestId('part-folder-row').click()
+    await optionFor(page, 'Miata/Interior').click()
+    await page.getByTestId('folder-picker-done').click()
+    await page.getByTestId('part-rename-save').click()
     await expect(page.getByTestId('parts-section')).toHaveCount(1)
-    await expect(header).toHaveText('a / b · 2')
+    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 2')
+  })
+
+  test('new-folder field: a/b and ? are rejected inline, a case variant snaps to the existing spelling; Cancel keeps the Name; a created folder persists', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    await page.goto('/')
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-name').fill('Kept name')
+    await page.getByTestId('part-folder-row').click()
+    // The tree lists the parts' folders and their ancestors: None, Miata, Interior.
+    const options = page.getByTestId('folder-option')
+    await expect(options).toHaveCount(3)
+    await optionFor(page, 'Miata').click()
+    await page.getByTestId('folder-new').click()
+    const name = page.getByTestId('folder-new-name')
+    await name.fill('a/b')
+    await expect(page.getByTestId('folder-new-error')).toBeVisible()
+    await expect(page.getByTestId('folder-new-error')).toContainText('Folder name "a/b" can use')
+    await expect(page.getByTestId('folder-new-create')).toBeDisabled()
+    await name.fill('?')
+    await expect(page.getByTestId('folder-new-error')).toContainText('"?"')
+    await expect(page.getByTestId('folder-new-create')).toBeDisabled()
+    // A case-only variant of an existing sibling selects it — no twin.
+    await name.fill('interior')
+    await expect(page.getByTestId('folder-new-error')).toHaveCount(0)
+    await expect(page.getByTestId('folder-new-create')).toBeEnabled()
+    await page.getByTestId('folder-new-create').click()
+    await expect(options).toHaveCount(3)
+    await expect(optionFor(page, 'Miata/Interior')).toHaveAttribute('aria-selected', 'true')
+    await expect(optionFor(page, 'Miata/interior')).toHaveCount(0)
+
+    // A folder made in the picker is real even if the picker is then
+    // Cancelled; Cancel keeps the form's Name and focuses the Folder row.
+    await optionFor(page, '').click()
+    await page.getByTestId('folder-new').click()
+    await name.fill('Archive')
+    await page.getByTestId('folder-new-create').click()
+    await expect(optionFor(page, 'Archive')).toHaveAttribute('aria-selected', 'true')
+    await page.getByTestId('folder-picker-cancel').click()
+    await expect(page.getByTestId('part-name')).toHaveValue('Kept name')
+    await expect(page.getByTestId('part-folder-row')).toContainText('None')
+    await expect(page.getByTestId('part-folder-row')).toBeFocused()
+    await page.getByTestId('part-folder-row').click()
+    await expect(optionFor(page, 'Archive')).toHaveCount(1)
+    await expect(optionFor(page, '')).toHaveAttribute('aria-selected', 'true')
+    await page.getByTestId('folder-picker-cancel').click()
+    // …and it survives a reload (it is a `folder:` doc, not page state).
+    await page.reload()
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-folder-row').click()
+    await expect(optionFor(page, 'Archive')).toHaveCount(1)
+  })
+
+  test('at six deep, New Folder is disabled with a footnote', async ({page}) => {
+    await page.goto('/')
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-name').fill('Deep part')
+    await pickFolder(page, 'a/b/c/d/e/f')
+    await page.getByTestId('part-folder-row').click()
+    await expect(optionFor(page, 'a/b/c/d/e/f')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('folder-new')).toBeDisabled()
+    await expect(page.getByTestId('folder-new-depth')).toHaveText('Folders go six deep.')
+    await optionFor(page, 'a/b/c/d/e').click()
+    await expect(page.getByTestId('folder-new')).toBeEnabled()
+    await expect(page.getByTestId('folder-new-depth')).toHaveCount(0)
   })
 })
