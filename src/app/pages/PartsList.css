@@ -1,98 +1,85 @@
-/* PartsList — page-scoped styles. Owned by the PartsList module; global tokens live in src/theme.css. */
+/* PartsList — page-scoped styles. Everything else (buttons, fields, the
+   list group/row shape, segmented control) comes from the shared classes in
+   src/global.css and the Ui.res components; this file only carries what's
+   truly specific to this screen. Tokens: src/theme.css (--cc-*). */
 
-.parts-list-page .create-form {
-  display: flex;
+.parts-form-row {
+  align-items: flex-start;
+}
+
+/* The row is a horizontal flex container, so its lone .field child sizes to
+   its own shrink-to-fit content by default — fine for the text input (a
+   block element that fills available width on its own), but Ui.Segmented's
+   flex:1 children instead collapse the whole control to its label text.
+   Force the field, and the segmented bar inside it, to the row's width. */
+.parts-form-row .field {
+  width: 100%;
+}
+
+.parts-form-row .segmented {
+  width: 100%;
+}
+
+/* The row's clickable name area is a real <a> so it never nests inside the
+   sibling Rename/Delete <button>s (see PartsList.res's comment on
+   renderRow). */
+.list-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.list-row-link:active {
+  opacity: 0.6;
+}
+
+/* A part row is two lines, not one: name + chevron on top (full width, so
+   long names aren't squeezed by the actions), meta + Rename/Delete below.
+   Cramming thumbnail + name + two buttons + chevron onto a single 390 px
+   row left ~70 px for the name — this stacks instead. */
+.part-row {
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  background: var(--color-cream);
-  border: 1px solid var(--color-tan);
-  border-radius: var(--radius-card);
+  align-items: stretch;
+  gap: var(--cc-space-2);
 }
 
-.field-label {
-  font-size: 13px;
-  color: var(--color-forest-mid);
-  font-weight: 600;
-}
-
-.field-error {
-  color: var(--color-danger);
-  font-size: 13px;
-}
-
-.create-form-actions {
+.part-row-top {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+  align-items: center;
+  gap: var(--cc-space-3);
 }
 
-.page-error {
-  color: var(--color-danger);
-  background: var(--color-rust-tint);
-  border: 1px solid var(--color-rust);
-  border-radius: var(--radius-card);
-  padding: 8px 12px;
-  font-size: 14px;
-}
-
-.part-list li.part-row {
+.part-row-bottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.part-row-main {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.part-row-name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.units-badge {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--color-moss);
-  border: 1px solid var(--color-tan);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.part-row-updated {
-  font-size: 12px;
-  color: var(--color-muted);
+  gap: var(--cc-space-3);
 }
 
 .part-row-actions {
   display: flex;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-.part-row-actions button {
-  padding: 8px 12px;
-  font-size: 13px;
-}
-
-.row-edit {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: var(--cc-space-2);
+}
+
+/* Renaming / ConfirmingDelete replace a row's normal content in place. */
+.part-row-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--cc-space-2);
   width: 100%;
 }
 
-.row-edit input[type='text'] {
-  flex: 1 1 auto;
-  min-width: 0;
+.parts-empty {
+  padding: var(--cc-space-3) 0 var(--cc-space-2);
+}
+
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
 }

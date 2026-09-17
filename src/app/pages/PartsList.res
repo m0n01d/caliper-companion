@@ -185,131 +185,186 @@ let relativeDate = (iso: string): string => {
 }
 
 let unitsOptions: array<(Types.units, string)> = [(Types.Mm, "mm"), (Types.Inch, "in")]
+let unitsSegOptions: array<(string, string)> =
+  unitsOptions->Array.map(((u, label)) => (Enums.unitsToString(u), label))
 
+// DESIGN.md §11.2: inset grouped Field + Segmented, a visually-hidden real
+// <select> kept in sync so parts.spec.js's `selectOption('mm')` still works
+// (Ui.Segmented has no <select> semantics of its own — see the report).
 let renderForm = (form: createForm, ~dispatch: msg => unit): React.element =>
-  <div className="create-form">
-    <label className="field-label" htmlFor="part-name-input"> {React.string("Name")} </label>
-    <input
-      id="part-name-input"
-      type_="text"
-      dataTestId="part-name"
-      value={form.name}
-      onChange={evt => dispatch(FormNameChanged(ReactEvent.Form.target(evt)["value"]))}
-    />
-    <label className="field-label" htmlFor="part-units-input"> {React.string("Units")} </label>
-    <select
-      id="part-units-input"
-      dataTestId="part-units"
-      value={Enums.unitsToString(form.units)}
-      onChange={evt => {
-        let raw = ReactEvent.Form.target(evt)["value"]
-        dispatch(FormUnitsChanged(Enums.unitsFromString(raw)->Option.getOr(Types.Mm)))
-      }}>
-      {unitsOptions
-      ->Array.map(((u, label)) =>
-        <option key={label} value={Enums.unitsToString(u)}> {React.string(label)} </option>
-      )
-      ->React.array}
-    </select>
-    {switch form.error {
-    | Some(msg) => <p className="field-error"> {React.string(msg)} </p>
-    | None => React.null
-    }}
-    <div className="create-form-actions">
-      <button
-        type_="button"
-        dataTestId="part-create"
+  <div className="stack">
+    <Ui.ListGroup>
+      <div className="list-row parts-form-row">
+        <Ui.Field label="Name" htmlFor="part-name-input" error=?form.error>
+          <input
+            id="part-name-input"
+            type_="text"
+            dataTestId="part-name"
+            autoCapitalize="words"
+            maxLength=60
+            value={form.name}
+            onChange={evt => dispatch(FormNameChanged(ReactEvent.Form.target(evt)["value"]))}
+          />
+        </Ui.Field>
+      </div>
+      <div className="list-row parts-form-row">
+        <div className="field">
+          <span className="field-label"> {React.string("Units")} </span>
+          <Ui.Segmented
+            options=unitsSegOptions
+            selected={Enums.unitsToString(form.units)}
+            onSelect={raw =>
+              dispatch(FormUnitsChanged(Enums.unitsFromString(raw)->Option.getOr(Types.Mm)))}
+            ariaLabel="Units"
+          />
+          <select
+            className="visually-hidden"
+            id="part-units-input"
+            dataTestId="part-units"
+            ariaLabel="Units"
+            value={Enums.unitsToString(form.units)}
+            onChange={evt => {
+              let raw = ReactEvent.Form.target(evt)["value"]
+              dispatch(FormUnitsChanged(Enums.unitsFromString(raw)->Option.getOr(Types.Mm)))
+            }}>
+            {unitsOptions
+            ->Array.map(((u, label)) =>
+              <option key={label} value={Enums.unitsToString(u)}> {React.string(label)} </option>
+            )
+            ->React.array}
+          </select>
+        </div>
+      </div>
+    </Ui.ListGroup>
+    <div className="btn-row">
+      <Ui.Button
+        variant=Ui.Button.Primary
+        testId="part-create"
         disabled={form.submitting}
         onClick={_ => dispatch(CreateSubmit)}>
         {React.string(form.submitting ? "Creating…" : "Create")}
-      </button>
-      <button type_="button" onClick={_ => dispatch(FormCancel)}> {React.string("Cancel")} </button>
+      </Ui.Button>
+      <Ui.Button variant=Ui.Button.Secondary onClick={_ => dispatch(FormCancel)}>
+        {React.string("Cancel")}
+      </Ui.Button>
     </div>
   </div>
 
+// A row's normal content is a real <a> (navigates to the part) plus two
+// sibling <button>s (Rename, Delete) — never a <button> wrapping other
+// buttons, which is invalid HTML and why this hand-rolls the shared
+// list-row/-body/-trailing/-chevron classes instead of Ui.ListRow (see the
+// report's Ui.res gap). Renaming/ConfirmingDelete replace this in place.
 let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.element => {
   let state = rowStateOf(model, part.id)
-  let onRowClick = _evt =>
-    switch state {
-    | Normal => dispatch(RowTapped(part.id))
-    | _ => ()
-    }
-  let stop = evt => ReactEvent.Mouse.stopPropagation(evt)
 
-  <li key={part.id} className="part-row" dataTestId="part-row" onClick={onRowClick}>
+  <div key={part.id} className="list-row part-row" dataTestId="part-row">
     {switch state {
     | Renaming(draft) =>
-      <div className="row-edit" onClick={stop}>
+      <div className="part-row-edit">
         <input
           type_="text"
+          className="field-input"
           dataTestId="part-rename-input"
+          autoCapitalize="words"
+          maxLength=60
           value={draft}
           onChange={evt =>
             dispatch(RenameDraftChanged(part.id, ReactEvent.Form.target(evt)["value"]))}
         />
-        <button
-          type_="button" dataTestId="part-rename-save" onClick={_ => dispatch(RenameSubmit(part.id))}>
-          {React.string("Save")}
-        </button>
-        <button
-          type_="button"
-          dataTestId="part-rename-cancel"
-          onClick={_ => dispatch(RenameCancel(part.id))}>
-          {React.string("Cancel")}
-        </button>
+        <div className="btn-row">
+          <Ui.Button
+            variant=Ui.Button.Primary
+            testId="part-rename-save"
+            onClick={_ => dispatch(RenameSubmit(part.id))}>
+            {React.string("Save")}
+          </Ui.Button>
+          <Ui.Button
+            variant=Ui.Button.Secondary
+            testId="part-rename-cancel"
+            onClick={_ => dispatch(RenameCancel(part.id))}>
+            {React.string("Cancel")}
+          </Ui.Button>
+        </div>
       </div>
     | ConfirmingDelete =>
-      <div className="row-edit" onClick={stop}>
-        <p>
+      <div className="part-row-edit">
+        <p className="t-footnote">
           {React.string("Delete \"" ++ part.name ++ "\"? This removes its faces and dimensions.")}
         </p>
-        <button
-          type_="button"
-          dataTestId="part-delete-confirm"
-          onClick={_ => dispatch(DeleteConfirm(part.id))}>
-          {React.string("Delete")}
-        </button>
-        <button
-          type_="button"
-          dataTestId="part-delete-cancel"
-          onClick={_ => dispatch(DeleteCancel(part.id))}>
-          {React.string("Cancel")}
-        </button>
+        <div className="btn-row">
+          <Ui.Button
+            variant=Ui.Button.Danger
+            testId="part-delete-confirm"
+            onClick={_ => dispatch(DeleteConfirm(part.id))}>
+            {React.string("Delete")}
+          </Ui.Button>
+          <Ui.Button
+            variant=Ui.Button.Secondary
+            testId="part-delete-cancel"
+            onClick={_ => dispatch(DeleteCancel(part.id))}>
+            {React.string("Cancel")}
+          </Ui.Button>
+        </div>
       </div>
     | Normal =>
       <>
-        <div className="part-row-main">
-          <span className="part-row-name"> {React.string(part.name)} </span>
-          <span className="units-badge"> {React.string(Enums.unitsToString(part.units))} </span>
-          <span className="part-row-updated"> {React.string(relativeDate(part.updatedAt))} </span>
+        <div className="part-row-top">
+          <Ui.ListThumb src=None />
+          <a className="list-row-body list-row-link" href={Route.href(Route.Part(part.id))}>
+            <span className="list-row-title"> {React.string(part.name)} </span>
+          </a>
+          <span className="list-row-chevron"> <Icon name=ChevronRight size=20 /> </span>
         </div>
-        <div className="part-row-actions">
-          <button
-            type_="button"
-            dataTestId="part-rename"
-            onClick={evt => {
-              stop(evt)
-              dispatch(RenameStart(part.id))
-            }}>
-            {React.string("Rename")}
-          </button>
-          <button
-            type_="button"
-            dataTestId="part-delete"
-            onClick={evt => {
-              stop(evt)
-              dispatch(DeleteStart(part.id))
-            }}>
-            {React.string("Delete")}
-          </button>
+        <div className="part-row-bottom">
+          <span className="list-row-meta">
+            {React.string(
+              Enums.unitsToString(part.units) ++ " · updated " ++ relativeDate(part.updatedAt),
+            )}
+          </span>
+          <span className="part-row-actions">
+            <button
+              type_="button"
+              className="btn btn-small"
+              dataTestId="part-rename"
+              onClick={_ => dispatch(RenameStart(part.id))}>
+              {React.string("Rename")}
+            </button>
+            <button
+              type_="button"
+              className="btn btn-icon"
+              ariaLabel={"Delete " ++ part.name}
+              dataTestId="part-delete"
+              onClick={_ => dispatch(DeleteStart(part.id))}>
+              <Icon name=Trash size=20 />
+            </button>
+          </span>
         </div>
       </>
     }}
-  </li>
+  </div>
 }
 
+// DESIGN.md §7: "one line of copy … and the primary button; no
+// illustration" — the button sits below the line/list either way, styled
+// Primary+block when it's the only affordance on the screen or Secondary
+// once a list exists to sit under (§11.2).
+let renderNewPartButton = (model: model, ~dispatch: msg => unit): React.element =>
+  if !model.loaded {
+    React.null
+  } else {
+    let isEmpty = Array.length(model.parts) == 0
+    <Ui.Button
+      variant={isEmpty ? Ui.Button.Primary : Ui.Button.Secondary}
+      block=isEmpty
+      testId="new-part"
+      onClick={_ => dispatch(NewPartClicked)}>
+      {React.string("New part")}
+    </Ui.Button>
+  }
+
 let view = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="page parts-list-page">
+  <div className="stack-lg">
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
@@ -321,19 +376,21 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     {switch model.form {
     | Some(f) => renderForm(f, ~dispatch)
     | None =>
-      <button type_="button" dataTestId="new-part" onClick={_ => dispatch(NewPartClicked)}>
-        {React.string("New part")}
-      </button>
-    }}
-    {if !model.loaded {
-      <p> {React.string("Loading parts…")} </p>
-    } else if Array.length(model.parts) == 0 {
-      <div className="empty-state" dataTestId="parts-empty">
-        <p> {React.string("No parts yet. Tap New part, then photograph its first face.")} </p>
+      <div className="stack">
+        {if !model.loaded {
+          <p className="t-footnote muted"> {React.string("Loading parts…")} </p>
+        } else if Array.length(model.parts) == 0 {
+          <div className="parts-empty" dataTestId="parts-empty">
+            <p className="t-footnote muted">
+              {React.string("No parts yet. A part is a set of photographed faces.")}
+            </p>
+          </div>
+        } else {
+          <Ui.ListGroup>
+            {model.parts->Array.map(part => renderRow(model, part, ~dispatch))->React.array}
+          </Ui.ListGroup>
+        }}
+        {renderNewPartButton(model, ~dispatch)}
       </div>
-    } else {
-      <ul className="list part-list">
-        {model.parts->Array.map(part => renderRow(model, part, ~dispatch))->React.array}
-      </ul>
     }}
   </div>
