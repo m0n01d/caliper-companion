@@ -203,6 +203,7 @@ module PartDoc = {
     setStr(d, "partId", p.id)
     setStr(d, "name", p.name)
     setStr(d, "slug", p.slug)
+    setStr(d, "path", p.path)
     setStr(d, "units", Enums.unitsToString(p.units))
     setStr(d, "notes", p.notes)
     Dict.set(d, "anchors", JSON.Encode.array(p.anchors->Array.map(anchorToJson)))
@@ -226,17 +227,27 @@ module PartDoc = {
       | Some(JSON.Array(arr)) => arr->Array.filterMap(anchorFromJson)
       | _ => []
       }
-      Some({Types.id, name, slug, units, notes, anchors, createdAt, updatedAt})
+      // SPEC §8a A10: `path` is additive — part docs written before A10
+      // carry none and read back at the root (the A7 `label` precedent).
+      let path = getStr(d, "path")->Option.getOr("")
+      Some({Types.id, name, slug, path, units, notes, anchors, createdAt, updatedAt})
     | _ => None
     }
 }
 
-let createPart = async (t: t, ~name: string, ~slug: string, ~units: Types.units): Types.part => {
+let createPart = async (
+  t: t,
+  ~name: string,
+  ~slug: string,
+  ~path: string,
+  ~units: Types.units,
+): Types.part => {
   let now = Clock.nowIso()
   let part: Types.part = {
     id: Ids.part(),
     name,
     slug,
+    path,
     units,
     notes: "",
     anchors: [],
