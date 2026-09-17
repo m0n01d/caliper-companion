@@ -1,0 +1,43 @@
+/* theme.css — design tokens ported from ternpike/src/theme.css (palette,
+   fonts, radii, shadows only — the grain/topo/animation tokens and the
+   `html.dark` remap are ternpike-specific decoration this app doesn't use).
+   No Tailwind: these are plain CSS custom properties (CLAUDE.md hard rule),
+   consumed directly by global.css and the page/component stylesheets. */
+
+:root {
+  /* ── Palette ─────────────────────────────────────────────────── */
+  --color-ink: #1e2818;
+  --color-forest: #2d3a22;
+  --color-forest-mid: #3d4e2e;
+  --color-forest-light: #4a5e3a;
+  --color-moss: #6b7c58;
+  --color-rust: #b85c38;
+  --color-rust-light: #cc7050;
+  --color-tan: #d4c9a8;
+  --color-cream: #f2ede3;
+  --color-cream-deep: #ebe5d4;
+  --color-parchment: #faf7f0;
+  --color-muted: #8a8a78;
+
+  /* ── Semantic / derived ─────────────────────────────────────────── */
+  --color-rust-tint: #fdf0ea; /* warning-row background */
+  --color-danger: #a83020; /* destructive / flagged-feature text */
+
+  /* ── Fonts ───────────────────────────────────────────────────────
+     Family names ported from ternpike; no webfont files are shipped (v0
+     makes no network calls, SPEC §5), so these fall through to each
+     platform's closest serif/mono system font. */
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-body: 'Crimson Pro', Georgia, serif;
+
+  /* ── Radii ───────────────────────────────────────────────────────── */
+  --radius-card: 16px;
+  --radius-panel: 20px;
+  --radius-sheet: 24px;
+
+  /* ── Shadows ─────────────────────────────────────────────────────── */
+  --shadow-card: 0 4px 24px rgb(45 58 34 / 0.1);
+  --shadow-panel: 0 8px 40px rgb(45 58 34 / 0.12);
+  --shadow-lift: 0 12px 48px rgb(45 58 34 / 0.2);
+}

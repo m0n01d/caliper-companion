@@ -1,0 +1,270 @@
+/* global.css — reset, app frame, and base component styles. Tokens live in
+   theme.css; both are plain <link rel="stylesheet"> tags in index.html
+   (Vite serves them — no CSS-in-JS, no %%raw import from ReScript).
+
+   Phone portrait only, 360–430px (SPEC §4 non-goals: no desktop layout).
+   Layout rules per SPEC §5: 100dvh, env(safe-area-inset-*), no
+   `position: fixed` toolbars (the keyboard resizes the viewport and breaks
+   them) — `.app-frame` is a 100dvh flex column instead, so the shell content
+   scrolls internally and the A2HS hint (when shown) docks to the bottom
+   without needing `fixed`. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--color-parchment);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+select,
+textarea,
+input {
+  font-family: inherit;
+  font-size: 16px;
+  color: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+/* ── App frame ───────────────────────────────────────────────────────── */
+#root {
+  min-height: 100dvh;
+}
+
+.app-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0; /* let .shell-content scroll instead of the whole page */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.shell-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-tan);
+  background: var(--color-cream);
+  box-shadow: var(--shadow-card);
+}
+
+.shell-topbar-leading,
+.shell-topbar-actions {
+  flex: 0 0 auto;
+  min-width: 32px;
+}
+
+.shell-back {
+  background: transparent;
+  border: none;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--color-rust);
+  padding: 4px 8px;
+}
+
+.shell-title {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 20px;
+}
+
+.shell-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+button {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-tan);
+  background: var(--color-rust-light);
+  color: var(--color-parchment);
+  padding: 12px 20px;
+  font-weight: 600;
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+button:disabled {
+  background: var(--color-tan);
+  color: var(--color-muted);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--color-rust);
+  outline-offset: 2px;
+}
+
+.shell-back:focus-visible {
+  outline-offset: 0;
+  border-radius: 6px;
+}
+
+/* ── Inputs (SPEC §5: inputmode="decimal", never type="number") ────────── */
+input[type='text'],
+input[type='password'],
+textarea {
+  width: 100%;
+  padding: 14px;
+  background: var(--color-cream-deep);
+  border: 1px solid var(--color-tan);
+  color: var(--color-ink);
+  border-radius: 8px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Caliper readings and other inputmode-driven numeric entry get a large
+   monospace face — the digits need to read at a glance, part-in-hand. */
+input[inputmode='decimal'],
+input[inputmode='numeric'] {
+  font-family: var(--font-mono);
+  font-size: 20px;
+}
+
+input:focus,
+textarea:focus {
+  outline: 2px solid var(--color-rust);
+  border-color: transparent;
+}
+
+/* ── Lists ───────────────────────────────────────────────────────────── */
+ul.list {
+  list-style: none;
+}
+
+ul.list li {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--color-tan);
+}
+
+/* ── Warnings (SPEC §6.1: flagged features / kind conflicts) ──────────── */
+.warning-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-rust-tint);
+  border: 1px solid var(--color-rust);
+  color: var(--color-danger);
+  border-radius: var(--radius-card);
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+/* ── Bottom sheet (SPEC §5: visualViewport for the reading-input sheet) ─
+   `--vv-height` is kept live by Index.res from a `visualViewport` `resize`
+   listener; `100dvh` is the fallback for the (rare) browser without the
+   API. Absolutely positioned within a `relative` page container the
+   Annotate screen provides — never `position: fixed` on `.shell` itself. */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: calc(var(--vv-height, 100dvh) * 0.6);
+  overflow-y: auto;
+  background: var(--color-cream);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  box-shadow: var(--shadow-lift);
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+/* ── Page stub chrome (SPEC M6 acceptance) ──────────────────────────────── */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-name {
+  font-family: var(--font-mono);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+}
+
+.route-params {
+  font-family: var(--font-mono);
+  color: var(--color-forest-mid);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  background: var(--color-cream);
+  border: 1px solid var(--color-tan);
+  border-radius: var(--radius-card);
+}
+
+/* ── Add to Home Screen hint ─────────────────────────────────────────── */
+.a2hs-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: var(--color-forest);
+  color: var(--color-cream);
+}
+
+.a2hs-hint-text {
+  flex: 1 1 auto;
+  font-size: 14px;
+}
+
+.a2hs-hint-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--color-cream);
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px 8px;
+}
