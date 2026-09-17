@@ -1,1 +1,238 @@
-/* Annotate — page-scoped styles. Owned by the Annotate module; global tokens live in src/theme.css. */
+/* Annotate — page-scoped styles (SPEC M4). Global tokens live in
+   src/theme.css; the `.sheet` base class in src/global.css.
+
+   Layout: the page is a flex column — the canvas stage on top, the reading
+   sheet below it in normal flow (never `position: fixed`, SPEC §5). The
+   stage's height comes from `--vv-height` (kept live from `visualViewport`
+   by Index.res) rather than from a percentage of the shell, so it doesn't
+   depend on ancestor definiteness, and when the iOS keyboard shrinks the
+   visual viewport the stage shrinks with it and the sheet rides up into
+   view instead of hiding under the keyboard. */
+
+.annotate {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* Edge to edge: undo .shell-content's 16px padding. */
+  margin: -16px;
+}
+
+.annotate-stage {
+  position: relative;
+  flex: 0 0 auto;
+  height: calc(var(--vv-height, 100dvh) * 0.5);
+  min-height: 200px;
+  background: var(--color-ink);
+  overflow: hidden;
+}
+
+.annotate-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Pointer Events do all the gesture work (SPEC M4): no browser pan/zoom. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: crosshair;
+  outline: none;
+}
+
+.annotate-canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-rust-light);
+}
+
+/* Absolute inside the stage — not fixed, so the keyboard can't break it. */
+.annotate-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(30 40 24 / 0.75);
+  color: var(--color-cream);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.annotate-zoom {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--color-moss);
+  background: var(--color-forest-mid);
+  color: var(--color-cream);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.annotate-zoom-readout {
+  min-width: 40px;
+  text-align: center;
+}
+
+.annotate-count {
+  margin: 0 6px 0 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-rust);
+  color: var(--color-cream);
+}
+
+/* ── Sheet ─────────────────────────────────────────────────────────── */
+/* In-flow below the stage (see the header comment). */
+.annotate .sheet {
+  position: relative;
+  flex: 0 0 auto;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.annotate-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.annotate-row-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.annotate-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+
+.annotate-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotate-field .annotate-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.annotate-units {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  color: var(--color-muted);
+}
+
+.annotate-name {
+  font-family: var(--font-mono);
+}
+
+.annotate-input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.annotate-error {
+  color: var(--color-danger);
+  font-size: 14px;
+}
+
+.annotate-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.annotate-chip {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-tan);
+  background: var(--color-cream-deep);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.annotate-chip.is-on {
+  background: var(--color-forest);
+  border-color: var(--color-forest);
+  color: var(--color-cream);
+}
+
+.annotate-segmented {
+  flex: 1 1 auto;
+  display: flex;
+  border: 1px solid var(--color-tan);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.annotate-seg {
+  flex: 1 1 0;
+  padding: 10px 4px;
+  border: none;
+  border-radius: 0;
+  background: var(--color-cream-deep);
+  color: var(--color-ink);
+  font-size: 14px;
+}
+
+.annotate-seg + .annotate-seg {
+  border-left: 1px solid var(--color-tan);
+}
+
+.annotate-seg.is-on {
+  background: var(--color-forest);
+  color: var(--color-cream);
+}
+
+.annotate-tolerance {
+  flex: 0 0 auto;
+  width: 132px;
+}
+
+.annotate-tolerance .annotate-input {
+  font-size: 16px;
+  padding: 10px;
+}
+
+.annotate-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.annotate-actions button {
+  flex: 1 1 0;
+  padding: 14px 8px;
+}
+
+.annotate-primary {
+  flex: 2 1 0 !important;
+}
+
+.annotate-secondary {
+  background: var(--color-cream-deep);
+  color: var(--color-ink);
+}
+
+.annotate-danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-cream);
+}
+
+.annotate-status {
+  color: var(--color-muted);
+}

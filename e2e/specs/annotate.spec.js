@@ -1,0 +1,310 @@
+// annotate.spec.js — SPEC §8 M4 acceptance (the core screen), plus M3
+// bullet 2 (EXIF orientation applied before any coordinate is computed) and
+// M2 bullet 4 (reload mid-entry loses only the dimension being typed).
+//
+// Setup per test is the real user flow through the Parts and Capture pages'
+// testids (docs/testids.md). Until those pages exist, `ANNOTATE_SEED=pouch`
+// seeds the same part + face straight into PouchDB (same doc shapes as
+// Store.res) so this spec can run against the Annotate page in isolation:
+//
+//   ANNOTATE_SEED=pouch npx playwright test --config=e2e/playwright.config.js --project=chromium annotate
+//
+// Tap geometry: the canvas publishes `data-transform="scale,tx,ty"` (image
+// px → canvas CSS px) and `data-image-size="WxH"` (oriented), so a spec can
+// compute exactly where a normalized point sits on screen at any zoom, click
+// there, and read the resulting normalized point back from `pending-points`.
+import {test, expect} from '@playwright/test'
+import fs from 'node:fs'
+import {fileURLToPath} from 'node:url'
+
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
+const endJpg = repoRoot + 'fixtures/hinge_pin/end.jpg'
+
+// fixtures/README.md: end.jpg is stored landscape with EXIF orientation 6;
+// oriented it is 1200×1600 and the hole is at (0.55, 0.30).
+const HOLE = {x: 0.55, y: 0.3}
+const ORIENTED = {w: 1200, h: 1600}
+const TOL = 0.005
+
+// ── setup ──────────────────────────────────────────────────────────────
+
+async function openViaUi(page) {
+  await page.goto('/')
+  await page.getByTestId('new-part').click()
+  await page.getByTestId('part-name').fill('Hinge pin')
+  await page.getByTestId('part-create').click()
+  await page.waitForURL(/#\/parts\/[^/]+$/)
+  const partId = page.url().match(/#\/parts\/([^/]+)$/)[1]
+  await page.goto(`/#/parts/${partId}/capture`)
+  await page.setInputFiles('[data-testid=capture-file-end]', endJpg)
+  await page.waitForURL(/#\/parts\/[^/]+\/faces\/[^/]+$/)
+  const faceId = page.url().match(/\/faces\/([^/]+)$/)[1]
+  return {partId, faceId}
+}
+
+async function openViaPouch(page) {
+  await page.goto('/')
+  await page.addScriptTag({path: repoRoot + 'node_modules/pouchdb/dist/pouchdb.js'})
+  const base64 = fs.readFileSync(endJpg).toString('base64')
+  const ids = await page.evaluate(async base64 => {
+    const db = new window.PouchDB('caliper-companion')
+    const now = new Date().toISOString()
+    const partId = 'part:' + crypto.randomUUID()
+    const faceId = 'face:' + crypto.randomUUID()
+    await db.put({
+      _id: partId, type: 'part', partId, name: 'Hinge pin', slug: 'hinge_pin', units: 'mm',
+      notes: '', anchors: [], createdAt: now, updatedAt: now,
+    })
+    await db.put({
+      _id: faceId, type: 'face', partId, kind: 'end', imageAttachment: 'image.jpg',
+      pixelWidth: 1200, pixelHeight: 1600, levelDegrees: null, outline: null,
+      capturedAt: now, updatedAt: now,
+      _attachments: {'image.jpg': {content_type: 'image/jpeg', data: base64}},
+    })
+    await db.close()
+    return {partId, faceId}
+  }, base64)
+  await page.goto(`/#/parts/${ids.partId}/faces/${ids.faceId}`)
+  return ids
+}
+
+async function openFace(page) {
+  const ids = process.env.ANNOTATE_SEED === 'pouch' ? await openViaPouch(page) : await openViaUi(page)
+  await expect(page.locator('.shell-title')).toHaveText('End · Hinge pin')
+  await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-image-size', `${ORIENTED.w}x${ORIENTED.h}`)
+  return ids
+}
+
+// ── geometry helpers ───────────────────────────────────────────────────
+
+async function readTransform(page) {
+  const canvas = page.getByTestId('annotate-canvas')
+  const [s, tx, ty] = (await canvas.getAttribute('data-transform')).split(',').map(Number)
+  const [w, h] = (await canvas.getAttribute('data-image-size')).split('x').map(Number)
+  const box = await canvas.boundingBox()
+  return {s, tx, ty, w, h, box}
+}
+
+function screenOf(t, n) {
+  return {x: t.box.x + n.x * t.w * t.s + t.tx, y: t.box.y + n.y * t.h * t.s + t.ty}
+}
+
+function insideBox(t, p, margin = 4) {
+  return (
+    p.x >= t.box.x + margin && p.x <= t.box.x + t.box.width - margin &&
+    p.y >= t.box.y + margin && p.y <= t.box.y + t.box.height - margin
+  )
+}
+
+async function tapNormalized(page, n) {
+  const t = await readTransform(page)
+  const p = screenOf(t, n)
+  expect(insideBox(t, p)).toBe(true)
+  await page.mouse.click(p.x, p.y)
+}
+
+async function pendingPoints(page) {
+  const text = await page.getByTestId('pending-points').textContent()
+  return text.split(';').filter(Boolean).map(pair => pair.split(',').map(Number))
+}
+
+function expectNear(actual, expected) {
+  expect(Math.abs(actual[0] - expected.x)).toBeLessThan(TOL)
+  expect(Math.abs(actual[1] - expected.y)).toBeLessThan(TOL)
+}
+
+async function zoomTo(page, minFactor) {
+  for (let i = 0; i < 12; i++) {
+    if (Number(await page.getByTestId('zoom').textContent()) >= minFactor) return
+    await page.getByTestId('zoom-in').click()
+  }
+  throw new Error(`zoom never reached ${minFactor}`)
+}
+
+// Drag from the canvas centre until the normalized point is on screen — a
+// one-finger pan (Pointer Events), in steps small enough to stay inside the
+// viewport.
+async function panIntoView(page, n) {
+  for (let i = 0; i < 12; i++) {
+    const t = await readTransform(page)
+    const p = screenOf(t, n)
+    if (insideBox(t, p, 24)) return
+    const cx = t.box.x + t.box.width / 2
+    const cy = t.box.y + t.box.height / 2
+    const dx = Math.max(-150, Math.min(150, cx - p.x))
+    const dy = Math.max(-150, Math.min(150, cy - p.y))
+    await page.mouse.move(cx, cy)
+    await page.mouse.down()
+    await page.mouse.move(cx + dx, cy + dy, {steps: 6})
+    await page.mouse.up()
+  }
+  throw new Error('could not pan the point into view')
+}
+
+async function saveDimension(page, a, b, reading, name) {
+  await tapNormalized(page, a)
+  await tapNormalized(page, b)
+  await expect(page.getByTestId('reading')).toBeFocused()
+  await page.keyboard.type(reading)
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('name')).toBeFocused()
+  await page.keyboard.type(name)
+  await page.keyboard.press('Enter')
+}
+
+// ── tests ──────────────────────────────────────────────────────────────
+
+test.describe('annotate', () => {
+  test('EXIF-rotated face: the hole taps to (0.55, 0.30) at 1× and at ≥3× (M3 b2, M4 b1)', async ({page}) => {
+    await openFace(page)
+
+    const t1 = await readTransform(page)
+    expect(t1.h).toBeGreaterThan(t1.w) // portrait after orientation
+    expect(t1.box.height * t1.w).not.toBeCloseTo(t1.box.width * t1.h, 0) // not a stretched landscape
+    expect(Number(await page.getByTestId('zoom').textContent())).toBeCloseTo(1, 2)
+
+    await tapNormalized(page, HOLE)
+    let pts = await pendingPoints(page)
+    expect(pts).toHaveLength(1)
+    expectNear(pts[0], HOLE)
+
+    await zoomTo(page, 3)
+    expect(Number(await page.getByTestId('zoom').textContent())).toBeGreaterThanOrEqual(3)
+    await panIntoView(page, HOLE)
+    const t3 = await readTransform(page)
+    expect(t3.s / t1.s).toBeGreaterThanOrEqual(3)
+
+    // p1 survives the zoom + pan untouched, and the same hole tapped at 3×
+    // lands on the same normalized point as p2.
+    await tapNormalized(page, HOLE)
+    pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    expectNear(pts[0], HOLE)
+    expectNear(pts[1], HOLE)
+  })
+
+  test('two taps → reading → Enter → name → Enter saves; canvas gets focus back (M4 b2, b6, b7)', async ({page}) => {
+    await openFace(page)
+    await page.getByTestId('kind-diameter').click()
+    await page.getByTestId('tolerance').fill('0.05')
+
+    await tapNormalized(page, {x: 0.2, y: 0.5})
+    expect(await pendingPoints(page)).toHaveLength(1)
+    await tapNormalized(page, {x: 0.8, y: 0.5})
+    expect(await pendingPoints(page)).toHaveLength(2)
+    await expect(page.getByTestId('reading')).toBeFocused()
+    await expect(page.getByTestId('reading')).toHaveAttribute('inputmode', 'decimal')
+    await expect(page.getByTestId('reading')).toHaveAttribute('enterkeyhint', 'next')
+    await expect(page.getByTestId('reading-units')).toHaveText('mm')
+
+    await page.keyboard.type('12.34')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('name')).toBeFocused()
+    await expect(page.getByTestId('name')).toHaveAttribute('enterkeyhint', 'done')
+    await expect(page.getByTestId('name')).toHaveAttribute('autocapitalize', 'none')
+    await page.keyboard.type('overall_l')
+    await expect(page.getByTestId('save')).toBeEnabled()
+    await page.keyboard.press('Enter')
+
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('reading')).toHaveValue('')
+    await expect(page.getByTestId('name')).toHaveValue('')
+    await expect(page.getByTestId('pending-points')).toHaveText('')
+    await expect(page.getByTestId('kind-diameter')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('tolerance')).toHaveValue('0.05')
+    await expect(page.getByTestId('annotate-canvas')).toBeFocused()
+
+    // Store round trip: the dimension is drawn/listed after a reload, and
+    // the tolerance just used is now the part-units default.
+    await page.reload()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('tolerance')).toHaveValue('0.05')
+    await expect(page.getByTestId('kind-length')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('validation: bad reading, bad name and mm fractions show inline errors and disable Save (M4 b3, b4)', async ({page}) => {
+    await openFace(page)
+    await tapNormalized(page, {x: 0.2, y: 0.5})
+    await tapNormalized(page, {x: 0.8, y: 0.5})
+
+    await page.getByTestId('reading').fill('abc')
+    await expect(page.getByTestId('reading-error')).toBeVisible()
+    await page.getByTestId('name').fill('overall_l')
+    await expect(page.getByTestId('save')).toBeDisabled()
+
+    await page.getByTestId('reading').fill('12.34')
+    await expect(page.getByTestId('reading-error')).toHaveCount(0)
+    await expect(page.getByTestId('save')).toBeEnabled()
+
+    await page.getByTestId('name').fill('Overall_L')
+    await expect(page.getByTestId('name-error')).toBeVisible()
+    await expect(page.getByTestId('name-error')).toHaveText('Use a–z, 0–9 and _ ; start with a letter')
+    await expect(page.getByTestId('save')).toBeDisabled()
+
+    await page.getByTestId('name').fill('pi')
+    await expect(page.getByTestId('name-error')).toContainText('reserved')
+    await expect(page.getByTestId('save')).toBeDisabled()
+
+    // Suggestion chips fill the name (SPEC §6.2 order: defaults first when
+    // no other face has names yet).
+    const chips = page.getByTestId('name-chip')
+    await expect(chips.first()).toHaveText('overall_l')
+    await chips.first().click()
+    await expect(page.getByTestId('name')).toHaveValue('overall_l')
+    await expect(page.getByTestId('save')).toBeEnabled()
+
+    await page.getByTestId('reading').fill('1 3/8')
+    await expect(page.getByTestId('reading-error')).toHaveText('Fractions only work in inches')
+    await expect(page.getByTestId('save')).toBeDisabled()
+  })
+
+  test('reload mid-entry keeps the saved dimension and drops the half-typed one (M2 b4)', async ({page}) => {
+    await openFace(page)
+    await saveDimension(page, {x: 0.2, y: 0.5}, {x: 0.8, y: 0.5}, '42.18', 'overall_l')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+
+    await tapNormalized(page, {x: 0.55, y: 0.2})
+    await tapNormalized(page, {x: 0.55, y: 0.8})
+    await expect(page.getByTestId('reading')).toBeFocused()
+    await page.keyboard.type('6.5')
+    expect(await pendingPoints(page)).toHaveLength(2)
+
+    await page.reload()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('reading')).toHaveValue('')
+    await expect(page.getByTestId('pending-points')).toHaveText('')
+  })
+
+  test('tapping an existing dimension selects it for edit; Delete removes it (M4 b8)', async ({page}) => {
+    await openFace(page)
+    await saveDimension(page, {x: 0.2, y: 0.5}, {x: 0.8, y: 0.5}, '42.18', 'overall_l')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+
+    // Tap the middle of the saved line.
+    await tapNormalized(page, {x: 0.5, y: 0.5})
+    await expect(page.getByTestId('delete')).toBeVisible()
+    await expect(page.getByTestId('reading')).toHaveValue('42.18')
+    await expect(page.getByTestId('name')).toHaveValue('overall_l')
+    const pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    expectNear(pts[0], {x: 0.2, y: 0.5})
+    expectNear(pts[1], {x: 0.8, y: 0.5})
+
+    // Edit round trip: change the reading, Update, reselect, see the new value.
+    await page.getByTestId('reading').fill('42.20')
+    await page.getByTestId('save').click()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+    await tapNormalized(page, {x: 0.5, y: 0.5})
+    await expect(page.getByTestId('reading')).toHaveValue('42.2')
+
+    await page.getByTestId('delete').click()
+    await expect(page.getByTestId('dimension-count')).toHaveText('0')
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+    await expect(page.getByTestId('pending-points')).toHaveText('')
+
+    await page.reload()
+    await expect(page.getByTestId('dimension-count')).toHaveText('0')
+  })
+})
