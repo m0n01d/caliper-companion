@@ -75,6 +75,7 @@ module Ctx = {
   @send external moveTo: (t, float, float) => unit = "moveTo"
   @send external lineTo: (t, float, float) => unit = "lineTo"
   @send external arc: (t, float, float, float, float, float) => unit = "arc"
+  @send external arcTo: (t, float, float, float, float, float) => unit = "arcTo"
   @send external stroke: t => unit = "stroke"
   @send external fill: t => unit = "fill"
   @send external save: t => unit = "save"
@@ -84,6 +85,8 @@ module Ctx = {
   @set external setFillStyle: (t, string) => unit = "fillStyle"
   @set external setLineWidth: (t, float) => unit = "lineWidth"
   @set external setLineCap: (t, string) => unit = "lineCap"
+  @set external setLineJoin: (t, string) => unit = "lineJoin"
+  @send external setLineDash: (t, array<float>) => unit = "setLineDash"
   @set external setGlobalAlpha: (t, float) => unit = "globalAlpha"
   @set external setImageSmoothingEnabled: (t, bool) => unit = "imageSmoothingEnabled"
 

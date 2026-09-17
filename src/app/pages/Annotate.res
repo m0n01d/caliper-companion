@@ -729,12 +729,23 @@ type scene = {
   dpr: float,
 }
 
-let formatLabel = (name: string, ~kind: Types.dimensionKind): string =>
-  switch kind {
-  | Diameter => "⌀ " ++ name
-  | Depth => "↧ " ++ name
-  | Length => name
+// Pill text (DESIGN.md §5): `name value`, prefixed ⌀ for a diameter and ↓
+// for a depth. Either part may still be empty while an entry is typed; no
+// pill at all when both are.
+let formatLabel = (~name: string, ~value: string, ~kind: Types.dimensionKind): option<string> => {
+  let body = [String.trim(name), String.trim(value)]->Array.filter(s => s != "")->Array.join(" ")
+  if body == "" {
+    None
+  } else {
+    Some(
+      switch kind {
+      | Diameter => "⌀ " ++ body
+      | Depth => "↓ " ++ body
+      | Length => body
+      },
+    )
   }
+}
 
 let drawScene = (el: Dom.element, scene: scene): unit => {
   let wPx = Float.toInt(Math.round(scene.view.w *. scene.dpr))
@@ -757,15 +768,16 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
     | Some(bitmap) => Draw.image(ctx, bitmap, vp, ~imageW=scene.imageW, ~imageH=scene.imageH)
     | None => ()
     }
-    // Existing dimensions, dimmed; the selected one is drawn from the
-    // pending points below so a handle drag shows live.
+    // Saved dimensions, dimmed (a drag on one shows live because it moves
+    // the loaded copy); the selected one is drawn from the pending points
+    // below, in the selected style.
     scene.dims->Array.forEach(d =>
       if scene.selected != Some(d.id) {
         Draw.dimension(
           ctx,
           ~a=toS(d.p1),
           ~b=toS(d.p2),
-          ~text=Some(formatLabel(d.name, ~kind=d.kind)),
+          ~text=formatLabel(~name=d.name, ~value=Float.toString(d.value), ~kind=d.kind),
           ~style=Dimmed,
         )
       }
@@ -1051,7 +1063,7 @@ let view = (m: model, ~dispatch: msg => unit): React.element =>
       dims: l.dims,
       selected: m.selected,
       pending: m.pending,
-      pendingLabel: m.name == "" ? None : Some(formatLabel(m.name, ~kind=m.kind)),
+      pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
       view: m.view,
       dpr: m.dpr,
     }
