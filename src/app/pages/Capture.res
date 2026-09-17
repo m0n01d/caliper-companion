@@ -7,6 +7,14 @@
 // `Tea.cmd` built in `update`, never run inline in `view`; `view` stays a
 // pure function of `model`. See the module-end notes for the judgment
 // calls this page makes where SPEC left the exact reading open.
+//
+// Design wave 2 (DESIGN.md §11, §11.2 "Capture"): restyled onto the wave-1
+// foundation (Ui/Icon/theme/global). Model/update below is the same M3
+// state machine plus two purely UI-only additions the task brief allows:
+// `selectedKind` (which chip/slot is active) and `faceImages` (object URLs
+// for the slot thumbnails, mirroring Part.res's own cheap-thumbnail
+// pattern). Nothing about the file-input/decode/save/recapture flow itself
+// changed — see the notes at the end of this file for what's new and why.
 
 // -- model -------------------------------------------------------------
 
@@ -37,6 +45,16 @@ type model = {
   partChecked: bool,
   partExists: bool,
   faces: array<Types.face>,
+  // faceId -> object URL (Download.objectUrlOfImage), Part.res's own cheap
+  // thumbnail pattern reused for the slot row (DESIGN.md §11.2).
+  faceImages: Dict.t<string>,
+  // UI-only (task brief: "a msg may be added for UI-only state such as
+  // 'selected kind chip'"): which chip/slot/shutter target is active.
+  selectedKind: Types.faceKind,
+  // True once the user taps a chip/slot — stops a (currently single, but
+  // future-proofed) `GotFaces` from overriding their choice with the
+  // "first kind without a face" default.
+  kindManuallySelected: bool,
   cameraDenied: bool,
   // "Request once per page life" (SPEC M3 bullet 2): this flag is set the
   // first time any capture label is armed, whether or not the platform
@@ -67,6 +85,8 @@ let statusOf = (model: model): status =>
 type msg =
   | GotPart(option<Types.part>)
   | GotFaces(array<Types.face>)
+  | FaceImageLoaded(string, option<string>)
+  | SelectKind(Types.faceKind)
   | CameraPermissionChecked(bool)
   | OrientationSample(option<float>, option<float>)
   | CaptureArmed
@@ -87,6 +107,12 @@ type msg =
 
 let existingFaceOf = (faces: array<Types.face>, kind: Types.faceKind): option<Types.face> =>
   Array.find(faces, f => f.kind == kind)
+
+// UI-only default (DESIGN.md §11.2): the first kind without a face, else Top.
+let defaultKind = (faces: array<Types.face>): Types.faceKind =>
+  Enums.allFaceKinds
+  ->Array.find(kind => existingFaceOf(faces, kind)->Option.isNone)
+  ->Option.getOr(Types.Top)
 
 let upsertFace = (faces: array<Types.face>, face: Types.face): array<Types.face> => {
   let replaced = ref(false)
@@ -214,6 +240,15 @@ let decodeAndCap = async (file: ImageDecode.file): (PouchDb.blob, string, int, i
   result
 }
 
+// Object URL for an already-captured face's image — cheap (no decode, just
+// the stored attachment blob), same pattern as Part.res's own face tiles.
+let loadFaceImageCmd = (face: Types.face): Tea.cmd<msg> =>
+  Tea.fromPromise(
+    () => Store.getFaceImage(Store.shared(), face.id),
+    blobOpt => FaceImageLoaded(face.id, blobOpt->Option.map(Download.objectUrlOfImage)),
+    _err => FaceImageLoaded(face.id, None),
+  )
+
 // -- init --------------------------------------------------------------
 
 let init = (~partId: string): (model, Tea.cmd<msg>) => {
@@ -222,6 +257,9 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
     partChecked: false,
     partExists: false,
     faces: [],
+    faceImages: Dict.make(),
+    selectedKind: Types.Top,
+    kindManuallySelected: false,
     cameraDenied: false,
     orientationRequested: false,
     orientationDenied: false,
@@ -275,7 +313,15 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
 let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
   | GotPart(part) => ({...model, partChecked: true, partExists: part->Option.isSome}, Tea.none)
-  | GotFaces(faces) => ({...model, faces}, Tea.none)
+  | GotFaces(faces) =>
+    let selectedKind = model.kindManuallySelected ? model.selectedKind : defaultKind(faces)
+    ({...model, faces, selectedKind}, Tea.batch(faces->Array.map(loadFaceImageCmd)))
+  | FaceImageLoaded(faceId, Some(url)) =>
+    let next = Dict.copy(model.faceImages)
+    Dict.set(next, faceId, url)
+    ({...model, faceImages: next}, Tea.none)
+  | FaceImageLoaded(_, None) => (model, Tea.none)
+  | SelectKind(kind) => ({...model, selectedKind: kind, kindManuallySelected: true}, Tea.none)
   | CameraPermissionChecked(denied) => ({...model, cameraDenied: denied}, Tea.none)
   | OrientationSample(beta, gamma) => ({...model, lastBeta: beta, lastGamma: gamma}, Tea.none)
   | CaptureArmed =>
@@ -389,6 +435,11 @@ let title = (_model: model): string => "Capture"
 let back = (model: model): option<Route.t> => Some(Route.Part(model.partId))
 
 // -- view --------------------------------------------------------------
+// DESIGN.md §11.2 "Capture": chips (top) → slot row → shutter/library or
+// the inline recapture card → camera note. All eight file inputs render
+// unconditionally in `hiddenInputs`, independent of `selectedKind` and
+// `model.dialog`, so `setInputFiles('[data-testid="capture-file-<kind>"]')`
+// keeps working no matter what's on screen — see the module-end notes.
 
 let kindLabel = (kind: Types.faceKind): string =>
   switch kind {
@@ -398,136 +449,257 @@ let kindLabel = (kind: Types.faceKind): string =>
   | Types.Detail => "Detail"
   }
 
-let sizeText = (f: Types.face): string =>
-  Int.toString(f.pixelWidth) ++ "×" ++ Int.toString(f.pixelHeight) ++ " px"
+let formatDegrees = (deg: float): string => Float.toFixed(deg, ~digits=1) ++ "°"
 
-let faceRow = (model: model, ~dispatch: msg => unit, ~kind: Types.faceKind): React.element => {
-  let kindStr = Enums.faceKindToString(kind)
-  let existing = existingFaceOf(model.faces, kind)
-  let hasExisting = existing->Option.isSome
-  let isBusyHere = model.busy == Some(kind)
-  let dialogOpen = switch model.dialog {
+let isDialogOpen = (model: model): bool =>
+  switch model.dialog {
   | NoDialog => false
   | RecaptureConfirm(_) => true
   }
-  let disableInputs = isBusyHere || dialogOpen
-  let statusText = switch existing {
-  | Some(f) => "Captured — " ++ sizeText(f)
-  | None => "Not captured yet"
-  }
-  let camLabel = hasExisting ? "Recapture" : "Capture"
-  let libLabel = hasExisting ? "Recapture from library" : "From library"
+
+let chipRow = (model: model, ~dispatch: msg => unit): React.element =>
+  <Ui.ChipRow testId="capture-kinds">
+    {Enums.allFaceKinds
+    ->Array.map(kind => {
+      let kindStr = Enums.faceKindToString(kind)
+      let hasExisting = existingFaceOf(model.faces, kind)->Option.isSome
+      <Ui.Chip
+        key=kindStr
+        large=true
+        selected={kind == model.selectedKind}
+        onClick={_ => dispatch(SelectKind(kind))}>
+        <>
+          {hasExisting ? <Icon name=Check size=16 /> : React.null}
+          {React.string(kindLabel(kind))}
+        </>
+      </Ui.Chip>
+    })
+    ->React.array}
+  </Ui.ChipRow>
+
+// 56 px slot row (DESIGN.md §4 "Thumbnail slot", mirrors Part.res's own
+// face tiles): captured = a thumbnail once the object URL has loaded, else
+// the plain `slot-captured` surface+ring; empty = dashed. Tapping a slot
+// selects that kind, same as its chip.
+let slotRow = (model: model, ~dispatch: msg => unit): React.element =>
+  <div className="slot-row">
+    {Enums.allFaceKinds
+    ->Array.map(kind => {
+      let kindStr = Enums.faceKindToString(kind)
+      let existing = existingFaceOf(model.faces, kind)
+      let hasExisting = existing->Option.isSome
+      let thumbUrl = existing->Option.flatMap(f => Dict.get(model.faceImages, f.id))
+      let stateClass = hasExisting ? " slot-captured" : " slot-empty"
+      let selectedClass = kind == model.selectedKind ? " slot-selected" : ""
+      let label = kindLabel(kind) ++ (hasExisting ? " — captured" : " — not captured")
+      <button
+        type_="button"
+        key=kindStr
+        className={"slot" ++ stateClass ++ selectedClass}
+        ariaLabel=label
+        ariaPressed={kind == model.selectedKind ? #"true" : #"false"}
+        onClick={_ => dispatch(SelectKind(kind))}>
+        {switch thumbUrl {
+        | Some(url) => <img src=url alt={kindLabel(kind)} />
+        | None => React.null
+        }}
+      </button>
+    })
+    ->React.array}
+  </div>
+
+// The shutter block: 76 px amber shutter (label for the selected kind's
+// camera input), Body caption, "From library" secondary capsule, the live
+// level readout, and the busy/error lines. Swapped out for `recaptureCard`
+// while a dialog is open (DESIGN.md §11.2).
+let shutterBlock = (model: model, ~dispatch: msg => unit): React.element => {
+  let kind = model.selectedKind
+  let kindStr = Enums.faceKindToString(kind)
+  let hasExisting = existingFaceOf(model.faces, kind)->Option.isSome
+  let isBusy = model.busy == Some(kind)
+  let shutterDisabled = isBusy || isDialogOpen(model)
+  let liveLevel = model.orientationDenied ? None : levelFromSamples(model.lastBeta, model.lastGamma)
   let rowError = switch model.error {
   | Some((k, msg)) if k == kind => Some(msg)
   | _ => None
   }
-  let camGen = genFor(model.inputGens, kind, ~fromLibrary=false)
-  let libGen = genFor(model.inputGens, kind, ~fromLibrary=true)
-
-  <li className="face-row" key=kindStr>
-    <div className="face-row-head">
-      <span className="face-row-kind"> {React.string(kindLabel(kind))} </span>
-      <span className="face-row-status"> {React.string(statusText)} </span>
-    </div>
-    <div className="face-row-actions">
+  // Both phases share the one `busy` flag; which is showing is fully
+  // determined by `model.dialog` — see the module-end notes.
+  let progressText = switch model.dialog {
+  | RecaptureConfirm(_) => "Saving…"
+  | NoDialog => "Decoding…"
+  }
+  <div className="shutter-block">
+    <div className="shutter-row">
       <label
-        className="capture-btn"
+        className={"shutter" ++ (shutterDisabled ? " shutter-disabled" : "")}
         htmlFor={"capture-file-" ++ kindStr}
+        ariaLabel="Capture this face"
         onPointerDown={_ => dispatch(CaptureArmed)}>
-        {React.string(camLabel)}
-        <input
-          key={"cam-" ++ Int.toString(camGen)}
-          id={"capture-file-" ++ kindStr}
-          type_="file"
-          accept="image/jpeg,image/png"
-          capture={#environment}
-          className="visually-hidden-input"
-          dataTestId={"capture-file-" ++ kindStr}
-          disabled={disableInputs}
-          onChange={evt => dispatch(FileChosen(kind, false, ImageDecode.fileFromChangeEvent(evt)))}
-        />
+        <Icon name=Camera size=32 />
       </label>
-      <label className="capture-btn capture-btn-secondary" htmlFor={"library-file-" ++ kindStr}>
-        {React.string(libLabel)}
-        <input
-          key={"lib-" ++ Int.toString(libGen)}
-          id={"library-file-" ++ kindStr}
-          type_="file"
-          accept="image/jpeg,image/png"
-          className="visually-hidden-input"
-          dataTestId={"library-file-" ++ kindStr}
-          disabled={disableInputs}
-          onChange={evt => dispatch(FileChosen(kind, true, ImageDecode.fileFromChangeEvent(evt)))}
-        />
-      </label>
+      {switch liveLevel {
+      | Some(deg) =>
+        <Ui.Pill mono=true testId="capture-level"> {React.string(formatDegrees(deg))} </Ui.Pill>
+      | None => React.null
+      }}
     </div>
-    {isBusyHere
-      ? <p className="face-row-progress"> {React.string("Saving photo…")} </p>
-      : React.null}
+    <p className="t-body shutter-caption">
+      {React.string((hasExisting ? "Recapture " : "Capture ") ++ kindLabel(kind))}
+    </p>
+    <label className="btn btn-secondary" htmlFor={"library-file-" ++ kindStr}>
+      <Icon name=Image size=20 />
+      {React.string("From library")}
+    </label>
+    {isBusy ? <Ui.Pill> {React.string(progressText)} </Ui.Pill> : React.null}
     {switch rowError {
-    | Some(msg) => <p className="face-row-error"> {React.string(msg)} </p>
+    | Some(msg) => <p className="t-footnote text-error"> {React.string(msg)} </p>
     | None => React.null
     }}
-  </li>
+  </div>
 }
 
-let recaptureDialog = (pending: pendingCapture, ~dispatch: msg => unit): React.element =>
-  <div className="recapture-overlay">
-    <div className="sheet recapture-dialog" role="alertdialog" ariaLabel="Replace photo?">
-      <p>
-        {React.string(kindLabel(pending.kind) ++ " already has a photo. Replace it?")}
-      </p>
-      <div className="recapture-actions">
-        <button
-          type_="button" dataTestId="recapture-confirm" onClick={_ => dispatch(RecaptureConfirmClicked)}>
-          {React.string("Replace photo, discard its dimensions")}
-        </button>
-        <button
-          type_="button" dataTestId="recapture-keep" onClick={_ => dispatch(RecaptureKeepClicked)}>
-          {React.string("Replace photo, keep dimensions")}
-        </button>
-        <button
-          type_="button" dataTestId="recapture-cancel" onClick={_ => dispatch(RecaptureCancelClicked)}>
-          {React.string("Cancel")}
-        </button>
-      </div>
+// Inline recapture card (DESIGN.md §11.2, §11.1 "Confirmations"): no
+// overlay/modal, just a `.list-group` card in place of the shutter block.
+let recaptureCard = (pending: pendingCapture, ~dispatch: msg => unit): React.element =>
+  <div className="list-group recapture-card" role="alertdialog" ariaLabel="Replace photo?">
+    <p className="t-body"> {React.string("Replace the " ++ kindLabel(pending.kind) ++ " photo?")} </p>
+    <div className="recapture-buttons">
+      <Ui.Button
+        variant=Danger
+        block=true
+        testId="recapture-confirm"
+        onClick={_ => dispatch(RecaptureConfirmClicked)}>
+        {React.string("Replace, discard its dimensions")}
+      </Ui.Button>
+      <Ui.Button
+        variant=Secondary
+        block=true
+        testId="recapture-keep"
+        onClick={_ => dispatch(RecaptureKeepClicked)}>
+        {React.string("Replace, keep dimensions")}
+      </Ui.Button>
+      <Ui.Button block=true testId="recapture-cancel" onClick={_ => dispatch(RecaptureCancelClicked)}>
+        {React.string("Cancel")}
+      </Ui.Button>
     </div>
   </div>
 
+// One real `<input type=file>`, visually hidden but always in the DOM
+// (SPEC §8a A4 / docs/testids.md contract) — see `hiddenInputs` below.
+let renderCaptureInput = (
+  model: model,
+  ~dispatch: msg => unit,
+  ~kind: Types.faceKind,
+  ~fromLibrary: bool,
+): React.element => {
+  let kindStr = Enums.faceKindToString(kind)
+  let disabled = model.busy == Some(kind) || isDialogOpen(model)
+  let gen = genFor(model.inputGens, kind, ~fromLibrary)
+  let testId = (fromLibrary ? "library-file-" : "capture-file-") ++ kindStr
+  let label =
+    (fromLibrary ? "Choose " : "Capture ") ++
+    kindLabel(kind) ++
+    (fromLibrary ? " photo from library" : " photo with camera")
+  <input
+    key={(fromLibrary ? "lib-" : "cam-") ++ Int.toString(gen)}
+    id=testId
+    type_="file"
+    accept="image/jpeg,image/png"
+    capture=?{fromLibrary ? None : Some(#environment)}
+    className="visually-hidden"
+    dataTestId=testId
+    ariaLabel=label
+    disabled
+    onChange={evt => dispatch(FileChosen(kind, fromLibrary, ImageDecode.fileFromChangeEvent(evt)))}
+  />
+}
+
+// All eight inputs (one camera + one library per kind), always mounted —
+// deliberately not nested inside the shutter/library labels above (which
+// only ever reference the *selected* kind's `id` via `htmlFor`), so their
+// presence never depends on `selectedKind` or `model.dialog`.
+let hiddenInputs = (model: model, ~dispatch: msg => unit): React.element =>
+  Enums.allFaceKinds
+  ->Array.flatMap(kind => [
+    renderCaptureInput(model, ~dispatch, ~kind, ~fromLibrary=false),
+    renderCaptureInput(model, ~dispatch, ~kind, ~fromLibrary=true),
+  ])
+  ->React.array
+
 let view = (model: model, ~dispatch: msg => unit): React.element =>
   switch statusOf(model) {
-  | Loading =>
-    <div className="page">
-      <p className="page-name"> {React.string("Capture")} </p>
-    </div>
+  | Loading => <p className="t-body muted"> {React.string("Loading…")} </p>
   | NotFound =>
-    <div className="page">
-      <p className="page-name"> {React.string("Capture")} </p>
-      <p> {React.string("Part not found.")} </p>
-      <a href={Route.href(Route.Parts)}> {React.string("Back to parts")} </a>
+    <div className="stack">
+      <p className="t-body"> {React.string("Part not found.")} </p>
+      <a className="btn btn-secondary" href={Route.href(Route.Parts)}> {React.string("Back to parts")} </a>
     </div>
   | Found =>
-    <div className="page capture-page">
-      <p className="page-name"> {React.string("Capture")} </p>
-      <ul className="face-picker">
-        {Enums.allFaceKinds->Array.map(kind => faceRow(model, ~dispatch, ~kind))->React.array}
-      </ul>
-      <p
-        className={model.cameraDenied ? "capture-note capture-note-prominent" : "capture-note"}
-        dataTestId="capture-note">
-        {React.string(
-          "Camera blocked? Use From library — Settings › Safari › Camera controls it.",
-        )}
-      </p>
+    <div className="capture-view">
+      {chipRow(model, ~dispatch)}
+      {slotRow(model, ~dispatch)}
       {switch model.dialog {
-      | NoDialog => React.null
-      | RecaptureConfirm(pending) => recaptureDialog(pending, ~dispatch)
+      | RecaptureConfirm(pending) => recaptureCard(pending, ~dispatch)
+      | NoDialog => shutterBlock(model, ~dispatch)
       }}
+      {hiddenInputs(model, ~dispatch)}
+      <p
+        className={model.cameraDenied ? "camera-note camera-note-prominent" : "camera-note"}
+        dataTestId="capture-note">
+        {React.string("Camera blocked? Use From library — Settings › Safari › Camera controls it.")}
+      </p>
     </div>
   }
 
-// -- judgment calls (see LOGBOOK.md "M3 capture" for the full write-up) --
+// -- judgment calls (see LOGBOOK.md "Design wave 2 — capture" for the full
+// write-up; "M3 capture" below is the original M3 agent's own notes) --
 //
+// Design wave 2 additions:
+// - `selectedKind`/`kindManuallySelected` and `faceImages`/`FaceImageLoaded`
+//   are the two UI-only additions the task brief allows. `GotFaces` fires
+//   exactly once (from `init`'s cmd; nothing else re-fetches the face
+//   list), so "default to the first kind without a face, else Top" only
+//   ever needs to run that once — `kindManuallySelected` exists mainly so
+//   a hypothetical future re-fetch can't clobber a deliberate chip tap.
+// - The 76 px shutter and the "From library" capsule reference the
+//   selected kind's input by `htmlFor` (id), not by wrapping it — unlike
+//   `Ui.Toggle`'s wrap-the-checkbox pattern, this keeps all eight
+//   `<input>`s in one fixed place, present regardless of `selectedKind` or
+//   `model.dialog`, satisfying "all eight inputs stay in the DOM ...
+//   regardless of which chip is selected" literally and unconditionally.
+//   Trade-off: keyboard Tab reaches all eight (each carries its own
+//   descriptive `aria-label`, e.g. "Capture Side photo with camera")
+//   rather than just the two matching the visible shutter/library
+//   controls, and a hidden input's own `:focus-visible` ring — being on a
+//   1x1px clipped element — isn't a useful visual cue the way
+//   `.btn:focus-within:has(input:focus-visible)` is for a wrapped one.
+//   Untested by any spec; flagged here as a minor, deliberate rough edge.
+// - "From library" always reads "From library", not "Recapture from
+//   library": DESIGN.md §11.2 names the capsule's copy once, and the Body
+//   caption above it ("Capture Top" / "Recapture Top") already carries the
+//   recapture state — the original M3 pass had both actions relabel to
+//   "Recapture …", which this page no longer does. Purely a copy change;
+//   the underlying msg/testid/behaviour are identical.
+// - The progress pill's text ("Decoding…" vs "Saving…") is derived from
+//   existing state, not a new msg: while `model.busy` matches the selected
+//   kind, `model.dialog` is still `NoDialog` during the initial decode
+//   (recapture's dialog msgs never touch it) and is still
+//   `RecaptureConfirm(_)` for the whole confirm/keep-through-save window
+//   (only `Saved`/`SaveFailed`/`DeleteDimensionsFailed` clear it), so the
+//   two phases are already distinguishable from state alone.
+// - `Ui.res` gap: no "plain"/borderless button variant. DESIGN.md's
+//   recapture card asks for a Danger, a Secondary, and a "plain" Cancel;
+//   `Ui.Button`'s variants are Primary/Secondary/Danger/Small/Icon, so
+//   Cancel uses the default (Secondary) — visually identical to "Replace,
+//   keep dimensions" next to it. Worth a `Ui.Button` `Plain` variant
+//   (borderless, `cc-text` on transparent) if this pattern recurs.
+// - Level readout: DESIGN.md's "mono teal Ui.Pill next to the shutter when
+//   available" reuses the existing `levelFromSamples` helper live off
+//   `lastBeta`/`lastGamma` (gated on `orientationDenied` the same way the
+//   save-time `armedLevel` snapshot is) — display-only, no new state.
+//
+// M3 capture (original, still true):
 // - `levelDegrees` = sqrt(beta² + gamma²): SPEC doesn't define the exact
 //   formula, only that it's "the level". This is the standard bubble-level
 //   magnitude across both tilt axes; 0° is flat.
@@ -535,9 +707,6 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
 //   (capture-file-<kind>) label's pointerdown, not the library label's —
 //   the library input never uses level data, so there's no reason for it
 //   to trigger the iOS permission prompt.
-// - Both actions ("capture-file" and "library-file") relabel to
-//   "Recapture …" once a kind has a face, per SPEC's "its actions read
-//   Recapture" (plural).
 // - `Store.startTimer` is sequenced strictly before `Route.push` (via the
 //   `TimerStarted` msg) rather than fired concurrently with navigation —
 //   deterministic ordering was simpler to reason about than a fire-and-

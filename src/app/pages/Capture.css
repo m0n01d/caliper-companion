@@ -1,142 +1,121 @@
-/* Capture — page-scoped styles. Owned by the Capture module; global tokens
-   live in src/theme.css. No `position: fixed` anywhere (SPEC §5) — the
-   recapture dialog reuses the global `.sheet` pattern (position: absolute),
-   pinned to `.capture-page` by making that container `position: relative`. */
+/* Capture — page-scoped styles (DESIGN.md §11.2 "Capture", §4 Chip/
+   Thumbnail-slot/Shutter/Secondary-button/Scrim-pill). Global tokens live in
+   src/theme.css, shared component classes in src/global.css — nothing here
+   references the deprecated `--color-*` compat aliases or global.css §13
+   legacy page classes (no `.page`, `.capture-page`, `.face-row*`,
+   `.capture-btn*`, `.recapture-overlay`/`.sheet`/`.recapture-dialog`,
+   `.visually-hidden-input`). No `position: fixed` anywhere (SPEC §5) — the
+   recapture card is in-flow, no overlay/modal (DESIGN.md §11.1
+   "Confirmations"). */
 
-.capture-page {
-  position: relative;
-}
-
-.face-picker {
+.capture-view {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--cc-space-5);
 }
 
-.face-row {
+/* -- slot row (DESIGN.md §4 "Thumbnail slot") ------------------------- */
+.slot-row {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--color-cream);
-  border: 1px solid var(--color-tan);
-  border-radius: var(--radius-card);
+  gap: var(--cc-space-3);
 }
 
-.face-row-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.face-row-kind {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 17px;
-}
-
-.face-row-status {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--color-muted);
-}
-
-.face-row-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-/* Labels styled to look like the app's `<button>` (CLAUDE.md house style —
-   these wrap a visually-hidden `<input type="file">` rather than being
-   real buttons, so the file-picker gesture stays a native label click). */
-.capture-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--color-tan);
-  background: var(--color-rust-light);
-  color: var(--color-parchment);
-  padding: 12px 16px;
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-
-.capture-btn-secondary {
-  background: var(--color-forest-mid);
-}
-
-.capture-btn:focus-within {
-  outline: 2px solid var(--color-rust);
+.slot-selected {
+  outline: 2px solid var(--cc-amber);
   outline-offset: 2px;
 }
 
-/* Visually hidden but still in the DOM and focusable/clickable (not
-   `display: none`) — Playwright's `setInputFiles` and the wrapping
-   `<label>`'s native click-forwarding both need the real element present. */
-.visually-hidden-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+/* -- shutter block ------------------------------------------------------ */
+.shutter-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cc-space-3);
+  padding-top: var(--cc-space-2);
+  text-align: center;
 }
 
-.face-row-progress {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--color-forest-mid);
+.shutter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-4);
 }
 
-.face-row-error {
-  font-size: 13px;
-  color: var(--color-danger);
+/* 76 px amber shutter, 4 px cc-text ring (DESIGN.md §4). A real `<label>`
+   for the selected kind's camera input (referenced by `htmlFor`, see
+   Capture.res's module-end notes) — not a button, so the native
+   label→input file-picker gesture stays intact on iOS Safari. */
+.shutter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--cc-shutter);
+  height: var(--cc-shutter);
+  border-radius: 50%;
+  border: 4px solid var(--cc-text);
+  background: var(--cc-amber);
+  color: var(--cc-amber-ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color var(--cc-motion-press) linear,
+    opacity var(--cc-motion-press) linear;
 }
 
-.capture-note {
-  font-size: 13px;
-  color: var(--color-muted);
-  padding: 10px 12px;
-  border-radius: var(--radius-card);
-  border: 1px solid transparent;
+.shutter:active {
+  background: var(--cc-amber-pressed);
 }
 
-.capture-note-prominent {
-  color: var(--color-danger);
-  background: var(--color-rust-tint);
-  border-color: var(--color-rust);
+.shutter:focus-within:has(input:focus-visible) {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 3px;
+}
+
+.shutter-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shutter-disabled:active {
+  background: var(--cc-amber);
+}
+
+.shutter-caption {
+  color: var(--cc-text);
+}
+
+/* The "From library" capsule is a plain `.btn.btn-secondary` label in the
+   markup — global.css already styles/focuses it (".btn also dresses a
+   <label> or <a> as a button"); nothing page-specific needed here. */
+
+.camera-note {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  padding: 0 var(--cc-space-1);
+}
+
+.camera-note-prominent {
+  color: var(--cc-error);
+  background: var(--cc-error-wash);
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  padding: var(--cc-space-2) var(--cc-space-3);
   font-weight: 600;
 }
 
-/* Recapture dialog: a dimmed backdrop + the shared `.sheet` pattern,
-   scoped to `.capture-page` (position: relative above) instead of the
-   whole viewport. */
-.recapture-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgb(30 40 24 / 0.35);
-  border-radius: var(--radius-card);
-  display: flex;
-  align-items: flex-end;
-}
-
-.recapture-dialog {
-  width: 100%;
+/* -- recapture card (inline, opaque, non-modal) ------------------------ */
+.recapture-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
 }
 
-.recapture-actions {
+.recapture-buttons {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--cc-space-2);
 }

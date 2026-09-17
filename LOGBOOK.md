@@ -824,3 +824,62 @@ track never touched.
   `Canvas.imageBitmap → ImageData.imageBitmap` cast described above. The Playwright test on
   `top.jpg` (SPEC bullet 6) also belongs to that track — it needs the toggle and the live canvas to
   exist first.
+## 2026-09-17 — Design wave 2 — capture (agent/w2-capture)
+
+- `src/app/pages/Capture.res`/`.css` restyled onto the wave-1 foundation (DESIGN.md §11.2
+  "Capture", §4 Chip/Thumbnail-slot/Shutter/Secondary-button/Scrim-pill). File-scoped to this
+  page only; `global.css`/`theme.css`/`Ui.res`/`Icon.res` untouched. `Capture.css` no longer
+  references any `--color-*` compat alias or global.css §13 legacy class.
+- Layout: capsule chip row (`Ui.Chip large=true`, Top/Side/End/Detail, captured kind gets a small
+  `Icon Check`) → 56 px slot row (`.slot`/`.slot-captured`/`.slot-empty`, same classes DESIGN.md
+  §4 defines for Part's own face tiles) → either the 76 px amber shutter block or the inline
+  recapture card → the camera note. Tapping a chip or a slot dispatches the same new
+  `SelectKind(kind)` msg.
+- **Two UI-only model additions**, both within the task brief's explicit allowance:
+  - `selectedKind`/`kindManuallySelected` — which chip/slot/shutter target is active, defaulting
+    to "first kind without a face, else Top" the one time `GotFaces` resolves (nothing else
+    re-fetches the face list in this page), and sticking to the user's tap after that.
+  - `faceImages`/`FaceImageLoaded` — object URLs for the slot thumbnails, the exact same cheap
+    `Store.getFaceImage` + `Download.objectUrlOfImage` pattern `Part.res` already uses for its own
+    face tiles (no new Store/Download code).
+  Nothing about the file-input/decode/save/recapture state machine changed — same msgs, same cmds,
+  same `update` branches, just two new msgs/fields layered on top.
+- **All eight `<input type=file>`s (one camera + one library per kind) render unconditionally**,
+  in a fixed spot in the tree, independent of `selectedKind` and `model.dialog` — this was the
+  hard requirement (`docs/testids.md`, `capture.spec.js`/`annotate.spec.js`/`export.spec.js` all
+  call `setInputFiles('[data-testid="capture-file-<kind>"]')` directly, never via the UI). The
+  visible shutter/"From library" controls reference the *selected* kind's input by `htmlFor`
+  (id), not by wrapping it, specifically so their presence in the DOM never depends on which chip
+  is selected or whether the recapture dialog is showing. Trade-off noted in `Capture.res`'s own
+  module-end comment: keyboard Tab reaches all eight (each has its own descriptive `aria-label`)
+  rather than just the active pair, and a hidden input's focus ring — on a 1×1px clipped element —
+  isn't a useful visual cue. Untested by any spec; a deliberate, minor rough edge.
+- **Judgment calls**:
+  - "From library" always reads "From library" (not "Recapture from library"): DESIGN.md §11.2
+    names the capsule's copy once, and the Body caption above it ("Capture Top"/"Recapture Top")
+    already carries the recapture state. The original M3 pass had both actions relabel to
+    "Recapture …"; this page drops that for the library capsule. Copy-only change — same testid,
+    same click handler.
+  - The progress pill's text ("Decoding…" vs "Saving…") is derived from existing state (whether
+    `model.dialog` is `NoDialog` or `RecaptureConfirm(_)` while `model.busy` matches the selected
+    kind), not a new msg — the two phases were already distinguishable.
+  - Level readout: a live, display-only read of the existing `levelFromSamples(lastBeta,
+    lastGamma)` helper (same gating as the save-time `armedLevel` snapshot), shown as a mono teal
+    `Ui.Pill` (`capture-level`) next to the shutter when available. No new state.
+  - Recapture dialog: `Ui.Button Danger`/`Secondary`/(default) for confirm/keep/cancel, inline
+    `.list-group`-styled card, no overlay/modal.
+  - Dropped the old `sizeText`/"Captured — WxH" status line — DESIGN.md §11.2 doesn't call for it
+    on this screen (chip check-mark + slot thumbnail already say "captured"), and the Part page's
+    own `face-<kind>` tile is the one `capture.spec.js` actually reads pixel sizes off of.
+- **`Ui.res` gap**: no "plain"/borderless button variant. DESIGN.md's recapture card asks for
+  Danger / Secondary / a "plain" Cancel; `Ui.Button` only has Primary/Secondary/Danger/Small/Icon,
+  so Cancel renders as Secondary — visually identical to "Replace, keep dimensions" next to it.
+  Worth a `Plain` variant (borderless, `cc-text` on transparent) if this recurs on other pages.
+- New `data-testid`s (documented in `docs/testids.md`): `capture-kinds` (the chip row),
+  `capture-level` (the level pill). Both additive; no existing id changed.
+- Verified: `npx rescript build` clean under `+a` (clean build too, 62 modules), `npm test`
+  (152/152), `npm run build`, Playwright **23/23 on Chromium** (`E2E_PORT=3220`). Screenshots at
+  390×844 (empty, one face captured, recapture dialog open) and 360×844 (empty, no horizontal
+  scroll) taken against `vite preview` and reviewed by eye — thumbnail slot renders the actual
+  captured photo, chip/slot selection and the check-mark all read correctly, recapture card
+  matches DESIGN.md's inline no-overlay spec.
