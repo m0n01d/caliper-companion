@@ -530,3 +530,61 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
   18/18 at `/`.
 - Gotcha hit twice this session: a stale `vite preview` on :3000 makes any check run against the
   wrong build (Playwright's `reuseExistingServer` happily reuses it). Kill by PID, not by pattern.
+
+## 2026-09-17 — Design wave 1 — foundation (agent/d1-foundation)
+
+Visual foundation per DESIGN.md §11 (owner: "modern Apple, Liquid Glass, not ternpike"): tokens,
+the app shell with the one glass surface, shared component classes, `Icon.res`, `Ui.res`. No page
+under `src/app/pages/` was edited; wave 2 restyles them onto these classes.
+
+- **Tokens** (`src/theme.css`): ternpike's palette is gone. `--cc-*` colours/spacing/radii from §2,
+  the §11 system font stacks and HIG "Large" type scale (`--cc-size-*`/`--cc-leading-*` pairs plus
+  `--cc-text-*` `font:` shorthands), `--glass-*` from the glass brief verbatim, motion tokens,
+  `color-scheme: dark`. The brief's `prefers-color-scheme: light` glass remap is deliberately
+  omitted: dark-only with `color-scheme` forced means it would fire on every phone set to light
+  appearance and put a 55%-white bar under off-white text. Add it with a light theme.
+- **Legacy aliases** (`global.css` §13a): the page stylesheets still say `var(--color-cream)` etc.
+  An undefined custom property makes the whole declaration invalid at computed-value time — it does
+  not fall through to an earlier rule — so a global compat rule cannot rescue them. The old names
+  are aliased onto `cc-` tokens (`ink` → `cc-text`, `cream` → `cc-surface`, `forest` → `cc-amber`,
+  `rust` → `cc-error`, …) and the handful of places where that inverts meaning (annotate stage
+  background, capture tile, secondary capture label, selected chip/segment, zoom toolbar) get
+  higher-specificity overrides. Wave 2 deletes all of §13.
+- **Glass**: exactly one surface, `.shell-topbar`, `position: sticky` inside `.shell` (now the
+  scroll container; `.app-frame` is a fixed 100dvh so the document never scrolls). The blur lives
+  on `.shell-topbar::before`, an absolutely-positioned pseudo-child, not on the sticky element —
+  the brief's workaround for iOS's fixed/sticky + backdrop-filter scroll-lag bug. `.glass` is the
+  recipe verbatim (`-webkit-` first, `@supports` opaque fallback, `prefers-reduced-transparency`
+  hook that Safari will never fire). Bar icon buttons are transparent (no glass on glass).
+  Verified in Chromium: computed `backdrop-filter: blur(20px) saturate(1.6)` on the pseudo, body
+  scrollTop stays 0 while `.shell` scrolls, content visibly blurs under the bar.
+- **Overscroll**: kept `overscroll-behavior: none` on the document (already there; iOS standalone
+  has no pull-to-refresh, and an accidental Chrome/Android refresh mid-annotation costs more) and
+  added `contain` on `.shell` so the container's own bounce still works.
+- **Large title**: `Shell ~largeTitle` renders no bar title and a static `.shell-title
+  .shell-title-large` block in flow under the bar; it keeps the `.shell-title` class on purpose so
+  `shell.spec.js` (`locator('.shell-title')`) stays green when wave 2 enables it for Parts.
+  `~subtitle` is a Footnote line under either title. Main.res unchanged.
+- **Buttons**: bare `<button>` defaults to the secondary capsule (44 px). `Ui.Button ~disabled`
+  renders `aria-disabled` and swallows the click instead of the native attribute, per §6 ("still
+  focusable so the reason can be read"); Playwright's `toBeDisabled()` honours it. The primaries
+  pages render today (New part, Create, Export, Save, Capture) are promoted to amber through compat
+  selectors so each screen keeps one prominent button between waves.
+- **List separators**: the inset separator is a `::before` at `left: 16px` rather than a
+  `border-top` with a margin, so a tappable row stays tappable edge to edge.
+- **Annotate segmented (compat only)**: 14 px semibold with 4 px padding, not Subhead 15 — it shares
+  a row with the 132 px tolerance field until wave 2 re-lays the panel out, and "Diameter" at 15 px
+  clipped on 390 px with the wide fallback font. `.segmented-option` proper is Subhead 15.
+- **Icons**: Lucide 1.47.0 (ISC) path data inlined in `Icon.res`, 16 icons, `aria-hidden` unless
+  `~label` is given (then `role="img"` + `aria-label`).
+- **A2HS hint**: opaque `.list-group`-like card docked under the shell (never fixed, never glass),
+  Footnote copy, `Ui.Button Small` "Later" (`data-testid="a2hs-later"`). Behaviour unchanged.
+- **Meta**: `color-scheme: dark`, `theme-color` `#17181A`, manifest `background_color`/`theme_color`
+  `#17181A`; `apple-mobile-web-app-status-bar-style` stays `black-translucent`.
+- Verified: `rescript build` clean under `+a`, vitest 136/136, Vite build clean, Playwright
+  **18/18 on Chromium** (WebKit still cannot launch here — check the glass bar and the switch on a
+  real iPhone). Screenshots reviewed by eye; headless Linux renders the system stack as DejaVu
+  Sans, so the SF Pro look only shows on device.
+- Not done / for wave 2: pages still use their own classes (this section's §13 maps them); no
+  scroll-edge shadow modulation (no reliable CSS for it in Safari); the 96 px face tiles on Part
+  still overflow horizontally at 4 tiles (pre-existing; §11.2 wants 56 px slots).
