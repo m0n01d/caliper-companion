@@ -1,43 +1,116 @@
-/* theme.css — design tokens ported from ternpike/src/theme.css (palette,
-   fonts, radii, shadows only — the grain/topo/animation tokens and the
-   `html.dark` remap are ternpike-specific decoration this app doesn't use).
-   No Tailwind: these are plain CSS custom properties (CLAUDE.md hard rule),
-   consumed directly by global.css and the page/component stylesheets. */
+/* theme.css — Caliper Companion design tokens. Tokens only; the classes that
+   consume them live in global.css.
+
+   Source of truth: DESIGN.md §2 (the `cc-` colours, spacing, radii) as amended
+   by DESIGN.md §11 (system type stack, HIG type scale, capsule shapes, 16 px
+   page margin, dark only) and docs/design/liquid-glass-web.md §3 (the
+   `--glass-*` tokens, verbatim). Ternpike's palette is gone; nothing here is
+   inherited from it. */
 
 :root {
-  /* ── Palette ─────────────────────────────────────────────────── */
-  --color-ink: #1e2818;
-  --color-forest: #2d3a22;
-  --color-forest-mid: #3d4e2e;
-  --color-forest-light: #4a5e3a;
-  --color-moss: #6b7c58;
-  --color-rust: #b85c38;
-  --color-rust-light: #cc7050;
-  --color-tan: #d4c9a8;
-  --color-cream: #f2ede3;
-  --color-cream-deep: #ebe5d4;
-  --color-parchment: #faf7f0;
-  --color-muted: #8a8a78;
+  /* Dark only (DESIGN.md §11.1 "Colour"): form controls, scrollbars and the
+     UA stylesheet render in their dark variants. */
+  color-scheme: dark;
 
-  /* ── Semantic / derived ─────────────────────────────────────────── */
-  --color-rust-tint: #fdf0ea; /* warning-row background */
-  --color-danger: #a83020; /* destructive / flagged-feature text */
+  /* ── Colour (DESIGN.md §2) ─────────────────────────────────────────── */
+  --cc-ground: #17181a;
+  --cc-surface: #232527;
+  --cc-surface-2: #2c2f32;
+  --cc-field: #1e2022;
+  --cc-border: #34373b;
+  --cc-text: #f4f2ec;
+  --cc-text-2: #b9b5ab;
+  --cc-text-3: #8f8b81;
+  --cc-amber: #f2a33a;
+  --cc-amber-pressed: #db8f2a; /* §6: primary button pressed, amber −10% L */
+  --cc-amber-ink: #2b1a02;
+  --cc-teal: #4fd1b1;
+  --cc-teal-wash: #163b33;
+  --cc-teal-ink: #cff5ea;
+  --cc-teal-border: #1f4a41;
+  --cc-error: #f26b4e;
+  --cc-error-ink: #2b0e08;
+  --cc-error-wash: rgb(242 107 78 / 0.2); /* §4 warning row (error): cc-error at 20% */
+  --cc-photo-mat: #2a2c2f;
+  --cc-scrim: #1a1b1dcc;
 
-  /* ── Fonts ───────────────────────────────────────────────────────
-     Family names ported from ternpike; no webfont files are shipped (v0
-     makes no network calls, SPEC §5), so these fall through to each
-     platform's closest serif/mono system font. */
-  --font-display: 'Playfair Display', Georgia, serif;
-  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --font-body: 'Crimson Pro', Georgia, serif;
+  /* ── Type (DESIGN.md §11.1: system stack, HIG "Large" Dynamic Type step) ─ */
+  --cc-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --cc-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* ── Radii ───────────────────────────────────────────────────────── */
-  --radius-card: 16px;
-  --radius-panel: 20px;
-  --radius-sheet: 24px;
+  --cc-size-large-title: 34px;
+  --cc-leading-large-title: 41px;
+  --cc-size-title-3: 20px;
+  --cc-leading-title-3: 25px;
+  --cc-size-headline: 17px;
+  --cc-leading-headline: 22px;
+  --cc-size-body: 17px;
+  --cc-leading-body: 22px;
+  --cc-size-callout: 16px;
+  --cc-leading-callout: 21px;
+  --cc-size-subhead: 15px;
+  --cc-leading-subhead: 20px;
+  --cc-size-footnote: 13px;
+  --cc-leading-footnote: 18px;
+  --cc-size-caption-1: 12px;
+  --cc-leading-caption-1: 16px;
+  --cc-size-caption-2: 11px;
+  --cc-leading-caption-2: 13px;
+  --cc-size-reading: 38px; /* the live caliper reading, mono 500, leading 1.0 */
+  --cc-leading-reading: 1;
 
-  /* ── Shadows ─────────────────────────────────────────────────────── */
-  --shadow-card: 0 4px 24px rgb(45 58 34 / 0.1);
-  --shadow-panel: 0 8px 40px rgb(45 58 34 / 0.12);
-  --shadow-lift: 0 12px 48px rgb(45 58 34 / 0.2);
+  /* `font:` shorthand values for each text style, e.g. `font: var(--cc-text-body)`.
+     Weight is the HIG default for the style; Headline is semibold by definition,
+     Large Title is used bold (its emphasized weight). */
+  --cc-text-large-title: 700 var(--cc-size-large-title) / var(--cc-leading-large-title) var(--cc-font-ui);
+  --cc-text-title-3: 600 var(--cc-size-title-3) / var(--cc-leading-title-3) var(--cc-font-ui);
+  --cc-text-headline: 600 var(--cc-size-headline) / var(--cc-leading-headline) var(--cc-font-ui);
+  --cc-text-body: 400 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
+  --cc-text-callout: 400 var(--cc-size-callout) / var(--cc-leading-callout) var(--cc-font-ui);
+  --cc-text-subhead: 400 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+  --cc-text-footnote: 400 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+  --cc-text-caption-1: 400 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-ui);
+  --cc-text-caption-2: 400 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
+  --cc-text-reading: 500 var(--cc-size-reading) / var(--cc-leading-reading) var(--cc-font-mono);
+
+  /* ── Spacing and shape (DESIGN.md §2, page margin per §11.1 "Layout") ─── */
+  --cc-space-1: 4px;
+  --cc-space-2: 8px;
+  --cc-space-3: 12px;
+  --cc-space-4: 16px;
+  --cc-space-5: 20px;
+  --cc-space-6: 24px;
+  --cc-page-x: 16px;
+
+  --cc-radius-sm: 10px; /* thumbnails, small buttons */
+  --cc-radius: 12px; /* inputs, inner elements of a 16 px container (concentric: 16 − 4) */
+  --cc-radius-lg: 14px;
+  --cc-radius-card: 16px; /* inset grouped list containers, cards, the panel */
+  --cc-radius-photo: 16px;
+  --cc-radius-capsule: 999px;
+
+  --cc-tap-min: 44px; /* every interactive element */
+  --cc-btn-height: 50px; /* capsule primary/secondary buttons (§11.1 "Shape") */
+  --cc-shutter: 76px;
+
+  /* ── Glass (docs/design/liquid-glass-web.md §3, verbatim) ─────────────── */
+  --glass-fill: rgba(35, 37, 39, 0.72); /* cc-surface at ~72% */
+  --glass-fill-strong: rgba(23, 24, 26, 0.82); /* cc-ground at ~82%, for over-photo chrome */
+  --glass-stroke: rgba(244, 242, 236, 0.1); /* cc-text at 10%, hairline edge */
+  --glass-highlight: rgba(244, 242, 236, 0.16); /* top inset highlight */
+  --glass-blur: 20px;
+  --glass-saturate: 1.6;
+  --glass-radius-sm: 14px; /* matches cc-radius-lg neighborhood, rounder than opaque cards */
+  --glass-radius-pill: 999px;
+
+  /* ── Motion (DESIGN.md §11.1 "Interaction feel") ──────────────────────── */
+  --cc-motion: 160ms;
+  --cc-motion-press: 80ms; /* §6: pressed-state fill change */
+  --cc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+/* liquid-glass-web.md §3 also carries a `prefers-color-scheme: light` remap of
+   the glass fill. It is deliberately NOT here: the app ships dark only with
+   `color-scheme: dark` forced, so that block would fire on every phone set to
+   light appearance and put a 55%-white bar under off-white text. Add it back
+   together with a light theme, not before. */
