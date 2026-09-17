@@ -1546,3 +1546,41 @@ clean under `+a`; `npm test` 205/205 (193 baseline + 12 net new in `EdgeSnapTest
 - Known follow-ups: Parts rows truncate the name behind the Rename/Delete icons at 390 px — an
   Edit toggle in the bar (like "Edit faces") would give the row its width; hidden capture inputs
   have no self focus ring when tabbed directly; face-delete focus management.
+
+## 2026-09-17 — A9 dimension list (agent/a9-list)
+
+- Built SPEC §8a A9 on `agent/a9-list`: an inset grouped list of the face's saved dimensions under
+  the controls (`dimension-list` / `dimension-row` / `dimension-empty`), rows in creation order —
+  kind glyph · name · `value unit` · `± tol` — with the accessible name "<name>, <value> <unit>,
+  <kind>"; a row tap selects, a tap on the selected row deselects, a canvas selection marks and
+  scrolls to its row. vitest 206/206, `rescript build` and `vite build` clean under `+a`,
+  Playwright **44/44 on Chromium** (the 40 existing + 4 new).
+- **One selection path (judgment call).** A9 says a row tap selects "exactly as tapping it on the
+  canvas does (… A6's fit applies to its segment)" — but the canvas path never fitted on select.
+  Both now go through `selectDimension`: fill the sheet, `fitToPending` (A6 remembers the view;
+  Save, Clear and Delete restore it exactly as for a placed pair), scroll the row into view. So a
+  canvas tap on a saved dimension now zooms to it as well; the existing M4/A1 specs still pass
+  (they read the transform after the fit settles). If the owner dislikes the zoom on a canvas
+  select, drop `fitToPending` from `selectDimension` — the list still matches the canvas.
+- **List placement.** In the DOM after Save as the panel's last section (`.annotate-dimensions`
+  inside `.panel`), not a sibling on the ground: the panel is the sheet that runs to the bottom of
+  the screen (DESIGN.md §11.2), and a sibling would need its bottom corners re-shaped and the 12 px
+  `.annotate` gap closed. The inset container therefore sits on `cc-surface-2` at the 12 px inner
+  radius (§11.1 concentric) instead of `cc-surface` at 16. The header is the house
+  `.list-group-header` (Footnote 600 uppercase, as on every other list), not a literal Caption 2.
+- **Row markup.** `Ui.ListRow` has no `data-id`/`aria-selected`, so the row is composed in
+  Annotate.res from global.css's `.list-row` classes through a `react/jsx-runtime` props record
+  (`RowButton`, the `Canvas.Input` pattern). `role="listitem"` matches `Ui.ListRow`'s button rows;
+  `aria-selected` is the spec's contract although ARIA doesn't list it for `listitem` — noted, not
+  changed. The empty state is a `<p>` inside the container, which then drops `role="list"` (a list
+  owns only list items).
+- **Focus.** A row tap leaves focus on the row, for select and deselect alike (the deselect is
+  Clear's `endAutoFit(clearEntry)` without Clear's focus-the-canvas cmd). Canvas taps keep their
+  existing focus behaviour.
+- **Test hook.** `annotate-canvas` gained `data-selected` (the selected dimension's id, empty when
+  none): with identical endpoints, `pending-points` can't tell the two apart.
+- **Building the overlap in Playwright.** Two identical taps can't yield two dimensions — the
+  canvas's A1 hit-test selects the saved one instead of placing a point on it — so the spec places
+  the second pair 40 px lower and drags its pending body up onto the line (snap off) before saving.
+- Screenshots (not committed): `…/scratchpad/a9/03-selected-viewport.png` — two overlapping
+  dimensions plus a depth, the second selected from the list.
