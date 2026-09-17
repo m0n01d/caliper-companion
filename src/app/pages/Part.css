@@ -1,111 +1,81 @@
-/* Part — page-scoped styles. Owned by the Part module; global tokens live in src/theme.css. */
-
-.page-error {
-  color: var(--color-danger);
-  background: var(--color-rust-tint);
-  border: 1px solid var(--color-rust);
-  border-radius: var(--radius-card);
-  padding: 8px 12px;
-  font-size: 14px;
-}
+/* Part — page-scoped styles. The 56 px slot shape, list-group card, mono
+   type and warning-row tones all come from src/global.css / Ui.res; this
+   file only carries the faces-row/face-slot layout and the features table
+   (there's no shared table component). Tokens: src/theme.css (--cc-*). */
 
 .faces-row {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
-.face-tile {
+.face-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: 0 0 auto;
-  width: 96px;
+  width: 72px;
+  color: inherit;
   text-decoration: none;
-  color: var(--color-ink);
+  text-align: center;
 }
 
-.face-thumb {
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--color-tan);
-  background: var(--color-cream-deep);
+.face-slot:active {
+  opacity: 0.6;
 }
 
-.face-thumb-placeholder {
-  display: flex;
-}
-
-.face-tile-label {
-  font-size: 12px;
+.face-slot-label {
   text-transform: capitalize;
-  color: var(--color-forest-mid);
 }
 
-.capture-tile {
-  justify-content: center;
-  border: 1px dashed var(--color-rust);
-  border-radius: var(--radius-card);
-  padding: 8px;
-  color: var(--color-rust);
-  font-size: 13px;
-  height: 96px;
-}
-
-.features-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.face-slot-size {
+  font-variant-numeric: tabular-nums;
 }
 
 .features-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
 }
 
 .features-table th,
 .features-table td {
+  padding: 10px 14px;
   text-align: left;
-  padding: 8px 6px;
-  border-bottom: 1px solid var(--color-tan);
+  border-bottom: 1px solid var(--cc-border);
 }
 
-.feature-row.flagged {
-  background: var(--color-rust-tint);
+.features-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.features-table th {
+  font: 600 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
+  color: var(--cc-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.features-table td {
+  font: var(--cc-text-body);
+}
+
+.features-table .num {
+  text-align: right;
 }
 
 .flag-marker {
-  color: var(--color-danger);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  color: var(--cc-error);
+  font: var(--cc-text-caption-2);
 }
 
-.muted {
-  color: var(--color-muted);
-}
-
-.export-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.export-result {
-  color: var(--color-forest-mid);
-}
-
-.timer {
-  font-family: var(--font-mono);
-  color: var(--color-forest-mid);
-}
-
-.face-tile-size {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-muted);
-  margin-top: 2px;
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
 }
