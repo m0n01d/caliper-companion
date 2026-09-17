@@ -338,3 +338,20 @@ hint** Fusion needs; a face additionally gets a **label**, and a part may have a
 - [ ] Name suggestions and reconciliation are unchanged (they key on face ids).
 - [ ] Custom chips can be removed only when their face has no image and no dimensions; a captured custom face is deleted from the Part page like any face (delete confirms inline, removes its dimensions).
 - [ ] Playwright: add a custom face `left_side` on plane Side, capture `side.jpg` into it, dimension it, export → the zip holds `faces/left_side.jpg` and `faces/left_side_dimensioned.png`, `features.json` has that face with `kind: "side"`, `label: "left_side"`; a second custom face with the same label is rejected inline; default faces' paths are unchanged.
+
+### A8 — Snap telemetry: drag-after-snap (**deferred — specified, not yet built**)
+
+Decides whether edge snap earns more investment (Canny / Hough) or is left alone. Local only, like
+the hands-on timer.
+
+- [ ] Per part, count `snapAccepted` (a snapped point that was saved without being dragged) and
+  `snapCorrected` (a snapped point the user dragged before saving, or a saved dimension whose
+  snapped endpoint was later dragged). Points that did not snap count in neither.
+- [ ] Stored on the timer doc (`timer:<partId>`) so it rides the existing per-part telemetry; shown
+  on the Part page next to the hands-on time as "snap 14 / 2 corrected"; in `features.json`
+  under `telemetry` as `"snap": {"accepted": 14, "corrected": 2}` (additive; schema string
+  unchanged); the Debug CSV gains both columns.
+- [ ] Decision rule (written here so the dogfood applies it): corrected / (accepted + corrected)
+  > 20 % over five parts → do the next snap upgrade (Canny edge map, then Hough lines);
+  < 5 % → leave snap alone.
+- [ ] No UI beyond the two readouts. Not implemented yet; try after the five-part dogfood starts.
