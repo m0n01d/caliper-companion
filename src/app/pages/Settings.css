@@ -1,28 +1,47 @@
-/* Settings — page-scoped styles. Owned by the Settings module; global tokens live in src/theme.css. */
+/* Settings — page-scoped styles. The inset grouped list, toggle and mono
+   type all come from src/global.css / Ui.res; nothing here is specific to
+   this screen beyond the error banner and the toggle-track fix below.
+   Tokens: src/theme.css (--cc-*). */
 
-.settings-page .page-error {
-  color: var(--color-danger);
-  background: var(--color-rust-tint);
-  border: 1px solid var(--color-rust);
-  border-radius: var(--radius-card);
-  padding: 8px 12px;
-  font-size: 14px;
+/* Ui.res gap (see the report): Ui.Toggle's decorative `.toggle-track` span
+   (aria-hidden, purely visual) is later in the DOM than its real `<input>`
+   sibling, so at equal stacking (both `position` with `z-index: auto`) it
+   paints on top and intercepts every pointer event meant for the input —
+   including Playwright's own `getByTestId('wedge-toggle').click()`, which
+   times out with "toggle-track intercepts pointer events". Since it's
+   `aria-hidden` and purely decorative, `pointer-events: none` is the
+   correct fix (a real tap on the switch still activates the input via the
+   wrapping <label>'s native click-forwarding); scoped to this row rather
+   than global.css, which isn't ours to edit on this track. */
+.wedge-row .toggle-track {
+  pointer-events: none;
 }
 
-.settings-page .help-text {
-  font-size: 13px;
-  color: var(--color-muted);
+/* Same gap, the other half of it: global.css's `.visually-hidden` clips the
+   real checkbox to a 1px box (`clip: rect(0,0,0,0)`), which browsers treat
+   as unpaintable and therefore un-hit-testable — a direct click at the
+   input's own coordinates (what Playwright's `.click()` does, and the only
+   thing `docs/testids.md`'s `wedge-toggle` id promises) falls through to
+   whatever's behind it instead of landing on the input. Overridden here to
+   occupy the full 52×32 switch and stay invisible via `opacity` instead,
+   which keeps it hit-testable; `.toggle-track` above is pointer-events:none
+   so it stays purely decorative and never wins the hit test back. */
+.wedge-row .visually-hidden {
+  position: absolute;
+  inset: 0;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  opacity: 0;
 }
 
-.tolerance-readonly {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px;
-  background: var(--color-cream);
-  border: 1px solid var(--color-tan);
-  border-radius: var(--radius-card);
-  font-family: var(--font-mono);
-  font-size: 14px;
-  color: var(--color-forest-mid);
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
 }
