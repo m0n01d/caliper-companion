@@ -94,7 +94,7 @@ let back = (_model: model): option<Route.t> => Some(Route.Parts)
 let renderRow = (row: timerRow): React.element => {
   let hands =
     Store.handsOnSeconds(row.timer)->Option.map(n => Int.toString(n) ++ "s")->Option.getOr("—")
-  <div key={row.timer.partId} className="list-row" dataTestId="timer-row">
+  <div key={row.timer.partId} className="list-row" role="listitem" dataTestId="timer-row">
     <span className="list-row-body">
       <span className="list-row-title"> {React.string(row.partLabel)} </span>
       <span className="list-row-meta">
@@ -116,7 +116,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
     }}
-    <Ui.ListGroup header="Timers">
+    <Ui.ListGroup header="Timers" asList=true>
       {if !model.loaded {
         <div className="list-row"> <p className="t-footnote muted"> {React.string("Loading timers…")} </p> </div>
       } else if Array.length(model.rows) == 0 {

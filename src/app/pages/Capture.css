@@ -74,11 +74,6 @@
   background: var(--cc-amber-pressed);
 }
 
-.shutter:focus-within:has(input:focus-visible) {
-  outline: 2px solid var(--cc-amber);
-  outline-offset: 3px;
-}
-
 .shutter-disabled {
   opacity: 0.4;
   cursor: default;
@@ -93,8 +88,33 @@
 }
 
 /* The "From library" capsule is a plain `.btn.btn-secondary` label in the
-   markup — global.css already styles/focuses it (".btn also dresses a
-   <label> or <a> as a button"); nothing page-specific needed here. */
+   markup — global.css already styles it (".btn also dresses a <label> or
+   <a> as a button"); its OWN `:focus-visible` never fires though, same
+   reason as the shutter's below (it's never itself the focused element —
+   its `htmlFor` input is). */
+
+/* DESIGN.md §9 "Focus-visible rings on every interactive element": the
+   camera/library inputs these labels are `htmlFor` are `.visually-hidden`
+   and rendered elsewhere in the DOM (`hiddenInputs`, not nested inside
+   either label — see Capture.res's module-end notes on why), so neither
+   label can see its input via `:focus-within`, and the previous attempt
+   here (`.shutter:focus-within:has(input:focus-visible)`) was dead CSS: an
+   `input` that isn't a descendant can never make `:has()` match. Fixed by
+   keying off a *static* class Capture.res's `renderCaptureInput` puts on
+   whichever hidden input pair belongs to the currently-selected chip
+   (`input-selected-camera`/`input-selected-library` — not the label's own
+   dynamic per-face id, so one rule covers every default AND custom face).
+   `:has()` at the shared `.capture-view` root can then reach sideways from
+   the focused input to the sibling label that represents it. */
+.capture-view:has(.input-selected-camera:focus-visible) .shutter {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 3px;
+}
+
+.capture-view:has(.input-selected-library:focus-visible) .shutter-block > .btn-secondary {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 2px;
+}
 
 .camera-note {
   font: var(--cc-text-footnote);

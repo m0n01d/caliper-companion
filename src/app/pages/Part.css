@@ -17,6 +17,12 @@
   color: inherit;
   text-decoration: none;
   text-align: center;
+  /* A plain `<a>`, not `.btn`/`<button>` (see Ui.res's base rule) — DESIGN.md
+     §11.1 "Interaction feel" applies to it explicitly. Its focus-visible
+     ring comes from global.css's blanket `a:focus-visible` now. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .face-slot:active {

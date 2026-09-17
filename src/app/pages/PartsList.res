@@ -21,6 +21,9 @@ type model = {
   form: option<createForm>,
   rowStates: Dict.t<rowState>, // partId -> rowState; absent == Normal
   rowError: option<string>, // surfaces a rename/delete failure inline
+  // DESIGN.md §9 "Live region" — see `Ui.Live`'s doc comment for why "" is
+  // silence, not absence.
+  announcement: string,
 }
 
 type msg =
@@ -53,8 +56,41 @@ let store = () => Store.shared()
 // payloads that may not even be an `Error` instance (see PouchDb.res).
 let describeError = (_exn: exn): string => "Something went wrong talking to storage. Try again."
 
+// DESIGN.md §9 "Focus management": focus a target by testid one microtask
+// after this msg's own model update. `Tea.res`'s `dispatch` runs a msg's
+// cmd synchronously, right after handing the new model to React's
+// `setState` — before React has actually re-rendered/committed the DOM
+// (see Tea.res's doc comment on `use`) — so looking a target up
+// immediately would miss one that only exists in the model this same msg
+// just produced (a newly-opened form's input, in particular). A `Promise`
+// microtask reliably runs after React's synchronous-event commit without
+// needing a new binding: `Canvas.res` (src/bindings, read-only from here)
+// already exports `byTestId`/`focus`, the same pair Annotate.res's own
+// `focusTestId` uses — Annotate's targets are already-mounted, so it
+// doesn't need this deferral; a freshly-opened form's input does.
+let focusTestId = (id: string): Tea.cmd<msg> =>
+  Tea.effect(_dispatch =>
+    Promise.resolve()
+    ->Promise.then(() => {
+        switch Canvas.byTestId(id) {
+        | Some(el) => el->Canvas.focus
+        | None => ()
+        }
+        Promise.resolve()
+      })
+    ->ignore
+  )
+
 let init = (): (model, Tea.cmd<msg>) => (
-  {loaded: false, parts: [], error: None, form: None, rowStates: Dict.make(), rowError: None},
+  {
+    loaded: false,
+    parts: [],
+    error: None,
+    form: None,
+    rowStates: Dict.make(),
+    rowError: None,
+    announcement: "",
+  },
   Tea.fromPromise(() => Store.listParts(store()), parts => PartsLoaded(parts), e => LoadFailed(
     describeError(e),
   )),
@@ -81,7 +117,7 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   | LoadFailed(msg) => ({...model, loaded: true, error: Some(msg)}, Tea.none)
   | NewPartClicked => (
       {...model, form: Some({name: "", units: Types.Mm, error: None, submitting: false})},
-      Tea.none,
+      focusTestId("part-name"),
     )
   | FormNameChanged(name) => (
       {...model, form: model.form->Option.map(f => {...f, name, error: None})},
@@ -107,7 +143,14 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
         )
       }
     }
-  | PartCreated(part) => ({...model, form: None}, Route.push(Route.Part(part.id)))
+  | PartCreated(part) => (
+      // The route change below unmounts this page almost immediately, so
+      // this announcement is mostly symbolic (DESIGN.md §9 asks for it
+      // regardless) — an AT may not get to speak it before the live region
+      // itself is torn down. Noted in LOGBOOK.md rather than skipped.
+      {...model, form: None, announcement: "Part created"},
+      Route.push(Route.Part(part.id)),
+    )
   | CreateFailed(msg) => (
       {...model, form: model.form->Option.map(f => {...f, submitting: false, error: Some(msg)})},
       Tea.none,
@@ -115,7 +158,10 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   | RowTapped(id) => (model, Route.push(Route.Part(id)))
   | RenameStart(id) =>
     let draft = model.parts->Array.find(p => p.id == id)->Option.map(p => p.name)->Option.getOr("")
-    ({...model, rowStates: setRowState(model, id, Renaming(draft)), rowError: None}, Tea.none)
+    (
+      {...model, rowStates: setRowState(model, id, Renaming(draft)), rowError: None},
+      focusTestId("part-rename-input"),
+    )
   | RenameDraftChanged(id, draft) => (
       {...model, rowStates: setRowState(model, id, Renaming(draft))},
       Tea.none,
@@ -163,8 +209,14 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
         parts: model.parts->Array.filter(p => p.id != id),
         rowStates: setRowState(model, id, Normal),
         rowError: None,
+        announcement: "Part deleted",
       },
-      Tea.none,
+      // DESIGN.md §9 "Focus management": the deleted row is gone, so send
+      // focus to the one control guaranteed to still be there afterward —
+      // "New part" (present whether the list is now empty or not; see
+      // `renderNewPartButton`) doubles as "the list" since it's the first
+      // thing after it in DOM order.
+      focusTestId("new-part"),
     )
   | DeleteFailed(msg) => ({...model, rowError: Some(msg)}, Tea.none)
   }
@@ -263,7 +315,7 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
 
   switch state {
   | Renaming(draft) =>
-    <div key={part.id} className="list-row" dataTestId="part-row">
+    <div key={part.id} className="list-row" role="listitem" dataTestId="part-row">
       <div className="part-row-edit">
         <input
           type_="text"
@@ -292,7 +344,7 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
       </div>
     </div>
   | ConfirmingDelete =>
-    <div key={part.id} className="list-row" dataTestId="part-row">
+    <div key={part.id} className="list-row" role="listitem" dataTestId="part-row">
       <div className="part-row-edit">
         <p className="t-footnote">
           {React.string("Delete \"" ++ part.name ++ "\"? This removes its faces and dimensions.")}
@@ -366,6 +418,7 @@ let renderNewPartButton = (model: model, ~dispatch: msg => unit): React.element 
 
 let view = (model: model, ~dispatch: msg => unit): React.element =>
   <div className="stack-lg">
+    <Ui.Live text=model.announcement testId="parts-live" />
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
@@ -387,7 +440,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
             </p>
           </div>
         } else {
-          <Ui.ListGroup>
+          <Ui.ListGroup asList=true>
             {model.parts->Array.map(part => renderRow(model, part, ~dispatch))->React.array}
           </Ui.ListGroup>
         }}

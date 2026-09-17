@@ -38,7 +38,7 @@ let make = () => {
           "Tap Share, then \"Add to Home Screen\" — Caliper Companion works offline once installed.",
         )}
       </p>
-      <Ui.Button variant=Small onClick={dismiss} testId="a2hs-later">
+      <Ui.Button variant=Plain size=Small onClick={dismiss} testId="a2hs-later">
         <span className="a2hs-hint-dismiss"> {React.string("Later")} </span>
       </Ui.Button>
     </div>

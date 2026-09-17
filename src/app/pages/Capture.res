@@ -94,6 +94,9 @@ type model = {
   busy: option<string>, // the label being decoded/saved
   error: option<(string, string)>, // (label, message)
   dialog: dialog,
+  // DESIGN.md §9 "Live region" — see `Ui.Live`'s doc comment for why "" is
+  // silence, not absence.
+  announcement: string,
 }
 
 type status = Loading | NotFound | Found
@@ -309,6 +312,27 @@ let loadFaceImageCmd = (face: Types.face): Tea.cmd<msg> =>
     _err => FaceImageLoaded(face.id, None),
   )
 
+// DESIGN.md §9 "Focus management" — deferred one microtask past this msg's
+// own model update, the same reasoning as `PartsList.focusTestId` (see that
+// module's copy for the full comment): `Tea.res`'s `dispatch` runs a msg's
+// cmd before React has re-rendered, so a target that only exists in the
+// model this same msg just produced (the custom-face card's name input)
+// needs the deferral; a target that was already on screen (the shutter,
+// once the recapture card closes) would work either way but gets the same
+// treatment for one code path to reason about.
+let focusTestId = (id: string): Tea.cmd<msg> =>
+  Tea.effect(_dispatch =>
+    Promise.resolve()
+    ->Promise.then(() => {
+        switch Canvas.byTestId(id) {
+        | Some(el) => el->Canvas.focus
+        | None => ()
+        }
+        Promise.resolve()
+      })
+    ->ignore
+  )
+
 // -- init --------------------------------------------------------------
 
 let init = (~partId: string): (model, Tea.cmd<msg>) => {
@@ -332,6 +356,7 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
     busy: None,
     error: None,
     dialog: NoDialog,
+    announcement: "",
   }
   let loadPartCmd = Tea.fromPromise(
     () => Store.getPart(Store.shared(), partId),
@@ -387,7 +412,10 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   // thing competing for the shutter slot).
   | SelectChip(label) =>
     ({...model, selectedLabel: label, labelManuallySelected: true, customDraft: None}, Tea.none)
-  | CustomOpen => ({...model, customDraft: Some({draftLabel: "", plane: Types.Top})}, Tea.none)
+  | CustomOpen => (
+      {...model, customDraft: Some({draftLabel: "", plane: Types.Top})},
+      focusTestId("custom-face-label"),
+    )
   | CustomLabelChanged(text) =>
     switch model.customDraft {
     | Some(draft) => ({...model, customDraft: Some({...draft, draftLabel: text})}, Tea.none)
@@ -499,7 +527,18 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     // The chip now comes from `faces`; drop the page-only copy.
     let customChips = model.customChips->Array.filter(c => c.label != face.label)
     (
-      {...model, faces, customChips, dialog: NoDialog, busy: None, error: None},
+      {
+        ...model,
+        faces,
+        customChips,
+        dialog: NoDialog,
+        busy: None,
+        error: None,
+        // DESIGN.md §9: "Face captured: <label>" — like `PartCreated` in
+        // PartsList.res, `TimerStarted` below navigates away almost
+        // immediately, so this is mostly symbolic; kept per spec anyway.
+        announcement: "Face captured: " ++ face.label,
+      },
       Tea.fromPromise(
         () => Store.startTimer(Store.shared(), ~partId=model.partId),
         _timer => TimerStarted(face.id),
@@ -529,7 +568,12 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
         saveFromPending(~partId=model.partId, pending),
       )
     }
-  | RecaptureCancelClicked => ({...model, dialog: NoDialog}, Tea.none)
+  | RecaptureCancelClicked =>
+    // DESIGN.md §9: the recapture card closes back into the shutter block —
+    // focus follows it back to the shutter label (`dataTestId="shutter"`,
+    // `tabIndex={-1}`: a `<label>` isn't natively focusable, so it needs an
+    // explicit, non-tab-order focus target here — see `shutterBlock`).
+    ({...model, dialog: NoDialog}, focusTestId("shutter"))
   | DimensionsDeletedThenSave =>
     switch model.dialog {
     | NoDialog => (model, Tea.none)
@@ -655,6 +699,11 @@ let slotRow = (model: model, ~dispatch: msg => unit): React.element =>
         | Some(url) => <img src=url alt={chipAriaName(chip)} />
         | None => React.null
         }}
+        {// DESIGN.md §9 "Color is never the only signal" — the badge stays
+        // even before the thumbnail has loaded (the `hasExisting` check
+        // doesn't wait on `thumbUrl`), so "captured" is never signalled by
+        // the teal ring colour alone.
+        hasExisting ? <span className="slot-check" ariaHidden=true> <Icon name=Check size=10 /> </span> : React.null}
       </button>
     })
     ->React.array}
@@ -689,6 +738,8 @@ let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.el
         className={"shutter" ++ (shutterDisabled ? " shutter-disabled" : "")}
         htmlFor={"capture-file-" ++ label}
         ariaLabel="Capture this face"
+        dataTestId="shutter"
+        tabIndex={-1}
         onPointerDown={_ => dispatch(CaptureArmed)}>
         <Icon name=Camera size=32 />
       </label>
@@ -708,7 +759,8 @@ let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.el
     </label>
     {removable
       ? <Ui.Button
-          variant=Small
+          variant=Secondary
+          size=Small
           testId="custom-face-remove"
           disabled=isBusy
           ariaLabel={"Remove the " ++ label ++ " chip"}
@@ -777,7 +829,7 @@ let customCard = (model: model, draft: customDraft, ~dispatch: msg => unit): Rea
         variant=Primary block=true testId="custom-face-add" disabled={!canAdd} onClick={_ => dispatch(CustomAdd)}>
         {React.string("Add face")}
       </Ui.Button>
-      <Ui.Button block=true testId="custom-face-cancel" onClick={_ => dispatch(CustomCancel)}>
+      <Ui.Button variant=Plain block=true testId="custom-face-cancel" onClick={_ => dispatch(CustomCancel)}>
         {React.string("Cancel")}
       </Ui.Button>
     </div>
@@ -808,14 +860,27 @@ let recaptureCard = (pending: pendingCapture, ~dispatch: msg => unit): React.ele
         onClick={_ => dispatch(RecaptureKeepClicked)}>
         {React.string("Replace, keep dimensions")}
       </Ui.Button>
-      <Ui.Button block=true testId="recapture-cancel" onClick={_ => dispatch(RecaptureCancelClicked)}>
+      <Ui.Button
+        variant=Plain block=true testId="recapture-cancel" onClick={_ => dispatch(RecaptureCancelClicked)}>
         {React.string("Cancel")}
       </Ui.Button>
     </div>
   </div>
 
 // One real `<input type=file>`, visually hidden but always in the DOM
-// (SPEC §8a A4 / docs/testids.md contract) — see `hiddenInputs` below.
+// (SPEC §8a A4 / docs/testids.md contract) — see `hiddenInputs` below. The
+// currently-*selected* chip's pair also carries a static
+// `input-selected-camera`/`input-selected-library` class, purely so
+// `Capture.css` can give the visible shutter/library label a focus ring
+// when its own hidden input is Tab-focused (DESIGN.md §9 "Focus-visible
+// rings on every interactive element"): the input isn't a DOM descendant of
+// its label (see the module-end notes on why), so a plain `:focus-within`
+// on the label can't see it, and there's no way to key a rule to an
+// arbitrary custom face's *id* in static CSS — but exactly one chip is ever
+// selected, so a shared, non-dynamic class plus `:has()` at the
+// `.capture-view` root (already used by `.shutter`'s old, dead
+// `:focus-within:has(input:focus-visible)` attempt — this replaces it)
+// works for every label, default or custom, with one static rule.
 let renderCaptureInput = (
   model: model,
   ~dispatch: msg => unit,
@@ -830,13 +895,19 @@ let renderCaptureInput = (
     (fromLibrary ? "Choose " : "Capture ") ++
     chipAriaName(chip) ++
     (fromLibrary ? " photo from library" : " photo with camera")
+  let isSelected = chip.label == model.selectedLabel
+  let selectedClass = switch (isSelected, fromLibrary) {
+  | (true, false) => " input-selected-camera"
+  | (true, true) => " input-selected-library"
+  | (false, _) => ""
+  }
   <input
     key={testId ++ "-" ++ Int.toString(gen)}
     id=testId
     type_="file"
     accept="image/jpeg,image/png"
     capture=?{fromLibrary ? None : Some(#environment)}
-    className="visually-hidden"
+    className={"visually-hidden" ++ selectedClass}
     dataTestId=testId
     ariaLabel
     disabled
@@ -872,6 +943,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
         chipOf(model, "top")->Option.getOr({label: "top", kind: Types.Top}),
       )
     <div className="capture-view">
+      <Ui.Live text=model.announcement testId="capture-live" />
       {chipRow(model, ~dispatch)}
       {slotRow(model, ~dispatch)}
       {switch (model.dialog, model.customDraft) {

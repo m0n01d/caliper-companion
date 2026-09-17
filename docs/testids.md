@@ -11,6 +11,8 @@ stable; add to this list before you rely on a new one.
   of a row's normal contents after `part-rename`)
 - `part-delete-confirm`, `part-delete-cancel` — inline confirm strip (shown after `part-delete`)
 - `parts-empty` — the empty state
+- `parts-live` — visually hidden `aria-live="polite"` line (design wave 3b, DESIGN.md §9): "Part
+  created" / "Part deleted"; empty otherwise
 
 ## Part (`#/parts/:id`)
 - `face-<label>` — one per captured face, links to annotate. `<label>` is the face's label (SPEC §8a
@@ -25,6 +27,8 @@ stable; add to this list before you rely on a new one.
 - `warning-row` — present only when a feature is flagged or a kind conflict exists
 - `export` — the export button · `export-error` — inline message when export is blocked
 - `timer` — hands-on timer readout
+- `part-live` — visually hidden `aria-live="polite"` line (design wave 3b, DESIGN.md §9): "Export
+  ready: <file>" / "Export shared" / "Export failed: …"; empty otherwise
 
 ## Capture (`#/parts/:id/capture`)
 - `capture-file-<label>` — the `<input type="file" capture="environment">` for that face, always
@@ -46,6 +50,11 @@ stable; add to this list before you rely on a new one.
   DESIGN.md §11.2; A7)
 - `capture-level` — the live level-readout pill next to the shutter, present only when the device
   orientation sensor has reported a sample and permission wasn't denied (design wave 2)
+- `shutter` — the 76 px amber shutter `<label>` itself (design wave 3b: `tabIndex={-1}`, a
+  programmatic-only focus target — a `<label>` isn't natively focusable — used to return focus here
+  after the recapture card's Cancel closes it, DESIGN.md §9)
+- `capture-live` — visually hidden `aria-live="polite"` line (design wave 3b, DESIGN.md §9): "Face
+  captured: <label>"; empty otherwise
 
 ## Annotate (`#/parts/:id/faces/:faceId`)
 - `annotate-canvas` — the `<canvas>`. Carries live attributes for tests: `data-transform="scale,tx,ty"`
