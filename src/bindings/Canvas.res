@@ -9,11 +9,12 @@
 //
 // House style follows WebApi.res: real `external`s over the standard
 // library's `Dom` types, instance-first `@send` methods, `option` at the
-// boundary via `@return(nullable)`. No `%raw`, no `Obj.magic`, no
-// `%identity` casts — the canvas element is handled as the `Dom.element`
-// React's ref hands us, and the canvas-only members (`getContext`,
-// `width`/`height`) are bound on that type with the caller responsible for
-// only pointing them at a <canvas>.
+// boundary via `@return(nullable)`. No `%raw`, no `Obj.magic`; the one
+// `%identity` cast (`asSnapBitmap`, below) is the same-representation kind
+// `ImageDecode.res` justifies. The canvas element is handled as the
+// `Dom.element` React's ref hands us, and the canvas-only members
+// (`getContext`, `width`/`height`) are bound on that type with the caller
+// responsible for only pointing them at a <canvas>.
 
 // ── ImageBitmap ─────────────────────────────────────────────────────────
 type imageBitmap
@@ -26,6 +27,16 @@ type bitmapOptions = {imageOrientation: string}
 @val external createImageBitmap: (PouchDb.blob, bitmapOptions) => promise<imageBitmap> = "createImageBitmap"
 @get external bitmapWidth: imageBitmap => int = "width"
 @get external bitmapHeight: imageBitmap => int = "height"
+
+// SPEC §8a A5: `ImageData.lumaPatchOf` takes ImageData's own opaque
+// `imageBitmap` (it declares one rather than depending on this file). Both
+// name the same runtime `ImageBitmap`, decoded by the identical
+// `createImageBitmap(…, {imageOrientation: "from-image"})` call, so this is
+// the same same-representation cast `ImageDecode.res`'s `asCanvasBitmap`
+// makes between its bitmap and `Canvas2d`'s: a compiler assertion that two
+// nominal types share one value, not an `Obj.magic` bypass (which would
+// let runtime-incompatible types compile together).
+external asSnapBitmap: imageBitmap => ImageData.imageBitmap = "%identity"
 
 // ── window ─────────────────────────────────────────────────────────────
 @val @scope("window") external devicePixelRatio: float = "devicePixelRatio"

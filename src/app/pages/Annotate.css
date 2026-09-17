@@ -127,6 +127,29 @@
   padding: 0 4px;
 }
 
+/* SPEC §8a A5: the Snap toggle is a pill that is a real button, inside the
+   same scrim capsule as the zoom controls. It keeps the 44 px tap height
+   (DESIGN.md §2) but reads as a pill, not a capsule button: on = amber text
+   (the active-dimension colour), off = cc-text-2. */
+.annotate-tools .annotate-snap {
+  min-height: var(--cc-tap-min);
+  padding: 0 8px 0 6px;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+}
+
+.annotate-tools .annotate-snap[aria-pressed="true"] {
+  color: var(--cc-amber);
+}
+
+.annotate-tools .annotate-snap svg {
+  width: 16px;
+  height: 16px;
+}
+
 .annotate-hint {
   margin-right: auto;
 }

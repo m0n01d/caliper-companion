@@ -60,6 +60,14 @@ stable; add to this list before you rely on a new one.
   `data-autofit` to leave `fitting` before reading geometry you will compare later (`zoom` and the
   pixels lag until then). `page.emulateMedia({reducedMotion: 'reduce'})` makes the animation
   instant.
+  `data-snap` (SPEC §8a A5) is `on|off` — the Snap pill's state. `data-snapped` is `"p1,p2"` as two
+  booleans (`true,false` after a first tap that snapped); `false` for a point the user dragged (a
+  drag pins it: no later tap re-snaps it) and always for a saved dimension's points.
+- `snap-toggle` — the Snap pill in the toolbar (a button, `aria-pressed`), SPEC §8a A5. On by default,
+  persisted as `settings.snap` — the same field as Settings' `snap-setting-toggle`. With it on, the
+  first tap moves to the strongest edge within a fingertip (16 px, then 24 px) unless the tap already
+  sits on an edge; the second tap snaps both ends along the p1→p2 segment. `pending-points` reports
+  the snapped values. Reduced motion skips the 150 ms snap ring.
 - `pending-points` — hidden readout of the pending/selected endpoints, `x1,y1;x2,y2` normalized to 4 dp
   (`x1,y1` with only p1 placed; empty when none)
 - `dimension-count` — readout of the number of saved dimensions on this face
@@ -87,6 +95,8 @@ stable; add to this list before you rely on a new one.
 
 ## Settings (`#/settings`)
 - `wedge-toggle` — "Readings come from a wedge dongle" checkbox
+- `snap-setting-toggle` — "Snap taps to edges" checkbox (SPEC §8a A5; the annotate toolbar's
+  `snap-toggle` flips the same `settings.snap`)
 
 ## Debug (`#/debug`)
 - `timer-row` — one per recorded timer · `export-csv` — CSV download button

@@ -21,6 +21,14 @@
 // Save/Clear — unless the user moved the view in between. The animation is
 // a `Tea.effect` ticking `ViewportTick`; `update` only maps progress to a
 // transform, so every frame is still a pure function of the model.
+//
+// Edge snap (SPEC §8a A5): with the Snap pill on, the first tap moves to
+// the strongest edge within a finger's radius (`EdgeSnap.snapPoint`) and
+// the second tap snaps both ends along the segment (`snapPair`), so two
+// rough taps either side of a part land on its edges. The search runs on
+// a 1024-px grayscale patch built once at load, never on the bitmap. A
+// snapped point draws a 150 ms ring; a dragged point is never re-snapped.
+// The tap is still a sketch mark, never a measurement.
 
 // ── Model ──────────────────────────────────────────────────────────────
 
@@ -79,12 +87,36 @@ type autoFit = {before: Viewport.t, touched: bool}
 // frame loop can never move a view the user has since taken over.
 type tween = {gen: int, from: Viewport.t, to: Viewport.t}
 
+// SPEC §8a A5: what snapping did to each pending point. `Dragged` is
+// sticky — a handle the user placed by hand is never re-snapped, not even
+// by the second tap's `snapPair` — and reads as "not snapped" to tests.
+type snapMark = Unsnapped | Snapped | Dragged
+
+type snapMarks = {p1Mark: snapMark, p2Mark: snapMark}
+
+// The 150 ms ring a snapped point draws (A5 feedback): the points it is
+// drawn at (one, or both ends of a `snapPair`) and how far along it is.
+// `gen` ties frames to the ring that started them, as `tween.gen` does.
+type ring = {gen: int, at: array<Types.point>, progress: float}
+
+// The entry a Save or Delete clears the moment it starts, kept until the
+// write lands so a failed write can put it back (see `trySave`).
+type entry = {
+  entryPending: pending,
+  entrySelected: option<string>,
+  entryReading: string,
+  entryName: string,
+  entryMarks: snapMarks,
+}
+
 type loaded = {
   part: Types.part,
   face: Types.face,
   bitmap: Canvas.imageBitmap,
   imageW: float, // the bitmap's, i.e. oriented, size
   imageH: float,
+  patch: option<EdgeSnap.patch>, // SPEC §8a A5: the grayscale snap patch; None = snapping off
+  snapFloor: float, // the patch's edge cutoff (`EdgeSnap.cutoff`), computed once
   dims: array<Types.dimension>, // this face's, createdAt ascending
   suggestions: array<string>, // FeatureName.suggestions(~used = other faces' names)
   settings: Store.settings,
@@ -108,11 +140,15 @@ type model = {
   pointers: array<activePointer>,
   gesture: gesture,
   pending: pending,
+  marks: snapMarks, // SPEC §8a A5: per pending point
   selected: option<string>, // dimension id being edited
   focusIntent: option<focusIntent>, // performed by the next canvas click
   autoFit: option<autoFit>, // SPEC §8a A6
   tween: option<tween>, // the viewport animation in flight, if any
   tweenGen: int, // last tween generation minted
+  ring: option<ring>, // the snap ring in flight, if any (A5)
+  ringGen: int,
+  inFlight: option<entry>, // the entry a Save/Delete cleared, until its write lands
   announcement: string, // the `aria-live` line after a save (DESIGN.md §9)
   reading: string,
   name: string,
@@ -132,6 +168,9 @@ type msg =
   | PointerCancel(int)
   | CanvasClicked
   | ViewportTick(int, float) // (tween generation, progress 0..1)
+  | RingTick(int, float) // (ring generation, progress 0..1) — SPEC §8a A5
+  | SnapToggled
+  | SnapSaved(result<unit, string>)
   | ZoomIn
   | ZoomOut
   | ReadingChanged(string)
@@ -154,8 +193,15 @@ let lineHitRadius = 16.0
 let zoomStep = 1.5
 let maxZoomOverFit = 8.0
 let tweenMs = 160.0 // DESIGN.md §11.1 "Interaction feel": 150–200 ms
+let ringMs = 150.0 // SPEC §8a A5: the snap ring
+// A5: the search window on screen — about a fingertip — searched in two
+// steps, near then full, so a nearer edge beats a stronger one further out
+// (see `snapRadii`).
+let snapRadiiCss = [16.0, 24.0]
+let snapPatchLongEdge = 1024 // A5 bullet 2: the grayscale patch's long edge
 
 let noPending = {p1: None, p2: None}
+let noMarks = {p1Mark: Unsnapped, p2Mark: Unsnapped}
 
 // ── Effects ────────────────────────────────────────────────────────────
 
@@ -177,16 +223,16 @@ let focusTestId = (id: string, ~select: bool): Tea.cmd<msg> =>
     }
   )
 
-// Drive a viewport tween: one `ViewportTick(gen, progress)` per animation
-// frame until progress reaches 1 — or a single tick at 1 when the person
-// prefers reduced motion (SPEC §8a A6: instant). Timing stays in this
-// effect; `update` only maps progress to a transform. The loop always runs
-// to completion; frames of a superseded tween carry an old `gen` and are
+// Drive an animation: one `tick(gen, progress)` per animation frame until
+// progress reaches 1 — or a single tick at 1 when the person prefers
+// reduced motion (SPEC §8a A6: instant; A5: no ring). Timing stays in this
+// effect; `update` only maps progress to state. The loop always runs to
+// completion; frames of a superseded animation carry an old `gen` and are
 // ignored.
-let tweenCmd = (gen: int): Tea.cmd<msg> =>
+let frames = (~ms: float, gen: int, tick: (int, float) => msg): Tea.cmd<msg> =>
   Tea.effect(dispatch =>
     if Canvas.prefersReducedMotion() {
-      dispatch(ViewportTick(gen, 1.0))
+      dispatch(tick(gen, 1.0))
     } else {
       let startedAt = ref(None)
       let rec frame = (now: float) => {
@@ -196,8 +242,8 @@ let tweenCmd = (gen: int): Tea.cmd<msg> =>
           startedAt := Some(now)
           now
         }
-        let progress = Math.min((now -. t0) /. tweenMs, 1.0)
-        dispatch(ViewportTick(gen, progress))
+        let progress = Math.min((now -. t0) /. ms, 1.0)
+        dispatch(tick(gen, progress))
         if progress < 1.0 {
           Canvas.requestAnimationFrame(frame)->ignore
         }
@@ -205,6 +251,10 @@ let tweenCmd = (gen: int): Tea.cmd<msg> =>
       Canvas.requestAnimationFrame(frame)->ignore
     }
   )
+
+// The viewport tween (A6) and the snap ring (A5) share the frame loop.
+let tweenCmd = (gen: int): Tea.cmd<msg> => frames(~ms=tweenMs, gen, (g, p) => ViewportTick(g, p))
+let ringCmd = (gen: int): Tea.cmd<msg> => frames(~ms=ringMs, gen, (g, p) => RingTick(g, p))
 
 let faceKindLabel = (k: Types.faceKind): string =>
   switch k {
@@ -237,6 +287,17 @@ let load = async (~partId: string, ~faceId: string): result<loaded, string> => {
             )}; trusting the bitmap`,
         )
       }
+      // SPEC §8a A5 bullet 2: the grayscale snap patch, built once here
+      // from the oriented bitmap; snapping never touches the bitmap again.
+      // A patch that can't be built (no 2D context) only disables snapping.
+      let patch = try {
+        Some(await ImageData.lumaPatchOf(Canvas.asSnapBitmap(bitmap), ~maxLongEdge=snapPatchLongEdge))
+      } catch {
+      | e =>
+        Console.warn(`Annotate: no snap patch for face ${face.id}: ${exnMessage(e)}`)
+        None
+      }
+      let snapFloor = patch->Option.mapOr(0.0, p => EdgeSnap.cutoff(p, EdgeSnap.defaultThreshold))
       let dims = await Store.dimensionsOfFace(store, ~faceId)
       let all = await Store.dimensionsOf(store, ~partId)
       let used = all->Array.filter(d => d.faceId != faceId)->Array.map(d => d.name)
@@ -247,6 +308,8 @@ let load = async (~partId: string, ~faceId: string): result<loaded, string> => {
         bitmap,
         imageW: Int.toFloat(imageW),
         imageH: Int.toFloat(imageH),
+        patch,
+        snapFloor,
         dims,
         suggestions: FeatureName.suggestions(~used),
         settings,
@@ -282,6 +345,15 @@ let saveCmd = (
     },
     r => Saved(Ok(r)),
     e => Saved(Error(exnMessage(e))),
+  )
+
+// The Snap pill persists straight to settings (SPEC §8a A5 bullet 3); the
+// Settings page's row writes the same field.
+let snapSaveCmd = (settings: Store.settings): Tea.cmd<msg> =>
+  Tea.fromPromise(
+    () => Store.putSettings(Store.shared(), settings),
+    () => SnapSaved(Ok()),
+    e => SnapSaved(Error(exnMessage(e))),
   )
 
 let deleteCmd = (~faceId: string, id: string): Tea.cmd<msg> =>
@@ -324,11 +396,15 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     pointers: [],
     gesture: NoGesture,
     pending: noPending,
+    marks: noMarks,
     selected: None,
     focusIntent: None,
     autoFit: None,
     tween: None,
     tweenGen: 0,
+    ring: None,
+    ringGen: 0,
+    inFlight: None,
     announcement: "",
     reading: "",
     name: "",
@@ -450,6 +526,128 @@ let toNormalized = (m: model, l: loaded, s: Viewport.pt): Types.point => {
   {x: clamp01(n.x), y: clamp01(n.y)}
 }
 
+// ── SPEC §8a A5: edge snap ─────────────────────────────────────────────
+
+// The patch to snap on, if snapping applies: the pill is on and the patch
+// was built.
+let snapPatch = (l: loaded): option<EdgeSnap.patch> => l.settings.snap ? l.patch : None
+
+// The search windows in patch pixels: each radius on screen → image px
+// through the viewport scale → patch px through the patch/image ratio. So
+// a window is a fingertip on screen at any zoom: wide at the fit scale,
+// tight when zoomed in. Two windows, tried near then full: `EdgeSnap`
+// picks the *strongest* edge in a window, and on a real photo the
+// strongest edge 20 px away is often not the one under the finger (on the
+// fixture, a tap 12 px inside the bar would otherwise land on the hole,
+// 21 px away and darker). Nearer wins first; the full reach is only for
+// a tap that missed by more.
+let snapRadii = (m: model, l: loaded, patch: EdgeSnap.patch): array<float> =>
+  snapRadiiCss->Array.map(css => css /. m.viewport.scale *. (Int.toFloat(patch.width) /. l.imageW))
+
+let toPatchPx = (patch: EdgeSnap.patch, n: Types.point): EdgeSnap.px =>
+  EdgeSnap.toPatch(n, ~width=patch.width, ~height=patch.height)
+
+let fromPatchPx = (patch: EdgeSnap.patch, r: EdgeSnap.result): Types.point =>
+  EdgeSnap.toNormalized(r.point, ~width=patch.width, ~height=patch.height)
+
+// A tap that already sits on an edge — its own pixel clears the patch's
+// edge floor — is not a miss, so it is left where it is: snapping corrects
+// near-misses, and pulling a good tap onto a stronger neighbour (the hole
+// beside the bar) would be worse than not snapping at all.
+let onEdge = (l: loaded, patch: EdgeSnap.patch, n: Types.point): bool => {
+  let p = toPatchPx(patch, n)
+  let at = (v: float) => Float.toInt(Math.round(v))
+  EdgeSnap.gradientMagnitude(patch, at(p.x), at(p.y)) >= l.snapFloor
+}
+
+// The first `Some` over the windows, near to full.
+let firstHit = (radii: array<float>, search: float => option<'a>): option<'a> =>
+  radii->Array.reduce(None, (found, radius) =>
+    switch found {
+    | Some(_) => found
+    | None => search(radius)
+    }
+  )
+
+// First tap: the nearest strong edge, or the tap itself.
+let snapFirst = (m: model, l: loaded, n: Types.point): (Types.point, snapMark) =>
+  switch snapPatch(l) {
+  | Some(patch) if !onEdge(l, patch, n) =>
+    switch firstHit(snapRadii(m, l, patch), radius =>
+      EdgeSnap.snapPoint(patch, ~at=toPatchPx(patch, n), ~radius, ~threshold=EdgeSnap.defaultThreshold)
+    ) {
+    | Some(r) => (fromPatchPx(patch, r), Snapped)
+    | None => (n, Unsnapped)
+    }
+  | _ => (n, Unsnapped)
+  }
+
+// Second tap: both ends searched along the p1→p2 segment (A5: "two rough
+// taps either side of a part land on its two edges"), so p1 may move too —
+// unless the user dragged it, which pins it, or it already sits on an
+// edge. Returns each end's point, its mark, and whether this tap moved it
+// (that end gets a ring).
+let snapSecond = (
+  m: model,
+  l: loaded,
+  ~p1: Types.point,
+  ~p1Mark: snapMark,
+  ~p2: Types.point,
+): ((Types.point, snapMark, bool), (Types.point, snapMark, bool)) =>
+  switch snapPatch(l) {
+  | None => ((p1, p1Mark, false), (p2, Unsnapped, false))
+  | Some(patch) =>
+    let keep1 = p1Mark == Dragged || onEdge(l, patch, p1)
+    let keep2 = onEdge(l, patch, p2)
+    // One walk per window for both ends; an end keeps its first hit.
+    let (r1, r2) = snapRadii(m, l, patch)->Array.reduce((None, None), ((f1, f2), radius) =>
+      if (keep1 || f1->Option.isSome) && (keep2 || f2->Option.isSome) {
+        (f1, f2)
+      } else {
+        let (n1, n2) = EdgeSnap.snapPair(
+          patch,
+          ~p1=toPatchPx(patch, p1),
+          ~p2=toPatchPx(patch, p2),
+          ~radius,
+          ~threshold=EdgeSnap.defaultThreshold,
+        )
+        (f1->Option.orElse(n1), f2->Option.orElse(n2))
+      }
+    )
+    let apply = (orig: Types.point, mark: snapMark, keep: bool, r: option<EdgeSnap.result>) =>
+      switch (keep, r) {
+      | (true, _) | (_, None) => (orig, mark, false)
+      | (false, Some(r)) => (fromPatchPx(patch, r), Snapped, true)
+      }
+    (apply(p1, p1Mark, keep1, r1), apply(p2, Unsnapped, keep2, r2))
+  }
+
+// Start the ring at the points a tap just snapped. Nothing to draw → no
+// animation minted.
+let startRing = (m: model, at: array<Types.point>): (model, Tea.cmd<msg>) =>
+  if Array.length(at) == 0 {
+    (m, Tea.none)
+  } else {
+    let gen = m.ringGen + 1
+    ({...m, ringGen: gen, ring: Some({gen, at, progress: 0.0})}, ringCmd(gen))
+  }
+
+// A released drag pins what it moved (A5: "a drag never re-snaps").
+let markDragged = (marks: snapMarks, kind: dragKind): snapMarks =>
+  switch kind {
+  | Handle(P1) => {...marks, p1Mark: Dragged}
+  | Handle(P2) => {...marks, p2Mark: Dragged}
+  | Body => {p1Mark: Dragged, p2Mark: Dragged}
+  }
+
+// Test hooks (docs/testids.md): `data-snap` and `data-snapped`.
+let snapState = (l: loaded): string => l.settings.snap ? "on" : "off"
+
+let snappedState = (marks: snapMarks): string => {
+  let b = (mark: snapMark) => mark == Snapped ? "true" : "false"
+  b(marks.p1Mark) ++ "," ++ b(marks.p2Mark)
+}
+
 // Nearest of `xs` by `dist`, if any is within `r`.
 let nearestWithin = (xs: array<'a>, ~dist: 'a => float, ~r: float): option<'a> =>
   xs
@@ -535,6 +733,8 @@ let defaultTolerance = (l: loaded): string =>
 let clearEntry = (m: model): model => {
   ...m,
   pending: noPending,
+  marks: noMarks,
+  ring: None,
   selected: None,
   reading: "",
   name: "",
@@ -549,6 +749,7 @@ let select = (m: model, l: loaded, id: string): model =>
       ...m,
       selected: Some(id),
       pending: {p1: Some(d.p1), p2: Some(d.p2)},
+      marks: noMarks, // a saved dimension's points never snap (A5)
       reading: Float.toString(d.value),
       name: d.name,
       kind: d.kind,
@@ -562,10 +763,24 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   let n = toNormalized(m, l, s)
   switch (m.pending.p1, m.pending.p2, hit) {
   // Second tap of a two-tap dimension: place p2 (wherever it lands, even on
-  // a handle — p2 stays draggable). The reading gets focus from the click
-  // that follows this tap (SPEC §8a A2), not from here.
-  | (Some(_), None, _) =>
-    fitToPending({...m, pending: {...m.pending, p2: Some(n)}, focusIntent: Some(Reading)}, l)
+  // a handle — p2 stays draggable), snapping both ends along the segment
+  // (A5). The reading gets focus from the click that follows this tap
+  // (SPEC §8a A2), not from here.
+  | (Some(p1), None, _) =>
+    let ((p1, p1Mark, moved1), (p2, p2Mark, moved2)) = snapSecond(
+      m,
+      l,
+      ~p1,
+      ~p1Mark=m.marks.p1Mark,
+      ~p2=n,
+    )
+    let ringAt = Array.concat(moved1 ? [p1] : [], moved2 ? [p2] : [])
+    let (m, ring) = startRing(
+      {...m, pending: {p1: Some(p1), p2: Some(p2)}, marks: {p1Mark, p2Mark}, focusIntent: Some(Reading)},
+      ringAt,
+    )
+    let (m, fit) = fitToPending(m, l)
+    (m, Tea.batch([ring, fit]))
   // A tap (no movement) on a saved dimension still selects it (SPEC §8a A1).
   | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => (select(m, l, id), Tea.none)
   // The pending pair is already the one being edited: a tap on it is a no-op.
@@ -573,7 +788,13 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   | (_, _, HitNothing) =>
     switch m.selected {
     | Some(_) => endAutoFit(clearEntry(m), l)
-    | None => ({...m, pending: {p1: Some(n), p2: None}, announcement: ""}, Tea.none)
+    // First tap: p1, snapped to the nearest edge (A5).
+    | None =>
+      let (p1, p1Mark) = snapFirst(m, l, n)
+      startRing(
+        {...m, pending: {p1: Some(p1), p2: None}, marks: {p1Mark, p2Mark: Unsnapped}, announcement: ""},
+        p1Mark == Snapped ? [p1] : [],
+      )
     }
   }
 }
@@ -722,7 +943,10 @@ let pointerEnd = (m: model, l: loaded, id: int, ~cancelled: bool): (model, Tea.c
       switch (cancelled, d.target) {
       // The browser took the pointer away mid-drag: nothing half-moved stays.
       | (true, _) => (setPoints(m, l, d.target, d.before), Tea.none)
-      | (false, Pending) => (m, Tea.none)
+      // A pending point the user placed by hand stays there: no re-snap
+      // (A5). Marked on release — a cancelled drag reverts the points, so
+      // their marks stand.
+      | (false, Pending) => ({...m, marks: markDragged(m.marks, d.kind)}, Tea.none)
       // Releasing a saved dimension's drag writes it at once (SPEC §8a A1).
       | (false, Existing(sid)) =>
         switch l.dims->Array.find(x => x.id == sid) {
@@ -738,19 +962,65 @@ let pointerEnd = (m: model, l: loaded, id: int, ~cancelled: bool): (model, Tea.c
     }
   }
 
-// The view goes back (A6) as the save is *initiated*, not when the write
-// lands: the Enter or tap that saves is the user's own action, and it is a
-// React event, so the published `data-transform` is the restored view
-// before the next thing anyone does — a spec reading it straight after the
-// Enter would otherwise still see the fitted view of the pair just saved.
+// ── Save / Delete: clear at initiation, restore on failure ─────────────
+
+let entryOf = (m: model): entry => {
+  entryPending: m.pending,
+  entrySelected: m.selected,
+  entryReading: m.reading,
+  entryName: m.name,
+  entryMarks: m.marks,
+}
+
+let restoreEntry = (m: model, e: entry): model => {
+  ...m,
+  pending: e.entryPending,
+  selected: e.entrySelected,
+  reading: e.entryReading,
+  name: e.entryName,
+  marks: e.entryMarks,
+}
+
+// Nothing new has been started since the entry was cleared.
+let entryUntouched = (m: model): bool =>
+  m.pending.p1 == None && m.selected == None && m.reading == "" && m.name == ""
+
+// The entry is cleared and the view goes back (A6) as the save is
+// *initiated*, not when the write lands. Two reasons. The Enter or tap that
+// saves is the user's own action and a React event, so the published
+// `data-transform` is the restored view before the next thing anyone does
+// (a spec reading it straight after the Enter would otherwise still see the
+// fitted view of the pair just saved). And a tap that lands while the
+// write is in flight starts the next dimension instead of being wiped when
+// `Saved` arrives — the write is fast, but a caliper-and-thumb rhythm is
+// faster. The cleared entry is kept in `inFlight` so a failed write can
+// put it back with the error beside it.
+let begin = (m: model, l: loaded): (model, Tea.cmd<msg>) => {
+  let saved = entryOf(m)
+  let (m, restore) = endAutoFit({...clearEntry(m), busy: true, inFlight: Some(saved)}, l)
+  (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
+}
+
+// A failed write: the error shows inline, and the entry comes back — with
+// its fit — unless the user has already started the next one, in which
+// case theirs stands and the failed one is only the error line.
+let failed = (m: model, l: loaded, why: string): (model, Tea.cmd<msg>) => {
+  let cleared = m.inFlight
+  let m = {...m, busy: false, inFlight: None, error: Some(why)}
+  switch cleared {
+  | Some(e) if entryUntouched(m) => fitToPending(restoreEntry(m, e), l)
+  | _ => (m, Tea.none)
+  }
+}
+
 let trySave = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
   switch buildDimension(m, l) {
   | Some(dim) =>
-    let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
+    let (m, started) = begin(m, l)
     (
       m,
       Tea.batch([
-        restore,
+        started,
         saveCmd(~partId=m.partId, ~faceId=m.faceId, ~units=l.part.units, ~settings=l.settings, dim),
       ]),
     )
@@ -807,6 +1077,24 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       }
     | _ => (m, Tea.none)
     }
+  // One frame of the snap ring (A5); done at 1 (instantly under reduced
+  // motion, so no ring is ever drawn there).
+  | (RingTick(gen, progress), _) =>
+    switch m.ring {
+    | Some(r) if r.gen == gen => ({...m, ring: progress >= 1.0 ? None : Some({...r, progress})}, Tea.none)
+    | _ => (m, Tea.none)
+    }
+
+  // The Snap pill (A5): flips at once, persists, and flips back with the
+  // error if the write fails.
+  | (SnapToggled, Ready(l)) =>
+    let settings = {...l.settings, snap: !l.settings.snap}
+    ({...m, status: Ready({...l, settings}), error: None}, snapSaveCmd(settings))
+  | (SnapSaved(Ok()), _) => (m, Tea.none)
+  | (SnapSaved(Error(why)), Ready(l)) => (
+      {...m, status: Ready({...l, settings: {...l.settings, snap: !l.settings.snap}}), error: Some(why)},
+      Tea.none,
+    )
 
   | (ZoomIn, Ready(l)) => (zoomBy(m, l, zoomStep), Tea.none)
   | (ZoomOut, Ready(l)) => (zoomBy(m, l, 1.0 /. zoomStep), Tea.none)
@@ -821,8 +1109,11 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
   | (ToleranceChanged(text), _) => ({...m, tolerance: text}, Tea.none)
 
   | (SaveClicked, Ready(l)) => trySave(m, l)
-  // Save clears reading + name + points, keeps kind and tolerance, and
-  // returns focus to the canvas for the next tap (M4 bullet 7).
+  // The entry was cleared, the view restored and focus returned to the
+  // canvas when the save started (`begin`, M4 bullet 7); the write landing
+  // only reloads the face's dimensions and announces. Whatever the user
+  // placed meanwhile stays. `snap` is kept from the live settings: the
+  // pill may have been flipped while the write was in flight.
   | (Saved(Ok((dims, settings, dim))), Ready(l)) =>
     let announcement =
       "Dimension saved: " ++
@@ -831,26 +1122,30 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       NumberParse.format(dim.value, l.part.units) ++
       " " ++
       NumberParse.unitsLabel(l.part.units)
-    // `trySave` already restored the view; this covers a pair placed while
-    // the write was in flight.
-    let (m, restore) = endAutoFit(
-      {...clearEntry(m), status: Ready({...l, dims, settings}), busy: false, announcement},
-      l,
+    (
+      {
+        ...m,
+        status: Ready({...l, dims, settings: {...settings, snap: l.settings.snap}}),
+        busy: false,
+        inFlight: None,
+        announcement,
+      },
+      Tea.none,
     )
-    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
-  | (Saved(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
+  | (Saved(Error(why)), Ready(l)) => failed(m, l, why)
 
   | (DeleteClicked, Ready(l)) =>
     switch m.selected {
     | Some(id) if !m.busy =>
-      let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
-      (m, Tea.batch([restore, deleteCmd(~faceId=m.faceId, id)]))
+      let (m, started) = begin(m, l)
+      (m, Tea.batch([started, deleteCmd(~faceId=m.faceId, id)]))
     | _ => (m, Tea.none)
     }
-  | (Deleted(Ok(dims)), Ready(l)) =>
-    let (m, restore) = endAutoFit({...clearEntry(m), status: Ready({...l, dims}), busy: false}, l)
-    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
-  | (Deleted(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
+  | (Deleted(Ok(dims)), Ready(l)) => (
+      {...m, status: Ready({...l, dims}), busy: false, inFlight: None},
+      Tea.none,
+    )
+  | (Deleted(Error(why)), Ready(l)) => failed(m, l, why)
 
   | (Moved(Ok(dims)), Ready(l)) => (
       {...m, status: Ready({...l, dims}), moving: false, error: None},
@@ -873,10 +1168,12 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       | ZoomOut
       | NameEnter
       | SaveClicked
-      | Saved(Ok(_))
+      | Saved(_)
       | DeleteClicked
-      | Deleted(Ok(_))
-      | Moved(Ok(_)),
+      | Deleted(_)
+      | Moved(Ok(_))
+      | SnapToggled
+      | SnapSaved(Error(_)),
       _,
     ) => (m, Tea.none)
   }
@@ -912,10 +1209,13 @@ type scene = {
   selected: option<string>,
   pending: pending,
   pendingLabel: option<string>,
+  ring: option<ring>, // the snap ring in flight (A5)
   view: size,
   dpr: float,
   reported: Viewport.t, // `data-transform`: the settled view (a tween's target while it runs)
   autofit: string, // `data-autofit`
+  snap: string, // `data-snap`: on|off (A5)
+  snapped: string, // `data-snapped`: "p1,p2" booleans (A5)
 }
 
 // Pill text (DESIGN.md §5): `name value`, prefixed ⌀ for a diameter and ↓
@@ -978,6 +1278,11 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
     | (Some(p1), None) => Draw.handle(ctx, toS(p1), ~style)
     | _ => ()
     }
+    // The snap ring (A5) on top of the handle it belongs to.
+    switch scene.ring {
+    | Some(r) => r.at->Array.forEach(p => Draw.snapRing(ctx, toS(p), ~progress=r.progress))
+    | None => ()
+    }
   }
   // Test hooks (docs/testids.md "Annotate"): the live transform and the
   // oriented image size, so a spec can compute where a normalized point is.
@@ -990,6 +1295,8 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
     Float.toString(scene.reported.ty),
   )
   el->Canvas.setAttribute("data-autofit", scene.autofit)
+  el->Canvas.setAttribute("data-snap", scene.snap)
+  el->Canvas.setAttribute("data-snapped", scene.snapped)
   el->Canvas.setAttribute(
     "data-image-size",
     Float.toString(scene.imageW) ++ "x" ++ Float.toString(scene.imageH),
@@ -1046,10 +1353,13 @@ module CanvasView = {
       scene.selected,
       scene.pending,
       scene.pendingLabel,
+      scene.ring,
       scene.view,
       scene.dpr,
       scene.reported,
       scene.autofit,
+      scene.snap,
+      scene.snapped,
     ))
 
     <canvas
@@ -1125,8 +1435,8 @@ let hintText = (m: model, l: loaded): string =>
 let kindOptions: array<(string, string)> = [("length", "Length"), ("diameter", "Diameter"), ("depth", "Depth")]
 
 // The stage (DESIGN.md §11.2): the canvas on the photo mat, the flat scrim
-// toolbar top-right (count, zoom out, zoom readout, zoom in), the placement
-// hint top-left, and the hidden test readouts. The canvas wrapper is the
+// toolbar top-right (Snap pill, count, zoom out, zoom readout, zoom in), the
+// placement hint top-left, and the hidden test readouts. The canvas wrapper is the
 // `role="img"` group of §9's focus order; the toolbar sits outside it so
 // its buttons stay real controls.
 let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
@@ -1139,6 +1449,7 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     selected: m.selected,
     pending: m.pending,
     pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
+    ring: m.ring,
     view: m.view,
     dpr: m.dpr,
     reported: switch m.tween {
@@ -1146,6 +1457,8 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     | None => m.viewport
     },
     autofit: autoFitState(m),
+    snap: snapState(l),
+    snapped: snappedState(m.marks),
   }
   let count = Array.length(l.dims)
   let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
@@ -1159,6 +1472,17 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     </div>
     <div className="annotate-overlay">
       <div className="annotate-tools">
+        // SPEC §8a A5 bullet 3: the Snap toggle — a pill that is a button.
+        <button
+          type_="button"
+          className="pill annotate-snap"
+          dataTestId="snap-toggle"
+          ariaPressed={l.settings.snap ? #"true" : #"false"}
+          ariaLabel={l.settings.snap ? "Snap taps to edges: on" : "Snap taps to edges: off"}
+          onClick={_ => dispatch(SnapToggled)}>
+          <Icon name=Ruler size=16 />
+          {React.string("Snap")}
+        </button>
         <Ui.Pill testId="dimension-count"> {React.string(Int.toString(count))} </Ui.Pill>
         <Ui.Button
           variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>

@@ -597,11 +597,17 @@ let deleteDimension = async (t: t, id: string): unit =>
 
 type settings = {
   wedge: bool,
+  snap: bool, // SPEC §8a A5: snap taps to edges on the annotate canvas
   lastToleranceMm: float,
   lastToleranceIn: float,
 }
 
-let defaultSettings: settings = {wedge: false, lastToleranceMm: 0.10, lastToleranceIn: 0.005}
+let defaultSettings: settings = {
+  wedge: false,
+  snap: true,
+  lastToleranceMm: 0.10,
+  lastToleranceIn: 0.005,
+}
 
 let settingsId = "settings"
 
@@ -616,16 +622,25 @@ module SettingsDoc = {
     setStr(d, "type", "settings")
     setStr(d, "partId", "")
     setBool(d, "wedge", s.wedge)
+    setBool(d, "snap", s.snap)
     setFloat(d, "lastToleranceMm", s.lastToleranceMm)
     setFloat(d, "lastToleranceIn", s.lastToleranceIn)
     setStr(d, "updatedAt", Clock.nowIso())
     d
   }
 
+  // `snap` arrived with SPEC §8a A5; a settings doc written before it has
+  // no such field and reads back with the default (on), same as a doc
+  // that was never written at all.
   let fromDoc = (d: PouchDb.doc): option<settings> =>
     switch (getBool(d, "wedge"), getFloat(d, "lastToleranceMm"), getFloat(d, "lastToleranceIn")) {
     | (Some(wedge), Some(lastToleranceMm), Some(lastToleranceIn)) =>
-      Some({wedge, lastToleranceMm, lastToleranceIn})
+      Some({
+        wedge,
+        snap: getBool(d, "snap")->Option.getOr(defaultSettings.snap),
+        lastToleranceMm,
+        lastToleranceIn,
+      })
     | _ => None
     }
 }
