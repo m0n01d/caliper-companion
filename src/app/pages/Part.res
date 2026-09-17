@@ -29,6 +29,10 @@ type model = {
   facesEditing: bool,
   pendingDelete: option<Types.face>,
   deleting: bool,
+  // DESIGN.md §9 "Live region": the current `aria-live="polite"` line
+  // (`Ui.Live`, rendered unconditionally in `view`). "" is silence, not
+  // absence — see `Ui.Live`'s own doc comment for why it must stay mounted.
+  announcement: string,
 }
 
 type msg =
@@ -78,6 +82,7 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
     facesEditing: false,
     pendingDelete: None,
     deleting: false,
+    announcement: "",
   }
   let s = store()
   let cmd = Tea.batch([
@@ -138,7 +143,21 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     | Error(Export.NoFaces) => Failed("Capture a face first")
     | Error(Export.Failed(msg)) => Failed(msg)
     }
-    ({...model, exportState: state}, Tea.none)
+    // DESIGN.md §9: "Export ready: <file>" / export errors, live-announced.
+    // Built from `result` directly (not `state`'s already-composed string)
+    // so the wording stays clean instead of nesting "Export ready:" in
+    // front of "Downloaded <file>". The share-sheet outcome has no filename
+    // to report (the OS took the bytes, not this page) — its own phrasing.
+    let announcement = switch result {
+    | Ok(Export.Shared) => "Export shared"
+    | Ok(Export.Downloaded(name)) => "Export ready: " ++ name
+    | Error(_) =>
+      switch state {
+      | Failed(msg) => "Export failed: " ++ msg
+      | Idle | Running | Done(_) => model.announcement // unreachable: state mirrors result above
+      }
+    }
+    ({...model, exportState: state, announcement}, Tea.none)
   | FacesEditToggled => ({...model, facesEditing: !model.facesEditing, pendingDelete: None}, Tea.none)
   | FaceRemoveClicked(face) => ({...model, pendingDelete: Some(face)}, Tea.none)
   | FaceDeleteCancelled => ({...model, pendingDelete: None}, Tea.none)
@@ -238,6 +257,7 @@ let renderFaces = (model: model): React.element =>
           | Some(url) => <img src={url} alt={face.label} />
           | None => React.null
           }}
+          <span className="slot-check" ariaHidden=true> <Icon name=Check size=10 /> </span>
         </span>
         {faceLabelEl(face)}
         <span className="face-slot-size t-caption-2 muted"> {React.string(sizeText(face))} </span>
@@ -263,7 +283,7 @@ let renderFacesEdit = (model: model, ~dispatch: msg => unit): React.element => {
   let dimCount = (face: Types.face) =>
     model.dimensions->Array.filter(d => d.faceId == face.id)->Array.length
   <div className="stack">
-    <Ui.ListGroup header="Faces" testId="faces-edit-list">
+    <Ui.ListGroup header="Faces" asList=true testId="faces-edit-list">
       {model.faces
       ->Array.map(face =>
         <Ui.ListRow
@@ -272,6 +292,7 @@ let renderFacesEdit = (model: model, ~dispatch: msg => unit): React.element => {
           leading={<Ui.ListThumb src={Dict.get(model.faceImages, face.id)} alt={face.label} />}
           trailing={<Ui.Button
             variant=Danger
+            size=Small
             testId="face-remove"
             disabled={model.deleting}
             ariaLabel={"Remove " ++ face.label}
@@ -330,7 +351,8 @@ let renderFacesSection = (model: model, ~dispatch: msg => unit): React.element =
     {model.facesEditing ? renderFacesEdit(model, ~dispatch) : renderFaces(model)}
     {Array.length(model.faces) > 0
       ? <div>
-          <Ui.Button variant=Small testId="faces-edit" onClick={_ => dispatch(FacesEditToggled)}>
+          <Ui.Button
+            variant=Secondary size=Small testId="faces-edit" onClick={_ => dispatch(FacesEditToggled)}>
             {React.string(model.facesEditing ? "Done" : "Edit faces")}
           </Ui.Button>
         </div>
@@ -355,16 +377,28 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
       <p className="t-footnote muted"> {React.string("No dimensions captured yet.")} </p>
     } else {
       <Ui.ListGroup header="Features">
-        <table className="features-table">
-          <thead>
-            <tr>
-              <th> {React.string("Name")} </th>
-              <th className="num"> {React.string("Value")} </th>
-              <th className="num"> {React.string("Tol")} </th>
-              <th className="num"> {React.string("Faces")} </th>
+        // The `display: grid` + `display: contents` layout (Part.css —
+        // needed so the NAME column can shrink+ellipsis below its content
+        // width, see that file's comment) makes Chromium/Firefox compute
+        // this table's accessibility-tree roles from CSS `display` instead
+        // of its HTML tag: a `<table>` whose own `display` isn't
+        // `table`/`table-row`/etc. loses its implicit `table` role, and a
+        // `<tr>`/`<thead>`/`<tbody>` styled `display: contents` loses
+        // `row`/`rowgroup` the same way (a documented interaction between
+        // the CSS Display and Core-AAM specs — DESIGN.md §9's own
+        // parenthetical "role=table grid with proper roles if it stays a
+        // CSS grid" anticipates exactly this). Explicit `role`s restore the
+        // real table semantics regardless of the CSS `display` value.
+        <table className="features-table" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader" scope="col"> {React.string("Name")} </th>
+              <th role="columnheader" scope="col" className="num"> {React.string("Value")} </th>
+              <th role="columnheader" scope="col" className="num"> {React.string("Tol")} </th>
+              <th role="columnheader" scope="col" className="num"> {React.string("Faces")} </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {features
             ->Array.map(feature => {
               let facesLabel =
@@ -377,8 +411,8 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
                 )
                 ->Array.join(", ")
               let facesOnMultiple = Array.length(feature.faceIds) > 1
-              <tr key={feature.name} dataTestId="feature-row">
-                <td className="mono">
+              <tr key={feature.name} role="row" dataTestId="feature-row">
+                <td role="cell" className="mono">
                   {React.string(feature.name)}
                   {feature.flagged
                     ? <span className="flag-marker" ariaLabel="flagged">
@@ -387,16 +421,16 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
                       </span>
                     : React.null}
                 </td>
-                <td className="num mono">
+                <td role="cell" className="num mono">
                   {React.string(NumberParse.format(feature.value, part.units))}
                   <span className="unit t-subhead muted">
                     {React.string(" " ++ NumberParse.unitsLabel(part.units))}
                   </span>
                 </td>
-                <td className="num mono muted">
+                <td role="cell" className="num mono muted">
                   {React.string("± " ++ NumberParse.format(feature.tolerance, part.units))}
                 </td>
-                <td className={facesOnMultiple ? "num mono text-teal" : "num mono muted"}>
+                <td role="cell" className={facesOnMultiple ? "num mono text-teal" : "num mono muted"}>
                   {React.string(facesLabel)}
                 </td>
               </tr>
@@ -459,6 +493,7 @@ let renderTimer = (model: model): React.element => {
 
 let view = (model: model, ~dispatch: msg => unit): React.element =>
   <div className="stack-lg">
+    <Ui.Live text=model.announcement testId="part-live" />
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
