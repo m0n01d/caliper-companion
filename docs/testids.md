@@ -35,24 +35,40 @@ stable; add to this list before you rely on a new one.
   in the DOM (one per chip — the four defaults `top|side|end|detail` plus every custom face, captured
   or still only a chip — regardless of which chip is selected or whether a dialog/card is open)
 - `library-file-<label>` — the library picker input (no `capture` attribute), same "always present" rule
-- `capture-chip-<label>` — one chip per face (`aria-pressed` on the selected one); tapping selects
-  it as the shutter/library target
-- `custom-face` — the "+ Custom" chip (SPEC §8a A7); opens the inline card `custom-face-card`:
-  `custom-face-label` (mono name input, `enterkeyhint="done"`, Enter adds) · `custom-face-error`
-  (inline validation: feature-name rule + unique among this part's faces and chips) ·
-  `custom-face-plane-<top|side|end|detail>` (sketch-plane segmented control, `aria-pressed`) ·
-  `custom-face-add` (primary, `aria-disabled` until the name is valid) · `custom-face-cancel`
+- `capture-chip-<label>` — one `Ui.FaceCard` per face, in the face-card grid (design wave P2b
+  "layout A", DESIGN.md §4/§11.2, docs/design/review-2026-09-17.md §3/§4): captured = thumbnail +
+  live check badge; the selected one additionally gets the accent ring (both signals together when
+  a captured face is also selected); uncaptured = the plain dashed "Empty" look regardless of
+  selection (`Ui.FaceCard` has no way to ring an `image=None` card — a noted Ui gap, see
+  `Capture.res`'s module-end notes). Tapping a card selects it as the shutter/library target. No
+  `aria-pressed` (`Ui.FaceCard` doesn't expose one) — selected/captured state is stated in the
+  card's accessible name instead (`"<label> — captured|not captured[, selected]"`)
+- `custom-face` — the "+ Custom" card, last in the grid (SPEC §8a A7; `Ui.FaceCard` `Empty` look,
+  label text "+ Custom" — no `Plus` icon variant to ask `Ui.FaceCard` for, another noted Ui gap);
+  opens the inline card `custom-face-card`: `custom-face-label` (mono name input,
+  `enterkeyhint="done"`, Enter adds) · `custom-face-error` (inline validation: feature-name rule +
+  unique among this part's faces and chips) · `custom-face-plane-<top|side|end|detail>`
+  (sketch-plane segmented control, `aria-pressed`) · `custom-face-add` (primary, `aria-disabled`
+  until the name is valid) · `custom-face-cancel`
 - `custom-face-remove` — small button in the shutter block, present only while the selected chip is
-  a custom one with no face yet; removes the chip (a captured face is deleted from the Part page)
+  a custom one with no face yet; removes the chip (a captured face is deleted from the Part page).
+  Stays in the shutter block rather than moving onto the card itself — `Ui.FaceCard`'s `Empty` look
+  has no caption/badge slot to put it in
 - `recapture-confirm` / `recapture-keep` / `recapture-cancel` — replace-image dialog
-- `capture-note` — the one-line explanation shown when camera access is unavailable
-- `capture-kinds` — the chip row: Top/Side/End/Detail, custom faces, then "+ Custom" (design wave 2,
-  DESIGN.md §11.2; A7)
+- `capture-note` — the one-line explanation shown when camera access is unavailable; the last
+  element in `.capture-action`'s bottom-anchored group (design wave P2b), so it sits directly under
+  whichever of the shutter/recapture/custom-face block is showing
+- `capture-kinds` — the face-card grid container (design wave P2b; carried over from the old chip
+  row's id — nothing in the e2e suite reads it, kept for continuity). `.face-grid-dense` (3-up) once
+  there are ≥ 5 chips (not counting the trailing "+ Custom" cell)
 - `capture-level` — the live level-readout pill next to the shutter, present only when the device
   orientation sensor has reported a sample and permission wasn't denied (design wave 2)
-- `shutter` — the 76 px amber shutter `<label>` itself (design wave 3b: `tabIndex={-1}`, a
+- `shutter` — the 76 px amber shutter `<label>` itself, inside `.capture-action` (design wave P2b:
+  `.capture-page { min-height: 100% }` + `.capture-action { margin-top: auto }` anchor the whole
+  shutter/recapture/custom-face block — and the camera note after it — to the bottom of the
+  content, DESIGN.md §1 "hands stay on the part"); `tabIndex={-1}` (design wave 3b), a
   programmatic-only focus target — a `<label>` isn't natively focusable — used to return focus here
-  after the recapture card's Cancel closes it, DESIGN.md §9)
+  after the recapture card's Cancel closes it, DESIGN.md §9
 - `capture-live` — visually hidden `aria-live="polite"` line (design wave 3b, DESIGN.md §9): "Face
   captured: <label>"; empty otherwise
 

@@ -1798,3 +1798,59 @@ unchanged.
   with the panel below it, the count no longer sits on a handle, "Diameter" doesn't clip at either
   width, and the strip doesn't wrap at 360. Stale preview processes killed by PID before each run.
   Paths are in the handoff report, not this repo.
+## 2026-09-17 — P2b — layout A: Capture (agent/p2-capture)
+
+Wires P1's `Ui.FaceCard` into the Capture page (`docs/design/review-2026-09-17.md` C1-C4, DESIGN.md
+§11.2 "Capture"): the chip row + slot row are gone, replaced by one face-card grid that is both the
+kind picker and the thumbnail gallery, and the shutter/library block moves into the bottom 60% of
+the screen. Capture/decode/recapture/custom-face logic, `Store` calls, level snapshot, timer start
+and navigation are all untouched — this track only touches `Capture.res`'s view layer and
+`Capture.css`.
+
+- **Face grid.** New `faceGrid` (replaces `chipRow`/`slotRow`): one `Ui.FaceCard` per chip from
+  `chipsOf`, `onClick` dispatching the same `SelectChip` the old rows already used. Captured =
+  `Captured` (thumbnail + `~badge` check); the selected chip on top of that = `Selected` (accent
+  ring) — `state` and `badge` are independent props, so a captured-and-selected card keeps both
+  signals at once. Uncaptured = `Empty` regardless of selection. "+ Custom" is a fixed trailing
+  `Empty` card (own testid, not one of `chipsOf`'s chips) opening the existing inline custom-face
+  card, ids unchanged.
+- **Shutter anchored low (C1).** `.capture-view` renamed `.capture-page`, `min-height: 100%`; a new
+  `.capture-action` wrapper around the shutter/recapture/custom-card switch is `margin-top: auto`.
+  Measured (Playwright, 390×844, fresh part): shutter centre y = 675px = 80% of viewport height,
+  well past the ≥ 45% floor; at 360×740 it's 630px = 85%. `shellScrollHeight` runs ~45px over
+  `clientHeight` on a bare 4-default/0-capture part (5 cards, 3 rows at 2-up) — the same order of
+  overflow the review doc's own scroll table expected for layout A at baseline ("15 px over"); the
+  page scrolls (`.shell`'s existing `overflow-y: auto`), nothing is clipped.
+- **Judgment call — dense-grid threshold.** Task brief said "dense at ≥ 5 cards"; DESIGN.md §11.2
+  says "3-up at ≥ 5 faces". Read the two together as "≥ 5 chips" (`Array.length(chipsOf(model))`),
+  **not** counting the always-present "+ Custom" trailing cell — counting it would make every
+  bare, zero-capture part (4 defaults + 1 "+ Custom" = 5 cells) dense from the very first render,
+  which isn't what either source intends.
+- **Ui gaps hit, not worked around by hand-rolling markup outside `Ui.FaceCard`** (`Ui.res` is
+  outside this track's file ownership):
+  1. No `ariaPressed` prop. The old slot's `aria-pressed` is gone; selection is now stated in the
+     card's `ariaLabel` instead (`cardAriaLabel`: `"<label> — captured|not captured[, selected]"`).
+     Updated `faces.spec.js`'s two `capture-chip-*` `aria-pressed` assertions to
+     `toHaveAccessibleName(/…selected/)` instead — a legitimate interaction change (the component
+     itself changed, not the thing being tested), not a weakened check.
+  2. `~image=None` always renders the `Empty` look regardless of `~state` (per the component's own
+     doc comment), so a *selected-but-uncaptured* kind shows no accent ring on the grid — the
+     shutter block's "Capture <Label>" caption is the only visible cue for which kind is targeted
+     in that case.
+  3. `Empty`'s icon is hardcoded to Camera with no way to ask for `Plus`, so the "+ Custom" card's
+     own label text reads "+ Custom" (the "+" lives in the string, not an icon swap).
+  4. `badge`/`caption` only render in the `Some(image)` branch — a real `Empty` card (no image at
+     all) has no slot for either. Two knock-on effects: (a) `custom-face-remove` stays exactly
+     where it was, a button in the shutter block, rather than moving onto the card itself — there's
+     nowhere on an `Empty` card to put it; (b) a just-captured face briefly shows as a plain `Empty`
+     card until its object-URL thumbnail loads (`FaceImageLoaded`) — the old slot row showed the
+     check badge immediately off `hasExisting`, independent of the thumbnail. Minor and transient
+     (local-blob object URLs resolve in well under a frame in practice) but worth a future look if
+     `Ui.res` gets revisited.
+- **Verification.** `npx rescript build` clean (no warnings; `warnings.error = "+a"`), `npm test`
+  217/217, `npm run build` clean, `E2E_PORT=3820 npx playwright test --config=e2e/playwright.config.js
+  --project=chromium` — 44/44 green, including `a11y.spec.js`'s two Capture-page checks (not in this
+  track's file ownership, untouched, still pass). Screenshots (empty grid, one captured face, the
+  custom card open, the recapture card, 360×740) taken via a throwaway Playwright script against
+  `vite preview --port 3821` (written and deleted within this session, never committed) — paths in
+  the handoff report, not this repo.
