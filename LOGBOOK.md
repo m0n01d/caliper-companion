@@ -2017,3 +2017,77 @@ untouched, confirmed unchanged both by `git diff --stat` and a Part-page screens
   badge (`aria-label` unchanged: "Remove the `<label>` chip") — smaller, but per the brief's own
   instruction to move it into the badge slot; the accessible name carries the same information a
   sighted "Remove chip" label did.
+## 2026-09-17 — A10 folders (agent/a10-folders)
+
+SPEC §8a A10 built to the pre-build review (`docs/design/a10-folders-review.md`, BUILD WITH
+CHANGES). First commit applied the review's rewrites to the spec text; the four after it built to
+that text. Branch `agent/a10-folders`, not pushed.
+
+- **Spec rewrites applied (commit 1).** B1: `a//b` *normalises* to `a/b`, only bad segments
+  reject. B2: the Part page's one Shell subtitle is the folder path; layout A's stats line stays
+  in the features group header (DESIGN.md §11.2's stale "bar subtitle stats" sentence fixed to
+  match, plus one clause on the Parts list's sections + search). S1–S8, N1–N7 folded in as the
+  review's ready-to-paste bullets. §7 gained the one-line `part.path` carve-out the review's
+  bullet 1 points at (it is a folder path, not a bundle-relative file path) — a sentence outside
+  the A10 block, but the review text explicitly references it, so it went in rather than leaving
+  a dangling cross-reference.
+- **`core/Folder.res`** (pure, `FolderTest.res` = the review's §4 table + message cases).
+  Judgment calls where the brief and the review's table differed: `display` is `string => string`
+  (`""` stays `""`; `Part.subtitle` wraps it in the option), and the error type is exactly
+  `BadSegment(seg) | TooDeep | TooLong` — a 33-char segment is a `BadSegment` (the regex's own
+  `{0,31}` cap; `errorMessage` says "too long" for it instead of reciting the alphabet), `TooLong`
+  is the 120-char whole-path cap the review's N1 asked for. `validate` normalises first, so its
+  `Ok` payload is the path to store; `snap` is case-insensitive against the existing folders.
+- **Codec coverage.** Adding the read-time `let path = …` between `decodePart`'s tuple match and
+  its record build made the compiler emit one early `return` per required field (A7 hit the same
+  with `decodeFace`), which dropped core/ to 98.4 % lines. Fixed the same way A7 did: the single
+  "missing slug" test became a per-field reject loop. Core is back at 100 % lines (branch misses
+  on `Codec.res.mjs` lines 27/124 are pre-existing).
+- **Store.** `createPart` takes a *required* `~path` (not an optional defaulting to `""`): the
+  brief said `createPart(~path)`, and a required arg makes every caller state its intent; the 13
+  StoreTest call sites pass `~path=""`. Docs without `path` read back as `""` — tested with a raw
+  pre-A10 part doc, same pattern as A7's raw legacy face doc. No index change.
+- **Parts list.** Sections, chips and search are all derived in `view` from `model.parts` — the
+  chip order ("newest `updatedAt` of any part in that folder") falls straight out of `parts`
+  order (Store sorts updatedAt desc; `RenameSaved` now re-sorts), so `foldersOf` is one
+  first-seen pass, no second sort. The root section is *always* headerless (review: "header
+  omitted when no part has a folder" and the e2e's "root header absent" agree on that reading),
+  so a folder-less list is the pre-A10 list plus the search field. Search: `global.css` puts
+  `-webkit-appearance: none` on `input[type="search"]` (can't edit it — not owned by this track),
+  which in WebKit also drops the native cancel button, so the page ships its own
+  `parts-search-clear` icon button and removes Chromium's leftover
+  `::-webkit-search-cancel-button` explicitly — one clear affordance, ours, on every engine.
+  Clearing refocuses the field. `Ui.ChipRow` has no `~className`, so the chips' 8 px top gap
+  comes from a wrapper `div.part-path-chips` — a small Ui gap, noted not fixed (Ui.res edits
+  were limited to `ListGroup ~headerTestId`).
+- **One `PartForm`** (review S4) renders both the create form (grouped rows + the units row) and
+  the inline rename strip. Visible change to rename: its bare input became a labelled "Name"
+  field with the "Folder" field under it (better a11y; same `part-rename-input` testid). Field
+  ids take a per-part suffix on the rename strip so two open strips never collide; the create
+  form keeps `part-name-input`. A chip tap fills the field and refocuses it via
+  `focusTestId("part-path")` — with two rename strips open that focuses the first `part-path` in
+  the DOM; accepted, same edge as the pre-existing `part-rename-input` focus.
+- **Part page.** `subtitle = Some(Folder.display(path))` when non-empty, else `None`. The stale
+  "reserved for A10's future folder path" comment there is gone with it.
+- **Golden.** `fixtures/hinge_pin/features.json` diff is exactly one added `"path": ""` line;
+  `parameters.csv` untouched; the fusion-import skill's 84 Python tests pass unchanged (its plan
+  snapshot already carried `"part_path": ""`).
+- **Verified.** `npx rescript build` clean under `+a`; `npm test` 244/244; core coverage 100 %
+  lines (`Folder.res` fully covered); `npm run build` clean; `E2E_PORT=3910 npx playwright test
+  --config=e2e/playwright.config.js --project=chromium` **47/47** — the 44 existing specs plus
+  `parts.spec.js` ×2 (sections/counts/search/move/re-sort; `a//b` normalises, `?` rejects
+  inline, `A/B` snaps to `a/b`) and `export.spec.js` ×1 (folder exports verbatim, `path` right
+  after `slug`, no path in `parameters.csv`; the golden test also asserts `doc.part.path === ''`).
+  Screenshots (390×844 @2x, dark, throwaway script in the session scratchpad, not committed):
+  `#/` with two folders + root, search `bezel` and the no-match line, the create form with chips
+  and with the inline `?` rule + dimmed Create, the inline rename with the Folder field, and the
+  Part page with `Miata / Interior` in the bar — all looked at; nothing needed fixing.
+- **Flake, not this track's:** `EdgeSnapTest`'s "1000 snaps on a huge patch finish quickly" is a
+  wall-clock test; it failed twice at ~3.3 s when the full suite ran under `--coverage` while
+  other builds shared the CPU, and passed alone and in the plain `npm test` gate every time.
+  Untouched here; flagging so nobody chases it as an A10 regression.
+- **Not done / v1:** the search query resets on navigation (review N4 — `Route.Parts` could gain
+  a `q`); renaming a folder is per-part (N7); no name uniqueness within a folder and the slug
+  ignores the folder, so `<slug>.ccpart.zip` names can collide across folders (N6, stated in the
+  spec); `a11y.spec.js` needed no change (the search field sits after the bar's Edit/"+" in DOM
+  order, so "first Tab lands on a real control" still holds).

@@ -91,7 +91,7 @@ describe("Store — parts", () => {
   testAsync("create, list, rename (putPart), and delete a part", async () => {
     let store = freshStore()
 
-    let part = await Store.createPart(store, ~name="Hinge Pin", ~slug="hinge_pin", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="Hinge Pin", ~slug="hinge_pin", ~path="", ~units=Types.Mm)
     expect(part.name)->toBe("Hinge Pin")
     expect(part.slug)->toBe("hinge_pin")
     expect(part.anchors)->toEqual([])
@@ -117,8 +117,8 @@ describe("Store — parts", () => {
 
   testAsync("listParts orders updatedAt descending", async () => {
     let store = freshStore()
-    let a = await Store.createPart(store, ~name="A", ~slug="a", ~units=Types.Mm)
-    let b = await Store.createPart(store, ~name="B", ~slug="b", ~units=Types.Mm)
+    let a = await Store.createPart(store, ~name="A", ~slug="a", ~path="", ~units=Types.Mm)
+    let b = await Store.createPart(store, ~name="B", ~slug="b", ~path="", ~units=Types.Mm)
     // Re-save `a` so its updatedAt is the most recent — strictly: `putPart`
     // stamps `Clock.nowIso()`, and in the same millisecond as `b`'s
     // creation the two would tie and sort in id (random uuid) order.
@@ -142,7 +142,7 @@ describe("Store — parts", () => {
       // one design doc in `before`, two in `after`). Awaiting the
       // idempotent `ensureIndexes` first makes the doc set stable.
       await Store.ensureIndexes(store)
-      let part = await Store.createPart(store, ~name="P5", ~slug="p5", ~units=Types.Mm)
+      let part = await Store.createPart(store, ~name="P5", ~slug="p5", ~path="", ~units=Types.Mm)
       let face = await Store.putFace(
         store,
         mkFace(~partId=part.id, ~kind=Types.Top),
@@ -177,7 +177,7 @@ describe("Store — faces", () => {
     "putFace stores the doc and its attachment atomically; getFaceImage reads it back",
     async () => {
       let store = freshStore()
-      let part = await Store.createPart(store, ~name="P", ~slug="p", ~units=Types.Mm)
+      let part = await Store.createPart(store, ~name="P", ~slug="p", ~path="", ~units=Types.Mm)
       let face = mkFace(~partId=part.id, ~kind=Types.Top)
       let bytes = Uint8Array.fromArray([1, 2, 3, 4, 5, 6, 7, 8])
       let saved = await Store.putFace(
@@ -215,7 +215,7 @@ describe("Store — faces", () => {
       expect(await Store.getFace(store, neverWrittenId))->toEqual(None)
       expect(await Store.getFaceImage(store, neverWrittenId))->toEqual(None)
 
-      let part = await Store.createPart(store, ~name="P2", ~slug="p2", ~units=Types.Mm)
+      let part = await Store.createPart(store, ~name="P2", ~slug="p2", ~path="", ~units=Types.Mm)
       let face = mkFace(~partId=part.id, ~kind=Types.Side)
       let _ = await Store.putFace(
         store,
@@ -233,7 +233,7 @@ describe("Store — faces", () => {
 
   testAsync("facesOf orders top, side, end, detail regardless of write order", async () => {
     let store = freshStore()
-    let part = await Store.createPart(store, ~name="P3", ~slug="p3", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P3", ~slug="p3", ~path="", ~units=Types.Mm)
     let put = kind =>
       Store.putFace(
         store,
@@ -252,7 +252,7 @@ describe("Store — faces", () => {
 
   testAsync("deleteFace removes the face and its dimensions", async () => {
     let store = freshStore()
-    let part = await Store.createPart(store, ~name="P6", ~slug="p6", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P6", ~slug="p6", ~path="", ~units=Types.Mm)
     let face = await Store.putFace(
       store,
       mkFace(~partId=part.id, ~kind=Types.Top),
@@ -275,7 +275,7 @@ describe("Store — faces", () => {
 describe("Store — dimensions", () => {
   testAsync("dimensionsOf and dimensionsOfFace order createdAt ascending", async () => {
     let store = freshStore()
-    let part = await Store.createPart(store, ~name="P4", ~slug="p4", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P4", ~slug="p4", ~path="", ~units=Types.Mm)
     let face = await Store.putFace(
       store,
       mkFace(~partId=part.id, ~kind=Types.Top),
@@ -308,7 +308,7 @@ describe("Store — dimensions", () => {
 
   testAsync("deleteDimension removes a single dimension", async () => {
     let store = freshStore()
-    let part = await Store.createPart(store, ~name="P7", ~slug="p7", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P7", ~slug="p7", ~path="", ~units=Types.Mm)
     let face = await Store.putFace(
       store,
       mkFace(~partId=part.id, ~kind=Types.Top),
@@ -434,7 +434,7 @@ describe("Store — indexes", () => {
 describe("Store — face labels (SPEC §8a A7)", () => {
   testAsync("putFace stores label and reads it back; replace-by-id keeps it", async () => {
     let store = freshStore()
-    let part = await Store.createPart(store, ~name="P7", ~slug="p7", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P7", ~slug="p7", ~path="", ~units=Types.Mm)
     let face = mkFace(~partId=part.id, ~kind=Types.Side, ~label="left_side")
     let _ = await Store.putFace(store, face, ~image=onePixelBlob(), ~contentType="image/jpeg")
     let fetched = await Store.getFace(store, face.id)
@@ -453,7 +453,7 @@ describe("Store — face labels (SPEC §8a A7)", () => {
 
   testAsync("facesOf orders by kind, then label; same-kind faces coexist", async () => {
     let store = freshStore()
-    let part = await Store.createPart(store, ~name="P8", ~slug="p8", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P8", ~slug="p8", ~path="", ~units=Types.Mm)
     let put = (kind, label) =>
       Store.putFace(
         store,
@@ -479,7 +479,7 @@ describe("Store — face labels (SPEC §8a A7)", () => {
   testAsync("a face doc written without label reads back with label = kind", async () => {
     let dir = freshDbPath()
     let store = openStore(dir)
-    let part = await Store.createPart(store, ~name="P9", ~slug="p9", ~units=Types.Mm)
+    let part = await Store.createPart(store, ~name="P9", ~slug="p9", ~path="", ~units=Types.Mm)
     let legacyId = Ids.face()
 
     let raw = PouchDb.make(dir, {})
@@ -501,5 +501,64 @@ describe("Store — face labels (SPEC §8a A7)", () => {
     expect(fetched->Option.map(f => (f.kind, f.label)))->toEqual(Some((Types.End, "end")))
     let faces = await Store.facesOf(store, ~partId=part.id)
     expect(faces->Array.map(f => f.label))->toEqual(["end"])
+  })
+})
+
+// SPEC §8a A10 — folder paths in the store: stored as given, defaulted to
+// "" (root) for part docs written before the field existed.
+describe("Store — part path (SPEC §8a A10)", () => {
+  testAsync("createPart persists path; putPart moves a part between folders", async () => {
+    let store = freshStore()
+    let part = await Store.createPart(
+      store,
+      ~name="Window switch bezel",
+      ~slug="window_switch_bezel",
+      ~path="Miata/Interior",
+      ~units=Types.Mm,
+    )
+    expect(part.path)->toBe("Miata/Interior")
+    let fetched = await Store.getPart(store, part.id)
+    expect(fetched->Option.map(p => p.path))->toEqual(Some("Miata/Interior"))
+
+    let moved = await Store.putPart(store, {...part, path: "Miata/Exterior"})
+    expect(moved.path)->toBe("Miata/Exterior")
+    let listed = await Store.listParts(store)
+    expect(listed->Array.map(p => p.path))->toEqual(["Miata/Exterior"])
+  })
+
+  // A store written by the app before A10 has part docs with no `path`
+  // field at all. They must keep reading back, at the root.
+  testAsync("a part doc written without path reads back with path = \"\"", async () => {
+    let dir = freshDbPath()
+    let store = openStore(dir)
+    let legacyId = Ids.part()
+
+    // A pre-A10 part doc: every field PartDoc.toDoc wrote then, no `path`.
+    let raw = PouchDb.make(dir, {})
+    let doc: PouchDb.doc = Dict.make()
+    Dict.set(doc, "_id", JSON.Encode.string(legacyId))
+    Dict.set(doc, "type", JSON.Encode.string("part"))
+    Dict.set(doc, "partId", JSON.Encode.string(legacyId))
+    Dict.set(doc, "name", JSON.Encode.string("Old"))
+    Dict.set(doc, "slug", JSON.Encode.string("old"))
+    Dict.set(doc, "units", JSON.Encode.string("mm"))
+    Dict.set(doc, "notes", JSON.Encode.string(""))
+    Dict.set(doc, "anchors", JSON.Encode.array([]))
+    Dict.set(doc, "createdAt", JSON.Encode.string(Clock.nowIso()))
+    Dict.set(doc, "updatedAt", JSON.Encode.string(Clock.nowIso()))
+    let _ = await PouchDb.put(raw, doc)
+
+    let fetched = await Store.getPart(store, legacyId)
+    expect(fetched->Option.map(p => (p.name, p.path)))->toEqual(Some(("Old", "")))
+    let listed = await Store.listParts(store)
+    expect(listed->Array.map(p => p.path))->toEqual([""])
+
+    // Re-saving it writes the field explicitly, still at the root.
+    switch fetched {
+    | Some(p) =>
+      let saved = await Store.putPart(store, p)
+      expect(saved.path)->toBe("")
+    | None => expect(false)->toBeTruthy
+    }
   })
 })

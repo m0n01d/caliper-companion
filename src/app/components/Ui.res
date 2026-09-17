@@ -145,10 +145,13 @@ module Segmented = {
 // carries `role="listitem"` since that component's whole purpose is "one
 // row of a list" — safe even where the enclosing container isn't marked
 // `asList` (an orphaned `listitem` is tolerated, never wrong).
+// `~headerTestId` lands on the header `<h2>` (SPEC §8a A10's
+// `parts-section-header`); it does nothing without a `~header`.
 module ListGroup = {
   @react.component
   let make = (
     ~header: option<string>=?,
+    ~headerTestId: option<string>=?,
     ~footer: option<string>=?,
     ~asList: bool=false,
     ~testId: option<string>=?,
@@ -156,7 +159,8 @@ module ListGroup = {
   ) =>
     <section className="list-group-section">
       {switch header {
-      | Some(text) => <h2 className="list-group-header"> {React.string(text)} </h2>
+      | Some(text) =>
+        <h2 className="list-group-header" dataTestId=?headerTestId> {React.string(text)} </h2>
       | None => React.null
       }}
       <div className="list-group" role=?{asList ? Some("list") : None} dataTestId=?testId>

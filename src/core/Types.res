@@ -54,6 +54,11 @@ type part = {
   id: string, // "part:" ++ uuid
   name: string,
   slug: string,
+  // SPEC §8a A10: a "/"-separated folder path (a Fusion Data Panel
+  // location, not a file path — §7 carve-out); "" = root. Normalised and
+  // validated by `Folder` before it reaches Store. Additive: docs and JSON
+  // written before A10 read back as "".
+  path: string,
   units: units,
   notes: string,
   anchors: array<anchor>, // reserved, always [] in v0

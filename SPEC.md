@@ -154,7 +154,7 @@ Unchanged from the Swift spec except two optional reserved fields. Frozen once v
 }
 ```
 
-Export bundle: `<slug>.ccpart.zip` (via `fflate`) containing `features.json`, `faces/<kind>.jpg`, `faces/<kind>_dimensioned.png`. If zip is skipped, share the same files as an array with `navigator.share`. Paths in JSON are bundle-relative either way.
+Export bundle: `<slug>.ccpart.zip` (via `fflate`) containing `features.json`, `faces/<kind>.jpg`, `faces/<kind>_dimensioned.png`. If zip is skipped, share the same files as an array with `navigator.share`. Paths in JSON are bundle-relative either way. (`part.path`, added by §8a A10, is a folder path — a Fusion Data Panel location — not a file path.)
 
 **MCP skill contract (built in parallel against the golden fixture):** one user parameter per feature (`name = value units`, comment carries tolerance and faceIds); one sketch per face on top→XY, side→XZ, end→YZ, detail→XY, with the annotated PNG attached as a canvas. Never invent geometry. In v1 the skill pulls the JSON straight from CouchDB over HTTP; in v0 it reads the exported file.
 
@@ -380,13 +380,64 @@ project folder.
           "path": "Miata/Interior/Dashboard", "units": "mm", "notes": "", "anchors": [] }
 ```
 
-- [ ] `Types.part` gains `path: string` (`""` = root). Each segment matches `^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$` (folder names are display names, so spaces and capitals are allowed; slashes separate; leading/trailing/double slashes are normalised away). `Codec`, `Store` (docs without `path` read back as `""`), `FeaturesDocument` (`"path"` emitted after `"slug"`), the golden fixture (`"path": ""` added), tests.
-- [ ] Parts list: parts grouped by folder as inset grouped sections with the path as the section header (root parts first, then folders sorted by path); a section header shows its part count. A **search field** above the list (`parts-search`, `type="search"`, `inputmode="search"`, 17 px) filters by name and path, case-insensitive, live; empty result shows one Footnote line.
-- [ ] Create and rename forms gain a **Folder** field (`part-path`) with suggestion chips of existing paths (most recently used first, then alphabetical; `part-path-chip`), free text accepted; invalid segments show the rule inline and disable the primary button. Rename lets a part be moved by editing its folder.
-- [ ] Part page: the path is the Shell subtitle under the title ("Miata / Interior / Dashboard").
+- [ ] `Types.part` gains `path: string` (`""` = root; a folder path, not a file path — carve-out in
+  §7). `core/Folder.res` (pure, tabled tests): `normalize` splits on `/`, trims each segment,
+  collapses internal whitespace, drops empty segments and rejoins (`" /Miata//Interior /"` →
+  `"Miata/Interior"`, `"a//b"` → `"a/b"` — double slashes **normalise**, they are not an error);
+  `validate` normalises, then requires each segment to match
+  `^[\p{L}\p{N}][\p{L}\p{N} _.()&'+-]{0,31}$` (`u` flag: any Unicode letter/digit, 1–32 chars) and
+  not be all dots (`^\.+$` — keeps v1's on-disk staging safe), at most 6 segments, and the whole
+  path ≤ 120 chars (`error = BadSegment(segment) | TooDeep | TooLong`; `errorMessage` renders the
+  rule); `snap(~existing)` replaces a path that equals an existing folder case-insensitively with
+  that spelling; `display` joins with `" / "` (`"Miata / Interior / Dashboard"`; `""` stays `""`).
+  Pages call `normalize → validate → snap` before `Store.createPart(~path)` / `putPart`; `Store`
+  never normalises. `Codec.decodePart` and `Store.PartDoc.fromDoc` read a missing `path` as `""`
+  (the A7 `label` precedent). `FeaturesDocument` emits `"path"` after `"slug"`; the golden gains
+  that one line; `Fixture.part` gains the field. `parameters.csv` (A11) is unchanged — it carries no
+  path. No path index: `listParts` stays an `allDocs` range + in-memory sort, grouping is in-memory.
+- [ ] Parts list: derived in `view` from `model.parts` — root section first (**never** a header on
+  the root section, so a list with no folders renders exactly as before A10), then one `Ui.ListGroup`
+  per distinct path, sorted case-insensitively, header `"<display path> · <count>"`
+  (`parts-section`, `parts-section-header`; headers render uppercase per `.list-group-header`, the
+  underlying spelling is kept unique by `snap`); rows inside keep `listParts` order (updatedAt desc;
+  `RenameSaved` re-sorts). Above the list, hidden in the empty state: `<input type="search"
+  inputmode="search" enterkeyhint="search" autocapitalize="none" autocorrect="off"
+  placeholder="Search" aria-label="Search parts">` (`parts-search`, 17 px; `global.css` strips the
+  native cancel button with `-webkit-appearance: none`, so the page supplies its own clear button,
+  `parts-search-clear`, while the query is non-empty) filtering by name **or** path,
+  case-insensitive substring, live, sections preserved; no match → one Footnote line `No parts
+  match "<q>".` (`parts-search-empty`). Query is page-local and resets on navigation (v0.1 —
+  `Route.Parts` may gain a `q` later if it bites).
+- [ ] Create and rename share one `PartForm`: Name, then **Folder** (`part-path`, `type="text"
+  autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done"`, placeholder
+  `Miata/Interior`), under it a `Ui.ChipRow` of existing folders (`part-path-chip`, at most 8,
+  ordered by the newest `updatedAt` of any part in that folder — `putPart` bumps it; tapping a chip
+  fills the field and returns focus there, never submits, so `/Sub` can be appended). Invalid → the
+  rule inline (`part-path-error`) and the primary button disabled. Rename stays an inline strip in
+  the list and lets a part be moved by editing its folder. No uniqueness: two parts may share a
+  name in one folder; the slug is still `Slug.make(name)` and ignores the folder, so
+  `<slug>.ccpart.zip` names can collide across folders (one user, accepted).
+- [ ] Part page: the folder is the Shell subtitle (`Folder.display`, "Miata / Interior / Dashboard";
+  none at root; one ellipsised Footnote line — four segments truncate on a 390 px screen). Layout
+  A's "n faces · n features · unit" line lives in the features group header, not the subtitle
+  (resolves review B2; `DESIGN.md` §11.2 updated to match).
+- [ ] Folders are implicit: none to create or delete; one disappears when its last part leaves.
+  Renaming a folder = editing each part (v1).
 - [ ] Existing parts migrate as root; nothing else changes for them.
-- [ ] Import skill (v1 line in `docs/fusion/IMPORT-SKILL-SPEC.md`): save the new design into the Fusion project folder named by `path`, creating folders as needed.
-- [ ] Playwright: create two parts in `Miata/Interior` and one at root → two sections in order (root, then `Miata/Interior`) with counts; search `bezel` filters to one; renaming a part's folder moves it between sections; export carries `"path"`; an invalid segment (`a//b`, `?`) is rejected inline.
+- [ ] Import skill (v1 line in `docs/fusion/IMPORT-SKILL-SPEC.md`): save the new design into the
+  folder named by `path`, **relative to the active project's root folder**
+  (`app.data.activeProject.rootFolder`), creating folders as needed; the first segment is a folder,
+  never a project. The planner already reads `part.path` with a `""` default (`plan["part_path"]`)
+  — no planner change.
+- [ ] Playwright (`parts.spec.js`): create `Window switch bezel` and `Door card clip` in
+  `Miata/Interior`, then `Hinge pin` at root → `parts-section` count 2, root section first and
+  headerless (`parts-section-header` count 1, text `Miata / Interior · 2`); search `bezel` → one
+  `part-row`; rename `Hinge pin`'s folder to `Miata/Interior` → header reads `· 3`, root section
+  gone; `a//b` saves and the header reads `a / b · 1` (rendered
+  uppercase as `A / B · 1` — the header is `text-transform: uppercase`); `?` → `part-path-error` visible,
+  `part-create` disabled; `miata/interior` on a new part snaps into the existing section; the Part
+  page's `.shell-subtitle` reads `Miata / Interior`. `export.spec.js`: `doc.part.path === ''` on the
+  golden test; one part with a folder exports it verbatim.
 
 ### A11 — `parameters.csv` in the export bundle (Fusion ParameterIO format, no Claude needed)
 

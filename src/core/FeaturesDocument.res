@@ -47,6 +47,8 @@ let encodePart = (part: Types.part): JSON.t =>
       ("id", JSON.String(part.id)),
       ("name", JSON.String(part.name)),
       ("slug", JSON.String(part.slug)),
+      // SPEC §8a A10: the folder path, right after `slug`; "" at the root.
+      ("path", JSON.String(part.path)),
       ("units", JSON.String(Enums.unitsToString(part.units))),
       ("notes", JSON.String(part.notes)),
       ("anchors", JSON.Array([])),

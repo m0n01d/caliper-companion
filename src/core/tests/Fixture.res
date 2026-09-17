@@ -14,6 +14,7 @@ let part: Types.part = {
   id: partId,
   name: "Norcold freezer hinge pin",
   slug: "norcold_freezer_hinge_pin",
+  path: "",
   units: Mm,
   notes: "",
   anchors: [],

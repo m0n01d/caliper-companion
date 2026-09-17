@@ -99,3 +99,112 @@ test.describe('parts', () => {
     expect(firstLine).toBe('partId,partName,startedAt,stoppedAt,handsOnSeconds')
   })
 })
+
+// SPEC §8a A10 — folders. The list groups parts into one inset section per
+// folder (root first, never with a header), a search field filters by name
+// or path, and the shared create/rename form's Folder field moves a part.
+// Named parts per docs/design/a10-folders-review.md S7 so "search `bezel`
+// filters to one" is a real assertion.
+async function createPartIn(page, name, folder) {
+  await page.goto('/')
+  await page.getByTestId('new-part').click()
+  await page.getByTestId('part-name').fill(name)
+  if (folder !== undefined) {
+    await page.getByTestId('part-path').fill(folder)
+  }
+  await page.getByTestId('part-create').click()
+  await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
+}
+
+test.describe('parts — folders (SPEC §8a A10)', () => {
+  test('sections with counts, root first and headerless; search filters; rename moves and re-sorts', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    // The Part page's Shell subtitle is the folder path (review B2).
+    await expect(page.locator('.shell-subtitle')).toHaveText('Miata / Interior')
+    await createPartIn(page, 'Door card clip', 'Miata/Interior')
+    await createPartIn(page, 'Hinge pin')
+    // Root: no subtitle at all.
+    await expect(page.locator('.shell-subtitle')).toHaveCount(0)
+
+    await page.goto('/')
+    await expect(page.getByTestId('part-row')).toHaveCount(3)
+    const sections = page.getByTestId('parts-section')
+    await expect(sections).toHaveCount(2)
+    // Root section first and headerless: exactly one header, the folder's.
+    await expect(page.getByTestId('parts-section-header')).toHaveCount(1)
+    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 2')
+    await expect(sections.nth(0).getByTestId('part-row')).toHaveCount(1)
+    await expect(sections.nth(0)).toContainText('Hinge pin')
+    await expect(sections.nth(1).getByTestId('part-row')).toHaveCount(2)
+
+    // Search: live, case-insensitive, name or path; sections preserved.
+    const search = page.getByTestId('parts-search')
+    await expect(search).toHaveAttribute('type', 'search')
+    await search.fill('bezel')
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('part-row')).toContainText('Window switch bezel')
+    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 1')
+    await search.fill('interior')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await search.fill('zzz')
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(page.getByTestId('parts-search-empty')).toHaveText('No parts match "zzz".')
+    await page.getByTestId('parts-search-clear').click()
+    await expect(search).toHaveValue('')
+    await expect(search).toBeFocused()
+    await expect(page.getByTestId('part-row')).toHaveCount(3)
+
+    // Rename's Folder field moves the part; the root section disappears
+    // and the moved part re-sorts to the top of its new section (S6).
+    await page.getByTestId('parts-edit').click()
+    await sections.nth(0).getByTestId('part-rename').click()
+    await expect(page.getByTestId('part-rename-input')).toHaveValue('Hinge pin')
+    await expect(page.getByTestId('part-path')).toHaveValue('')
+    // The chips list the existing folders; tapping one fills the field.
+    await expect(page.getByTestId('part-path-chip')).toHaveCount(1)
+    await page.getByTestId('part-path-chip').click()
+    await expect(page.getByTestId('part-path')).toHaveValue('Miata/Interior')
+    await page.getByTestId('part-rename-save').click()
+    await expect(page.getByTestId('parts-section')).toHaveCount(1)
+    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 3')
+    await expect(page.getByTestId('part-row').first()).toContainText('Hinge pin')
+
+    await page.reload()
+    await expect(page.getByTestId('parts-section')).toHaveCount(1)
+    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 3')
+    await expect(page.getByTestId('part-row').first()).toContainText('Hinge pin')
+  })
+
+  test('folder field: a//b normalises, ? is rejected inline, a different case snaps to the existing spelling', async ({
+    page,
+  }) => {
+    // Review B1: doubled slashes normalise rather than reject.
+    await createPartIn(page, 'Normalised', 'a//b')
+    await expect(page.locator('.shell-subtitle')).toHaveText('a / b')
+    await page.goto('/')
+    const header = page.getByTestId('parts-section-header')
+    await expect(header).toHaveText('a / b · 1')
+    // `.list-group-header` renders uppercase — what the eye sees.
+    await expect(header).toHaveText('A / B · 1', {useInnerText: true})
+
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-name').fill('Rejected')
+    await page.getByTestId('part-path').fill('a/?/b')
+    await expect(page.getByTestId('part-path-error')).toBeVisible()
+    await expect(page.getByTestId('part-path-error')).toContainText('"?"')
+    await expect(page.getByTestId('part-create')).toBeDisabled()
+
+    // Review S2: `A/B` typed on a new part snaps into the existing `a/b`.
+    await page.getByTestId('part-path').fill('A/B')
+    await expect(page.getByTestId('part-path-error')).toHaveCount(0)
+    await expect(page.getByTestId('part-create')).toBeEnabled()
+    await page.getByTestId('part-create').click()
+    await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
+    await expect(page.locator('.shell-subtitle')).toHaveText('a / b')
+    await page.goto('/')
+    await expect(page.getByTestId('parts-section')).toHaveCount(1)
+    await expect(header).toHaveText('a / b · 2')
+  })
+})

@@ -25,8 +25,17 @@ let ensureIndexes: t => promise<unit>
 // -- parts ------------------------------------------------------------------
 
 // id, createdAt = updatedAt = now, anchors = []. `slug` is M1's Slug.make
-// output — not available to this module, so the caller supplies it.
-let createPart: (t, ~name: string, ~slug: string, ~units: Types.units) => promise<Types.part>
+// output — not available to this module, so the caller supplies it. `path`
+// (SPEC §8a A10, "" = root) is stored as given: the caller runs
+// `Folder.normalize → validate → snap` first; this module never normalises.
+// Part docs written before A10 have no `path` and read back as "".
+let createPart: (
+  t,
+  ~name: string,
+  ~slug: string,
+  ~path: string,
+  ~units: Types.units,
+) => promise<Types.part>
 
 // Bumps updatedAt; returns the stored record (including the bumped
 // updatedAt). Used for both edits (rename, notes) and explicit re-saves.
