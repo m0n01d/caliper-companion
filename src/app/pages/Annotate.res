@@ -92,6 +92,7 @@ type model = {
   pending: pending,
   selected: option<string>, // dimension id being edited
   focusIntent: option<focusIntent>, // performed by the next canvas click
+  announcement: string, // the `aria-live` line after a save (DESIGN.md §9)
   reading: string,
   name: string,
   tolerance: string,
@@ -119,7 +120,7 @@ type msg =
   | KindChosen(Types.dimensionKind)
   | ToleranceChanged(string)
   | SaveClicked
-  | Saved(result<(array<Types.dimension>, Store.settings), string>)
+  | Saved(result<(array<Types.dimension>, Store.settings, Types.dimension), string>)
   | DeleteClicked
   | Deleted(result<array<Types.dimension>, string>)
   | Moved(result<array<Types.dimension>, string>)
@@ -225,7 +226,7 @@ let saveCmd = (
       }
       await Store.putSettings(store, next)
       let dims = await Store.dimensionsOfFace(store, ~faceId)
-      (dims, next)
+      (dims, next, dim)
     },
     r => Saved(Ok(r)),
     e => Saved(Error(exnMessage(e))),
@@ -273,6 +274,7 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     pending: noPending,
     selected: None,
     focusIntent: None,
+    announcement: "",
     reading: "",
     name: "",
     tolerance: "",
@@ -440,7 +442,7 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   | (_, _, HitNothing) =>
     switch m.selected {
     | Some(_) => (clearEntry(m), Tea.none)
-    | None => ({...m, pending: {p1: Some(n), p2: None}}, Tea.none)
+    | None => ({...m, pending: {p1: Some(n), p2: None}, announcement: ""}, Tea.none)
     }
   }
 }
@@ -657,8 +659,16 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
   | (SaveClicked, Ready(l)) => trySave(m, l)
   // Save clears reading + name + points, keeps kind and tolerance, and
   // returns focus to the canvas for the next tap (M4 bullet 7).
-  | (Saved(Ok((dims, settings))), Ready(l)) => (
-      {...clearEntry(m), status: Ready({...l, dims, settings}), busy: false},
+  | (Saved(Ok((dims, settings, dim))), Ready(l)) =>
+    let announcement =
+      "Dimension saved: " ++
+      dim.name ++
+      " " ++
+      NumberParse.format(dim.value, l.part.units) ++
+      " " ++
+      NumberParse.unitsLabel(l.part.units)
+    (
+      {...clearEntry(m), status: Ready({...l, dims, settings}), busy: false, announcement},
       focusTestId("annotate-canvas", ~select=false),
     )
   | (Saved(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
@@ -820,7 +830,7 @@ module CanvasView = {
     let canvasRef = React.useRef(Nullable.null)
 
     // Size reporting: once on mount and whenever the stage resizes (the
-    // sheet growing for an error message shrinks the canvas).
+    // keyboard changing `--vv-height`, the panel growing for an error).
     React.useEffect(() =>
       switch canvasRef.current->Nullable.toOption {
       | Some(el) =>
@@ -904,23 +914,82 @@ let dimensionPointsText = (dims: array<Types.dimension>): string =>
   )
   ->Array.join("|")
 
-let kindButton = (m: model, ~dispatch, kind: Types.dimensionKind, text: string) =>
-  <button
-    type_="button"
-    className={m.kind == kind ? "annotate-seg is-on" : "annotate-seg"}
-    dataTestId={"kind-" ++ Enums.dimensionKindToString(kind)}
-    ariaPressed={m.kind == kind ? #"true" : #"false"}
-    onClick={_ => dispatch(KindChosen(kind))}>
-    {React.string(text)}
-  </button>
-
 let errorLine = (testId: string, text: option<string>) =>
   switch text {
-  | Some(t) => <p className="annotate-error" dataTestId=testId> {React.string(t)} </p>
+  | Some(t) => <p className="field-error" dataTestId=testId> {React.string(t)} </p>
   | None => React.null
   }
 
-let sheet = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
+// DESIGN.md §5 placement hint, plus the name while a saved dimension is
+// being edited (its points are the pending pair, so "Read the caliper"
+// would mislead).
+let hintText = (m: model, l: loaded): string =>
+  switch (m.selected, m.pending.p1, m.pending.p2) {
+  | (Some(id), _, _) =>
+    switch l.dims->Array.find(d => d.id == id) {
+    | Some(d) => "Editing " ++ d.name
+    | None => "Read the caliper"
+    }
+  | (None, None, _) => "Tap the first edge"
+  | (None, Some(_), None) => "Tap the second edge"
+  | (None, Some(_), Some(_)) => "Read the caliper"
+  }
+
+let kindOptions: array<(string, string)> = [("length", "Length"), ("diameter", "Diameter"), ("depth", "Depth")]
+
+// The stage (DESIGN.md §11.2): the canvas on the photo mat, the flat scrim
+// toolbar top-right (count, zoom out, zoom readout, zoom in), the placement
+// hint top-left, and the hidden test readouts. The canvas wrapper is the
+// `role="img"` group of §9's focus order; the toolbar sits outside it so
+// its buttons stay real controls.
+let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
+  let scene = {
+    bitmap: Some(l.bitmap),
+    imageW: l.imageW,
+    imageH: l.imageH,
+    viewport: m.viewport,
+    dims: l.dims,
+    selected: m.selected,
+    pending: m.pending,
+    pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
+    view: m.view,
+    dpr: m.dpr,
+  }
+  let count = Array.length(l.dims)
+  let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
+  let groupLabel =
+    faceKindLabel(l.face.kind) ++
+    " face, " ++
+    Int.toString(count) ++ (count == 1 ? " dimension" : " dimensions")
+  <div className="annotate-stage">
+    <div className="annotate-photo" role="img" ariaLabel=groupLabel>
+      <CanvasView scene dispatch />
+    </div>
+    <div className="annotate-overlay">
+      <div className="annotate-tools">
+        <Ui.Pill testId="dimension-count"> {React.string(Int.toString(count))} </Ui.Pill>
+        <Ui.Button
+          variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
+          <Icon name=ZoomOut />
+        </Ui.Button>
+        <Ui.Pill mono=true testId="zoom"> {React.string(Float.toFixed(zoom, ~digits=2))} </Ui.Pill>
+        <Ui.Button
+          variant=Ui.Button.Icon testId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
+          <Icon name=ZoomIn />
+        </Ui.Button>
+      </div>
+      <div className="annotate-hint"> <Ui.Pill> {React.string(hintText(m, l))} </Ui.Pill> </div>
+    </div>
+    <span hidden=true dataTestId="pending-points"> {React.string(pendingPointsText(m.pending))} </span>
+    <span hidden=true dataTestId="dimension-points" ariaBusy=m.moving>
+      {React.string(dimensionPointsText(l.dims))}
+    </span>
+  </div>
+}
+
+// The control area (DESIGN.md §11.1 "Sheets", §11.2): an opaque, in-flow
+// `.panel` — reading, name + chips, kind + tolerance, Save, Clear/Delete.
+let panel = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   let units = NumberParse.unitsLabel(l.part.units)
   let readingError = switch (m.reading, readingResult(m, l)) {
   | ("", _) | (_, Ok(_)) => None
@@ -935,161 +1004,148 @@ let sheet = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   | (_, Error(e)) => Some(NumberParse.errorMessage(e))
   }
   let editing = m.selected->Option.isSome
+  let nothingToClear = !editing && m.pending.p1->Option.isNone && m.reading == "" && m.name == ""
 
-  <div className="sheet annotate-sheet">
-    <div className="annotate-row">
-      <label className="annotate-label" htmlFor="annotate-reading"> {React.string("Reading")} </label>
-      <div className="annotate-field">
+  <div className="panel annotate-panel">
+    <Ui.Field label="Reading" htmlFor="annotate-reading" mono=true error=?readingError errorTestId="reading-error">
+      <div className="annotate-reading">
         {Canvas.Input.make({
           dataTestId: "reading",
           id: "annotate-reading",
           type_: "text",
-          className: "annotate-input",
           inputMode: "decimal",
           enterKeyHint: "next",
           autoComplete: "off",
+          placeholder: switch l.part.units {
+          | Mm => "0.00"
+          | Inch => "0.000"
+          },
           ariaInvalid: readingError->Option.isSome,
           value: m.reading,
           onChange: e => dispatch(ReadingChanged(inputValue(e))),
           onKeyDown: e => onEnter(e, () => dispatch(ReadingEnter)),
         })}
-        <span className="annotate-units" dataTestId="reading-units"> {React.string(units)} </span>
+        <span className="annotate-unit" dataTestId="reading-units"> {React.string(units)} </span>
       </div>
-      {errorLine("reading-error", readingError)}
-    </div>
-    <div className="annotate-row">
-      <label className="annotate-label" htmlFor="annotate-name"> {React.string("Name")} </label>
-      {Canvas.Input.make({
-        dataTestId: "name",
-        id: "annotate-name",
-        type_: "text",
-        className: "annotate-input annotate-name",
-        autoCapitalize: "none",
-        autoCorrect: "off",
-        autoComplete: "off",
-        spellCheck: false,
-        enterKeyHint: "done",
-        ariaInvalid: nameError->Option.isSome,
-        value: m.name,
-        onChange: e => dispatch(NameChanged(inputValue(e))),
-        onKeyDown: e => onEnter(e, () => dispatch(NameEnter)),
-      })}
-      {errorLine("name-error", nameError)}
-      <div className="annotate-chips">
+    </Ui.Field>
+    <div className="annotate-name">
+      <Ui.Field label="Name" htmlFor="annotate-name" mono=true error=?nameError errorTestId="name-error">
+        {Canvas.Input.make({
+          dataTestId: "name",
+          id: "annotate-name",
+          type_: "text",
+          autoCapitalize: "none",
+          autoCorrect: "off",
+          autoComplete: "off",
+          spellCheck: false,
+          enterKeyHint: "done",
+          placeholder: "feature_name",
+          ariaInvalid: nameError->Option.isSome,
+          value: m.name,
+          onChange: e => dispatch(NameChanged(inputValue(e))),
+          onKeyDown: e => onEnter(e, () => dispatch(NameEnter)),
+        })}
+      </Ui.Field>
+      <Ui.ChipRow>
         {l.suggestions
         ->Array.map(s =>
-          <button
-            key=s
-            type_="button"
-            className={m.name == s ? "annotate-chip is-on" : "annotate-chip"}
-            dataTestId="name-chip"
-            onClick={_ => dispatch(ChipTapped(s))}>
+          <Ui.Chip key=s selected={m.name == s} testId="name-chip" onClick={_ => dispatch(ChipTapped(s))}>
             {React.string(s)}
-          </button>
+          </Ui.Chip>
         )
         ->React.array}
-      </div>
+      </Ui.ChipRow>
     </div>
-    <div className="annotate-row annotate-row-inline">
-      <div className="annotate-segmented" role="group" ariaLabel="Kind">
-        {kindButton(m, ~dispatch, Length, "Length")}
-        {kindButton(m, ~dispatch, Diameter, "Diameter")}
-        {kindButton(m, ~dispatch, Depth, "Depth")}
+    <div className="annotate-kind-row">
+      <div className="field annotate-kind">
+        <span className="field-label" ariaHidden=true> {React.string("Kind")} </span>
+        <Ui.Segmented
+          options=kindOptions
+          selected={Enums.dimensionKindToString(m.kind)}
+          onSelect={key =>
+            switch Enums.dimensionKindFromString(key) {
+            | Some(kind) => dispatch(KindChosen(kind))
+            | None => ()
+            }}
+          testIdPrefix="kind-"
+          ariaLabel="Kind"
+        />
       </div>
-      <div className="annotate-field annotate-tolerance">
-        <span className="annotate-units"> {React.string("±")} </span>
-        {Canvas.Input.make({
-          dataTestId: "tolerance",
-          type_: "text",
-          className: "annotate-input",
-          inputMode: "decimal",
-          autoComplete: "off",
-          ariaLabel: "Tolerance",
-          ariaInvalid: toleranceError->Option.isSome,
-          value: m.tolerance,
-          onChange: e => dispatch(ToleranceChanged(inputValue(e))),
-        })}
-        <span className="annotate-units"> {React.string(units)} </span>
-      </div>
+      <Ui.Field label="Tolerance" htmlFor="annotate-tolerance" mono=true>
+        <div className="annotate-tolerance">
+          <span className="annotate-unit" ariaHidden=true> {React.string("±")} </span>
+          {Canvas.Input.make({
+            dataTestId: "tolerance",
+            id: "annotate-tolerance",
+            type_: "text",
+            inputMode: "decimal",
+            autoComplete: "off",
+            ariaLabel: "Tolerance, ± " ++ units,
+            ariaInvalid: toleranceError->Option.isSome,
+            value: m.tolerance,
+            onChange: e => dispatch(ToleranceChanged(inputValue(e))),
+          })}
+          <span className="annotate-unit"> {React.string(units)} </span>
+        </div>
+      </Ui.Field>
     </div>
+    // The tolerance message sits under the whole row: its column is too
+    // narrow for a sentence.
     {errorLine("tolerance-error", toleranceError)}
     {errorLine("annotate-error", m.error)}
     <div className="annotate-actions">
-      <button
-        type_="button"
-        className="annotate-secondary"
-        dataTestId="cancel"
-        disabled={!editing && m.pending.p1->Option.isNone && m.reading == "" && m.name == ""}
-        onClick={_ => dispatch(CancelClicked)}>
-        {React.string("Clear")}
-      </button>
-      {editing
-        ? <button
-            type_="button"
-            className="annotate-danger"
-            dataTestId="delete"
-            disabled=m.busy
-            onClick={_ => dispatch(DeleteClicked)}>
-            {React.string("Delete")}
-          </button>
-        : React.null}
-      <button
-        type_="button"
-        className="annotate-primary"
-        dataTestId="save"
+      <Ui.Button
+        variant=Ui.Button.Primary
+        block=true
+        testId="save"
         disabled={!canSave(m, l)}
         onClick={_ => dispatch(SaveClicked)}>
-        {React.string(editing ? "Update" : "Save")}
-      </button>
+        {React.string(editing ? "Update" : "Save dimension")}
+      </Ui.Button>
+      <div className="annotate-actions-row">
+        <Ui.Button
+          variant=Ui.Button.Small
+          testId="cancel"
+          disabled=nothingToClear
+          onClick={_ => dispatch(CancelClicked)}>
+          {React.string("Clear")}
+        </Ui.Button>
+        {editing
+          ? <Ui.Button
+              variant=Ui.Button.Danger testId="delete" disabled=m.busy onClick={_ => dispatch(DeleteClicked)}>
+              {React.string("Delete")}
+            </Ui.Button>
+          : React.null}
+      </div>
     </div>
+    // DESIGN.md §9: "Dimension saved: name value" after a save. Always in
+    // the tree so assistive tech is already listening when the text lands.
+    <p className="visually-hidden" ariaLive=#polite dataTestId="annotate-live">
+      {React.string(m.announcement)}
+    </p>
   </div>
 }
 
 let view = (m: model, ~dispatch: msg => unit): React.element =>
   switch m.status {
+  // DESIGN.md §7: the only real load is the image decode — the photo mat
+  // with a centred pill, no spinner.
   | Loading =>
-    <div className="page"> <p className="annotate-status"> {React.string("Loading face…")} </p> </div>
+    <div className="annotate">
+      <div className="annotate-stage annotate-stage-empty">
+        <Ui.Pill> {React.string("Decoding…")} </Ui.Pill>
+      </div>
+    </div>
   | NotFound(why) =>
-    <div className="page">
-      <p className="annotate-status" dataTestId="annotate-missing"> {React.string(why)} </p>
-      <a href={Route.href(Route.Part(m.partId))}> {React.string("Back to part")} </a>
+    <div className="stack annotate-missing">
+      <p className="help-text" dataTestId="annotate-missing"> {React.string(why)} </p>
+      <a className="btn btn-secondary" href={Route.href(Route.Part(m.partId))}>
+        {React.string("Back to part")}
+      </a>
     </div>
   | Ready(l) =>
-    let scene = {
-      bitmap: Some(l.bitmap),
-      imageW: l.imageW,
-      imageH: l.imageH,
-      viewport: m.viewport,
-      dims: l.dims,
-      selected: m.selected,
-      pending: m.pending,
-      pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
-      view: m.view,
-      dpr: m.dpr,
-    }
-    let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
     <div className="annotate">
-      <div className="annotate-stage">
-        <CanvasView scene dispatch />
-        <div className="annotate-toolbar">
-          <span className="annotate-count" dataTestId="dimension-count">
-            {React.string(Int.toString(Array.length(l.dims)))}
-          </span>
-          <button type_="button" className="annotate-zoom" dataTestId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
-            {React.string("−")}
-          </button>
-          <span className="annotate-zoom-readout" dataTestId="zoom">
-            {React.string(Float.toFixed(zoom, ~digits=2))}
-          </span>
-          <button type_="button" className="annotate-zoom" dataTestId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
-            {React.string("+")}
-          </button>
-        </div>
-        <span hidden=true dataTestId="pending-points"> {React.string(pendingPointsText(m.pending))} </span>
-        <span hidden=true dataTestId="dimension-points" ariaBusy=m.moving>
-          {React.string(dimensionPointsText(l.dims))}
-        </span>
-      </div>
-      {sheet(m, l, ~dispatch)}
+      {stage(m, l, ~dispatch)}
+      {panel(m, l, ~dispatch)}
     </div>
   }

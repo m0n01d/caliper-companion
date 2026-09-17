@@ -1,29 +1,51 @@
-/* Annotate — page-scoped styles (SPEC M4). Global tokens live in
-   src/theme.css; the `.sheet` base class in src/global.css.
+/* Annotate — page styles (DESIGN.md §11.2 "Annotate", §3, §4). Tokens live
+   in src/theme.css; the shared classes (.panel, .field, .chip, .segmented,
+   .pill, .btn-*) in src/global.css. Only the layout that is specific to
+   this screen is here.
 
-   Layout: the page is a flex column — the canvas stage on top, the reading
-   sheet below it in normal flow (never `position: fixed`, SPEC §5). The
-   stage's height comes from `--vv-height` (kept live from `visualViewport`
-   by Index.res) rather than from a percentage of the shell, so it doesn't
-   depend on ancestor definiteness, and when the iOS keyboard shrinks the
-   visual viewport the stage shrinks with it and the sheet rides up into
-   view instead of hiding under the keyboard. */
+   Layout: a flex column — the photo stage on top, inset by the page margin
+   with the 16 px photo radius; the opaque control `.panel` below it in
+   normal flow (never `position: fixed`, SPEC §5), edge to edge and down to
+   the bottom of the screen. The stage's height tracks `--vv-height` (kept
+   live from `visualViewport` by Index.res) and is capped at 300 px (§3), so
+   when the iOS keyboard shrinks the visual viewport the stage shrinks with
+   it and the reading field rides up into view. */
 
 .annotate {
-  position: relative;
   display: flex;
   flex-direction: column;
-  /* Edge to edge: undo .shell-content's 16px padding. */
-  margin: -16px;
+  gap: var(--cc-space-3);
+  /* Undo .shell-content's side and bottom padding so the panel can reach
+     the screen edges; `min-height` stretches it to the bottom. */
+  margin: 0 calc(-1 * (var(--cc-page-x) + env(safe-area-inset-right)))
+    calc(-1 * (var(--cc-space-5) + env(safe-area-inset-bottom)))
+    calc(-1 * (var(--cc-page-x) + env(safe-area-inset-left)));
+  min-height: calc(100% + var(--cc-space-5) + env(safe-area-inset-bottom));
 }
 
+/* ── Stage ─────────────────────────────────────────────────────────── */
 .annotate-stage {
   position: relative;
   flex: 0 0 auto;
-  height: calc(var(--vv-height, 100dvh) * 0.5);
+  margin: 0 calc(var(--cc-page-x) + env(safe-area-inset-right)) 0
+    calc(var(--cc-page-x) + env(safe-area-inset-left));
+  height: min(300px, calc(var(--vv-height, 100dvh) * 0.5));
   min-height: 200px;
-  background: var(--color-ink);
+  border-radius: var(--cc-radius-photo);
+  background: var(--cc-photo-mat);
   overflow: hidden;
+}
+
+.annotate-stage-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The `role="img"` group: the canvas and nothing else. */
+.annotate-photo {
+  position: absolute;
+  inset: 0;
 }
 
 .annotate-canvas {
@@ -39,200 +61,159 @@
   outline: none;
 }
 
+/* Focus lands here after every save. A quiet ring: amber over the photo
+   reads as an error state next to the amber overlays. */
 .annotate-canvas:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--color-rust-light);
+  outline: 2px solid var(--cc-text-3);
+  outline-offset: -2px;
 }
 
-/* Absolute inside the stage — not fixed, so the keyboard can't break it. */
-.annotate-toolbar {
+/* Absolute inside the stage — never fixed, so the keyboard can't break it.
+   Reversed row: the toolbar (first in the DOM, so its buttons follow the
+   canvas in the focus order) sits at the right, the hint at the left, and
+   on a phone too narrow for both the hint wraps under the toolbar. Pills
+   let taps through to the canvas; only the buttons catch them. */
+.annotate-overlay {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: var(--cc-space-2);
+  right: var(--cc-space-2);
+  left: var(--cc-space-2);
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--cc-space-2);
+  pointer-events: none;
+}
+
+.annotate-overlay button {
+  pointer-events: auto;
+}
+
+.annotate-tools {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgb(30 40 24 / 0.75);
-  color: var(--color-cream);
-  font-family: var(--font-mono);
-  font-size: 13px;
+  gap: var(--cc-space-1);
 }
 
-.annotate-zoom {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border-radius: 999px;
-  border: 1px solid var(--color-moss);
-  background: var(--color-forest-mid);
-  color: var(--color-cream);
-  font-size: 20px;
-  line-height: 1;
+/* Over the photo the icon buttons are flat scrim like the pills — one
+   material for everything that floats on the canvas (§11.1 "Materials"). */
+.annotate-tools .btn-icon {
+  background: var(--cc-scrim);
+  border-color: transparent;
 }
 
-.annotate-zoom-readout {
-  min-width: 40px;
-  text-align: center;
+.annotate-hint {
+  margin-right: auto;
 }
 
-.annotate-count {
-  margin: 0 6px 0 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--color-rust);
-  color: var(--color-cream);
+/* ── Panel ─────────────────────────────────────────────────────────── */
+.annotate .panel {
+  flex: 1 0 auto;
+  padding: var(--cc-space-4) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-4) + env(safe-area-inset-bottom))
+    calc(var(--cc-page-x) + env(safe-area-inset-left));
 }
 
-/* ── Sheet ─────────────────────────────────────────────────────────── */
-/* In-flow below the stage (see the header comment). */
-.annotate .sheet {
-  position: relative;
-  flex: 0 0 auto;
-  max-height: none;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.annotate-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.annotate-row-inline {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-
-.annotate-label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-muted);
-}
-
-.annotate-field {
+/* The reading input IS the live reading (§4 "Reading panel"): 38 px mono,
+   the unit at Subhead beside it. */
+.annotate-reading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--cc-space-2);
 }
 
-.annotate-field .annotate-input {
+.annotate-reading input {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 56px;
+  padding: var(--cc-space-2) 14px;
+  font: var(--cc-text-reading);
+  letter-spacing: -0.01em;
 }
 
-.annotate-units {
+.annotate-unit {
   flex: 0 0 auto;
-  font-family: var(--font-mono);
-  color: var(--color-muted);
+  font: var(--cc-text-subhead);
+  color: var(--cc-text-2);
 }
 
 .annotate-name {
-  font-family: var(--font-mono);
-}
-
-.annotate-input[aria-invalid='true'] {
-  border-color: var(--color-danger);
-}
-
-.annotate-error {
-  color: var(--color-danger);
-  font-size: 14px;
-}
-
-.annotate-chips {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  -webkit-overflow-scrolling: touch;
+  flex-direction: column;
+  gap: var(--cc-space-2);
 }
 
-.annotate-chip {
-  flex: 0 0 auto;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--color-tan);
-  background: var(--color-cream-deep);
-  color: var(--color-ink);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 500;
+/* Kind + tolerance share a row. The segmented options drop to 14 px with
+   4 px padding: "Diameter" at Subhead 15 semibold clips beside the
+   tolerance column on a 390 px phone with a wide fallback font. */
+.annotate-kind-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-3);
 }
 
-.annotate-chip.is-on {
-  background: var(--color-forest);
-  border-color: var(--color-forest);
-  color: var(--color-cream);
-}
-
-.annotate-segmented {
+.annotate-kind {
   flex: 1 1 auto;
-  display: flex;
-  border: 1px solid var(--color-tan);
-  border-radius: 10px;
-  overflow: hidden;
 }
 
-.annotate-seg {
-  flex: 1 1 0;
-  padding: 10px 4px;
-  border: none;
-  border-radius: 0;
-  background: var(--color-cream-deep);
-  color: var(--color-ink);
+.annotate-kind .segmented-option {
+  padding: 0 var(--cc-space-1);
   font-size: 14px;
+  letter-spacing: -0.01em;
 }
 
-.annotate-seg + .annotate-seg {
-  border-left: 1px solid var(--color-tan);
-}
-
-.annotate-seg.is-on {
-  background: var(--color-forest);
-  color: var(--color-cream);
+.annotate-kind-row > .field:last-child {
+  flex: 0 0 auto;
+  width: 124px;
 }
 
 .annotate-tolerance {
-  flex: 0 0 auto;
-  width: 132px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.annotate-tolerance .annotate-input {
-  font-size: 16px;
-  padding: 10px;
+.annotate-tolerance input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--cc-space-2) 10px;
+  font-size: var(--cc-size-body);
 }
 
+/* ── Actions ───────────────────────────────────────────────────────── */
 .annotate-actions {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: var(--cc-space-2);
 }
 
-.annotate-actions button {
-  flex: 1 1 0;
-  padding: 14px 8px;
+.annotate-actions-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--cc-space-2);
 }
 
-.annotate-primary {
-  flex: 2 1 0 !important;
+/* Delete is the small red capsule of §6, next to the small Clear. */
+.annotate-actions-row .btn-danger {
+  min-height: 40px;
+  padding: var(--cc-space-1) var(--cc-space-4);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
 }
 
-.annotate-secondary {
-  background: var(--color-cream-deep);
-  color: var(--color-ink);
-}
+/* ── 360 px phones (DESIGN.md §8) ──────────────────────────────────── */
+/* The reading value drops to 32 px, and the kind row wraps so the
+   segmented control keeps its full labels with the tolerance below it. */
+@media (max-width: 360px) {
+  .annotate-reading input {
+    font-size: 32px;
+  }
 
-.annotate-danger {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-  color: var(--color-cream);
-}
+  .annotate-kind-row {
+    flex-wrap: wrap;
+  }
 
-.annotate-status {
-  color: var(--color-muted);
+  .annotate-kind {
+    flex-basis: 100%;
+  }
 }
