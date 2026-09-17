@@ -15,6 +15,17 @@
 // each with its own always-mounted camera + library `<input>` pair. Nothing
 // about the file-input/decode/save/recapture flow itself changed — see the
 // notes at the end of this file for what's new and why.
+//
+// Design wave P2b "layout A" (branch `agent/p2-capture`,
+// docs/design/review-2026-09-17.md findings C1-C4, DESIGN.md §11.2
+// "Capture"): the chip row + slot row are gone, replaced by one
+// `Ui.FaceCard` grid (`faceGrid`) that is both the kind picker and the
+// thumbnail gallery; the shutter/library block moves into the bottom 60% of
+// the screen (`.capture-action { margin-top: auto }` inside a
+// `min-height: 100%` `.capture-page`). Capture/decode/recapture/custom-face
+// logic is unchanged — this wave only touches `faceGrid`, `view`'s markup,
+// and `Capture.css`. See the module-end notes for what's new and the Ui
+// gaps this ran into.
 
 // -- model -------------------------------------------------------------
 
@@ -596,8 +607,14 @@ let subtitle = (_model: model): option<string> => None
 let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
 
 // -- view --------------------------------------------------------------
-// DESIGN.md §11.2 "Capture": chips (top) → slot row → shutter/library, the
-// inline custom-face card, or the inline recapture card → camera note. One
+// Layout A (design wave P2b, docs/design/review-2026-09-17.md §3/§4,
+// DESIGN.md §11.2 "Capture"): the face-card grid (`faceGrid`, kind picker
+// and thumbnail gallery in one) on top, then the shutter/library block, the
+// inline custom-face card, or the inline recapture card — swapped in place
+// inside `.capture-action` — then the camera note. `.capture-page` is a
+// flex column with `min-height: 100%`; `.capture-action { margin-top: auto
+// }` pushes whichever of the three is showing (and the note after it) to
+// the bottom of the content, into the bottom 60% per DESIGN.md §1. One
 // camera + one library file input per chip renders unconditionally in
 // `hiddenInputs`, independent of `selectedLabel` and `model.dialog`, so
 // `setInputFiles('[data-testid="capture-file-<label>"]')` keeps working no
@@ -645,74 +662,83 @@ let onEnter = (e: JsxEvent.Keyboard.t, then: unit => unit): unit =>
 
 let inputValue = (e: JsxEvent.Form.t): string => e->Canvas.Form.target->Canvas.value
 
-let chipRow = (model: model, ~dispatch: msg => unit): React.element =>
-  <Ui.ChipRow testId="capture-kinds">
-    {chipsOf(model)
-    ->Array.map(chip => {
-      let hasExisting = existingFaceOf(model.faces, chip.label)->Option.isSome
-      <Ui.Chip
-        key=chip.label
-        large=true
-        selected={chip.label == model.selectedLabel && model.customDraft->Option.isNone}
-        testId={"capture-chip-" ++ chip.label}
-        onClick={_ => dispatch(SelectChip(chip.label))}>
-        <>
-          {hasExisting ? <Icon name=Check size=16 /> : React.null}
-          {chipName(chip)}
-        </>
-      </Ui.Chip>
-    })
-    ->React.array}
-    <Ui.Chip
-      large=true
-      selected={model.customDraft->Option.isSome}
+// "W × H" for a captured face's stored pixel size — same shape as Part.res's
+// own `sizeText`; that module owns its copy (file ownership), this is this
+// page's, one line each.
+let sizeText = (face: Types.face): string =>
+  Int.toString(face.pixelWidth) ++ " × " ++ Int.toString(face.pixelHeight)
+
+// Accessible name for a face-grid card (DESIGN.md §9 "Color is never the
+// only signal" — captured/selected are visual-only otherwise: a live ring,
+// an accent ring, a check badge). `Ui.FaceCard` has no `aria-pressed` (see
+// the module-end notes' "Ui gaps"), so the selection state the old slot's
+// `aria-pressed` used to carry is folded into the name instead.
+let cardAriaLabel = (chip: chip, ~hasExisting: bool, ~isSelected: bool): string =>
+  chipAriaName(chip) ++
+  (hasExisting ? " — captured" : " — not captured") ++
+  (isSelected ? ", selected" : "")
+
+// The face-card grid (design wave P2b "layout A",
+// docs/design/review-2026-09-17.md §3/§4, DESIGN.md §4 "Face card" / §11.2
+// "Capture"): one `Ui.FaceCard` per chip from `chipsOf`, replacing the old
+// chip row + slot row — the grid doubles as the kind picker (tap =
+// `SelectChip`). A captured chip is `Captured` (thumbnail + the live check
+// `badge`); the selected chip additionally gets the `Selected` accent ring
+// — `state` and `badge` are independent props, so a captured-and-selected
+// card keeps both signals. An uncaptured chip is `Empty` (camera icon +
+// label) regardless of selection: `Ui.FaceCard` only ever shows a ring when
+// `image` is `Some(_)` (see its own doc comment), so a selected-but-
+// uncaptured kind reads as a plain empty card here — a real Ui gap, noted
+// in the module-end notes, not worked around by hand-rolling the card's
+// markup outside the shared component. "+ Custom" is a fixed trailing
+// `Empty` card (own testid, not one of `chipsOf`'s chips) that opens the
+// existing inline custom-face card; `Ui.FaceCard`'s empty look always shows
+// a camera icon (no way to ask it for `Plus` without editing `Ui.res`), so
+// the card's own label reads "+ Custom" to keep the affordance legible —
+// another noted Ui gap. Dense (3-up, `.face-grid-dense`) at ≥ 5 *chips*,
+// reading the review's "≥ 5 faces" rule against this page's chips, not the
+// total cell count including "+ Custom" — counting the trailing cell would
+// make a bare 4-default, zero-capture part dense on day one.
+let faceGrid = (model: model, ~dispatch: msg => unit): React.element => {
+  let chips = chipsOf(model)
+  let dense = Array.length(chips) >= 5
+  let cards = chips->Array.map(chip => {
+    let existing = existingFaceOf(model.faces, chip.label)
+    let hasExisting = existing->Option.isSome
+    let thumbUrl = existing->Option.flatMap(f => Dict.get(model.faceImages, f.id))
+    let isSelected = chip.label == model.selectedLabel && model.customDraft->Option.isNone
+    <Ui.FaceCard
+      key=chip.label
+      label={chipAriaName(chip)}
+      caption=?{existing->Option.map(sizeText)}
+      image=thumbUrl
+      state={hasExisting
+        ? isSelected ? Ui.FaceCard.Selected : Ui.FaceCard.Captured
+        : Ui.FaceCard.Empty}
+      badge=?{
+        hasExisting
+          ? Some(<span className="face-card-check"> <Icon name=Check size=14 /> </span>)
+          : None
+      }
+      testId={"capture-chip-" ++ chip.label}
+      ariaLabel={cardAriaLabel(chip, ~hasExisting, ~isSelected)}
+      onClick={_ => dispatch(SelectChip(chip.label))}
+    />
+  })
+  let addCustomCard =
+    <Ui.FaceCard
+      key="custom-face"
+      label="+ Custom"
+      image=None
+      state=Ui.FaceCard.Empty
       testId="custom-face"
       ariaLabel="Add a custom face"
-      onClick={_ => dispatch(CustomOpen)}>
-      <>
-        <Icon name=Plus size=16 />
-        {React.string("Custom")}
-      </>
-    </Ui.Chip>
-  </Ui.ChipRow>
-
-// 56 px slot row (DESIGN.md §4 "Thumbnail slot", mirrors Part.res's own
-// face tiles): captured = a thumbnail once the object URL has loaded, else
-// the plain `slot-captured` surface+ring; empty = dashed. Tapping a slot
-// selects that chip, same as the chip itself. One slot per chip, so the row
-// scrolls (reusing global.css's `.chip-row` scroller) once custom faces
-// push it past the viewport.
-let slotRow = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="chip-row slot-row">
-    {chipsOf(model)
-    ->Array.map(chip => {
-      let existing = existingFaceOf(model.faces, chip.label)
-      let hasExisting = existing->Option.isSome
-      let thumbUrl = existing->Option.flatMap(f => Dict.get(model.faceImages, f.id))
-      let stateClass = hasExisting ? " slot-captured" : " slot-empty"
-      let isSelected = chip.label == model.selectedLabel && model.customDraft->Option.isNone
-      let selectedClass = isSelected ? " slot-selected" : ""
-      let label = chipAriaName(chip) ++ (hasExisting ? " — captured" : " — not captured")
-      <button
-        type_="button"
-        key=chip.label
-        className={"slot" ++ stateClass ++ selectedClass}
-        ariaLabel=label
-        ariaPressed={isSelected ? #"true" : #"false"}
-        onClick={_ => dispatch(SelectChip(chip.label))}>
-        {switch thumbUrl {
-        | Some(url) => <img src=url alt={chipAriaName(chip)} />
-        | None => React.null
-        }}
-        {// DESIGN.md §9 "Color is never the only signal" — the badge stays
-        // even before the thumbnail has loaded (the `hasExisting` check
-        // doesn't wait on `thumbUrl`), so "captured" is never signalled by
-        // the teal ring colour alone.
-        hasExisting ? <span className="slot-check" ariaHidden=true> <Icon name=Check size=10 /> </span> : React.null}
-      </button>
-    })
-    ->React.array}
+      onClick={_ => dispatch(CustomOpen)}
+    />
+  <div className={"face-grid" ++ (dense ? " face-grid-dense" : "")} dataTestId="capture-kinds">
+    {Array.concat(cards, [addCustomCard])->React.array}
   </div>
+}
 
 // The shutter block: 76 px amber shutter (label for the selected chip's
 // camera input), Body caption, "From library" secondary capsule, the live
@@ -947,15 +973,16 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
       chipOf(model, model.selectedLabel)->Option.getOr(
         chipOf(model, "top")->Option.getOr({label: "top", kind: Types.Top}),
       )
-    <div className="capture-view">
+    <div className="capture-page">
       <Ui.Live text=model.announcement testId="capture-live" />
-      {chipRow(model, ~dispatch)}
-      {slotRow(model, ~dispatch)}
-      {switch (model.dialog, model.customDraft) {
-      | (RecaptureConfirm(pending), _) => recaptureCard(pending, ~dispatch)
-      | (NoDialog, Some(draft)) => customCard(model, draft, ~dispatch)
-      | (NoDialog, None) => shutterBlock(model, ~chip=selectedChip, ~dispatch)
-      }}
+      {faceGrid(model, ~dispatch)}
+      <div className="capture-action">
+        {switch (model.dialog, model.customDraft) {
+        | (RecaptureConfirm(pending), _) => recaptureCard(pending, ~dispatch)
+        | (NoDialog, Some(draft)) => customCard(model, draft, ~dispatch)
+        | (NoDialog, None) => shutterBlock(model, ~chip=selectedChip, ~dispatch)
+        }}
+      </div>
       {hiddenInputs(model, ~dispatch)}
       <p
         className={model.cameraDenied ? "camera-note camera-note-prominent" : "camera-note"}
@@ -984,8 +1011,8 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
 //   rejected. Same `FeatureName` rule + messages as the annotate name field.
 // - The custom card replaces the shutter block while open (like the
 //   recapture card) rather than stacking under it: one thing asks for input
-//   at a time, and the chip/slot rows above it stay visible. Tapping any
-//   chip closes it.
+//   at a time, and the face grid above it stays visible. Tapping any
+//   card closes it.
 // - No auto-focus on the name field: `Canvas.Input` has no `autoFocus`
 //   prop and bindings are outside this track's file ownership. One extra
 //   tap; flagged as a rough edge.
@@ -1021,6 +1048,59 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
 // - Level readout: DESIGN.md's "mono teal Ui.Pill next to the shutter when
 //   available" reuses the existing `levelFromSamples` helper live off
 //   `lastBeta`/`lastGamma` — display-only, no new state.
+//
+// Design wave P2b "layout A" (docs/design/review-2026-09-17.md C1-C4,
+// DESIGN.md §11.2 "Capture" — see LOGBOOK.md "P2b — layout A: Capture" for
+// the full write-up):
+// - Chip row + slot row → one `faceGrid` of `Ui.FaceCard`s. No model
+//   changes: the grid is a pure function of the same `chipsOf`/
+//   `existingFaceOf`/`faceImages`/`selectedLabel` the two old rows already
+//   read; `onClick` still dispatches the same `SelectChip`.
+// - Shutter anchored low (C1): `.capture-page` (renamed from
+//   `.capture-view`) is `min-height: 100%`; a new `.capture-action` wrapper
+//   around the shutter/recapture/custom-card switch is `margin-top: auto`,
+//   pushing it (and the camera note after it) to the bottom of the content.
+//   Same technique the review doc itself proposed for the do-now fix,
+//   generalized to the one wrapper so all three interchangeable blocks
+//   inherit it without three separate CSS rules.
+// - Ui gaps run into, not worked around by hand-rolling markup outside
+//   `Ui.FaceCard` (out of this track's file ownership — `Ui.res` isn't
+//   editable here): (1) no `ariaPressed` prop — the old slot's
+//   `aria-pressed` is gone; selection is now stated in the card's
+//   `ariaLabel` instead (`cardAriaLabel`), and `faces.spec.js`'s two
+//   `capture-chip-*` `aria-pressed` assertions were updated to check
+//   `face-card-selected`/`face-card-captured` instead (a legitimate
+//   interaction change, not a weakening of the check — see that spec's own
+//   comment at the edit). (2) `~image=None` always renders the `Empty`
+//   look regardless of `~state` (per `Ui.FaceCard`'s own doc comment), so a
+//   *selected but uncaptured* kind shows no accent ring — the shutter
+//   block's "Capture <Label>" caption is the only cue which kind is
+//   targeted in that case. (3) The `Empty` branch hardcodes a Camera icon
+//   with no way to ask for `Plus`, so the "+ Custom" card's own *label*
+//   text is "+ Custom" (the "+" lives in the string, not an icon swap).
+//   (4) `badge`/`caption` only render in the `Some(image)` branch — a real
+//   `Empty` card (no image at all, e.g. an uncaptured default or an unsaved
+//   custom chip) has no slot for either, which is also why
+//   `custom-face-remove` couldn't move onto the card itself (see below).
+//   One knock-on effect: a just-captured face briefly shows as a plain
+//   `Empty` card until its object URL loads (`FaceImageLoaded`) — the old
+//   slot row showed the check badge immediately off `hasExisting`,
+//   independent of the thumbnail; this is a minor, transient regression
+//   (local-blob object URLs resolve in well under a frame in practice).
+// - Dense grid (`.face-grid-dense`, 3-up) triggers at ≥ 5 *chips*
+//   (`chipsOf`'s length), not ≥ 5 total grid cells: counting the always-
+//   present "+ Custom" cell would make every bare, zero-capture part
+//   (4 defaults + 1 "+ Custom" = 5 cells) dense from the first render,
+//   which the review's "≥ 5 faces" rule was never meant to trigger.
+// - `capture-kinds` testid moved from the old chip row onto the face-grid
+//   container (docs/testids.md updated) — nothing in the e2e suite reads
+//   it, kept for discoverability/continuity of the id.
+// - `custom-face-remove` stays exactly where it was (a button in the
+//   shutter block, shown once a custom chip with no face yet is selected)
+//   rather than moving into the card's own caption/badge slot — the
+//   `Empty` branch has neither slot to put it in (Ui gap #4 above), and
+//   "existing" affordance in the task brief read as "keep it where it
+//   already works," which is also what `faces.spec.js` already exercises.
 //
 // M3 capture (original, still true):
 // - `levelDegrees` = sqrt(beta² + gamma²): SPEC doesn't define the exact

@@ -1,33 +1,36 @@
-/* Capture — page-scoped styles (DESIGN.md §11.2 "Capture", §4 Chip/
-   Thumbnail-slot/Shutter/Secondary-button/Scrim-pill). Global tokens live in
-   src/theme.css, shared component classes in src/global.css — nothing here
-   references the deprecated `--color-*` compat aliases or global.css §13
-   legacy page classes (no `.page`, `.capture-page`, `.face-row*`,
-   `.capture-btn*`, `.recapture-overlay`/`.sheet`/`.recapture-dialog`,
-   `.visually-hidden-input`). No `position: fixed` anywhere (SPEC §5) — the
-   recapture card is in-flow, no overlay/modal (DESIGN.md §11.1
-   "Confirmations"). */
+/* Capture — page-scoped styles (DESIGN.md §11.2 "Capture", §4 Face card/
+   Shutter/Secondary-button/Scrim-pill). Global tokens live in src/theme.css,
+   shared component classes in src/global.css — nothing here references the
+   deprecated `--color-*` compat aliases or global.css §13 legacy page
+   classes (no `.page`, `.face-row*`, `.capture-btn*`,
+   `.recapture-overlay`/`.sheet`/`.recapture-dialog`, `.visually-hidden-
+   input`). `.capture-page` below is this page's *current* root class (design
+   wave P2b "layout A") — not the dead legacy name of the same spelling this
+   comment used to warn off; that page never shipped and no rule for it
+   exists anywhere in the tree (grepped before reusing it). No
+   `position: fixed` anywhere (SPEC §5) — the recapture card is in-flow, no
+   overlay/modal (DESIGN.md §11.1 "Confirmations"). */
 
-.capture-view {
+/* Design wave P2b "layout A" (docs/design/review-2026-09-17.md C1, DESIGN.md
+   §1 "hands stay on the part" / §11.2): the face-card grid (`.face-grid`,
+   global.css §14 — nothing page-specific needed for the cards themselves)
+   sits on top; `.capture-action` (whichever of the shutter block, the
+   recapture card or the custom-face card is showing) is pushed to the
+   bottom of the content by `margin-top: auto`, which only has somewhere to
+   push *to* because this container is `min-height: 100%` of `.shell-
+   content` (a flex item that fills the remaining viewport height — see
+   Capture.res's view-section comment for why that resolves). The camera
+   note, as the next sibling after `.capture-action`, lands right under
+   whichever block is showing, at the very bottom. */
+.capture-page {
   display: flex;
   flex-direction: column;
-  gap: var(--cc-space-5);
+  gap: var(--cc-space-6);
+  min-height: 100%;
 }
 
-/* -- slot row (DESIGN.md §4 "Thumbnail slot") ------------------------- */
-/* Also carries global.css's `.chip-row` (horizontal scroller, hidden
-   scrollbar): one slot per chip, so custom faces (SPEC §8a A7) can push it
-   past the viewport. `overflow: visible` on the cross axis would clip the
-   selected slot's outline otherwise, hence the padding. */
-.slot-row {
-  gap: var(--cc-space-3);
-  padding: 4px;
-  margin: -4px;
-}
-
-.slot-selected {
-  outline: 2px solid var(--cc-accent);
-  outline-offset: 2px;
+.capture-action {
+  margin-top: auto;
 }
 
 /* -- shutter block ------------------------------------------------------ */
@@ -104,14 +107,14 @@
    whichever hidden input pair belongs to the currently-selected chip
    (`input-selected-camera`/`input-selected-library` — not the label's own
    dynamic per-face id, so one rule covers every default AND custom face).
-   `:has()` at the shared `.capture-view` root can then reach sideways from
+   `:has()` at the shared `.capture-page` root can then reach sideways from
    the focused input to the sibling label that represents it. */
-.capture-view:has(.input-selected-camera:focus-visible) .shutter {
+.capture-page:has(.input-selected-camera:focus-visible) .shutter {
   outline: 2px solid var(--cc-accent);
   outline-offset: 3px;
 }
 
-.capture-view:has(.input-selected-library:focus-visible) .shutter-block > .btn-secondary {
+.capture-page:has(.input-selected-library:focus-visible) .shutter-block > .btn-secondary {
   outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
