@@ -2111,3 +2111,29 @@ that text. Branch `agent/a10-folders`, not pushed.
 - **Verified.** `npx rescript build` clean under `+a`; reproduction 24/24 clean on the fixed
   bundle (was 1–2 failures per 8); `npm test` 244/244; `npm run build` clean; Chromium e2e
   **47/47 twice** (`E2E_PORT=4310`).
+
+## 2026-09-17 — iOS 26/27 standalone: status-bar blur band + bottom dead strip
+
+- **Reported from the phone.** The nav bar goes blurry under a gradient beneath the Dynamic
+  Island, and a strip of empty space sits under the frame at the bottom.
+- **Cause (research, not guessed).** iOS 26 added, and iOS 27 sharpened, a system-painted Liquid
+  Glass "scroll edge" blur over the top of a home-screen web app that combines
+  `apple-mobile-web-app-status-bar-style=black-translucent` with `viewport-fit=cover`. It is
+  drawn above the web view, extends ~35 pt below the status bar, and no CSS or meta switch turns
+  it off (MrClit/fin-app#411, vjt/grappa-irc#2190). The same combination is what makes iOS report
+  the *small* viewport for `dvh`/`innerHeight` on Dynamic-Island phones, leaving the dead strip at
+  the bottom — the thing ternpike's `body { min-height: 100lvh }` comment already documents
+  (nearest WebKit ticket: 301108, the Safari 26 `viewport-fit=cover` regression).
+- **Fix.** `index.html`: status bar style `default` (opaque, coloured by `theme-color` =
+  `cc-ground`, so it reads as one dark surface with the bar below). `safe-area-inset-top` becomes
+  0 in standalone — the bar's `padding-top: env(safe-area-inset-top)` stays for browsers that
+  report one. Belt and braces for the strip: `@media (display-mode: standalone)` switches `body`,
+  `#root` and `.app-frame` to `100lvh` (a browser tab keeps `100dvh`, where `lvh` would push the
+  frame's bottom under Safari's toolbar). Reverses the P1 note above that `black-translucent`
+  "stays".
+- **Trade-off.** Content no longer scrolls under the status bar in the installed app. On a solid
+  `cc-ground` background that is invisible; it also stops our glass bar double-stacking with the
+  system's.
+- **Verified here.** `npm run build` clean; Chromium e2e 47/47. **Not verifiable here:** the
+  effect only exists on a real iPhone (WebKit never runs in this sandbox) — remove and re-add the
+  home-screen app after the Pages deploy, since iOS reads the status-bar meta at install time.
