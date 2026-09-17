@@ -1,0 +1,119 @@
+{
+  "schema": "caliper-companion/features/1",
+  "slug": "norcold_freezer_hinge_pin",
+  "part_name": "Norcold freezer hinge pin",
+  "part_path": "",
+  "units": "mm",
+  "exported_at": "2026-09-17T14:12:03Z",
+  "group_name": "norcold_freezer_hinge_pin import",
+  "canvas_width_mm": 100.0,
+  "canvas_opacity": 60,
+  "parameters": [
+    {
+      "name": "chamfer",
+      "expression": "0.8 mm",
+      "unit": "mm",
+      "comment": "length ±0.05 mm · faces side · ccpart:norcold_freezer_hinge_pin",
+      "kind": "length",
+      "flagged": false
+    },
+    {
+      "name": "groove_depth",
+      "expression": "1.1 mm",
+      "unit": "mm",
+      "comment": "depth ±0.05 mm · faces end · ccpart:norcold_freezer_hinge_pin",
+      "kind": "depth",
+      "flagged": false
+    },
+    {
+      "name": "groove_w",
+      "expression": "2 mm",
+      "unit": "mm",
+      "comment": "length ±0.05 mm · faces end · ccpart:norcold_freezer_hinge_pin",
+      "kind": "length",
+      "flagged": false
+    },
+    {
+      "name": "head_dia",
+      "expression": "9 mm",
+      "unit": "mm",
+      "comment": "diameter ±0.05 mm · faces side · ccpart:norcold_freezer_hinge_pin",
+      "kind": "diameter",
+      "flagged": false
+    },
+    {
+      "name": "head_h",
+      "expression": "3.2 mm",
+      "unit": "mm",
+      "comment": "length ±0.05 mm · faces end · ccpart:norcold_freezer_hinge_pin",
+      "kind": "length",
+      "flagged": false
+    },
+    {
+      "name": "overall_l",
+      "expression": "42.18 mm",
+      "unit": "mm",
+      "comment": "length ±0.1 mm · faces top · ccpart:norcold_freezer_hinge_pin",
+      "kind": "length",
+      "flagged": false
+    },
+    {
+      "name": "overall_w",
+      "expression": "12.4 mm",
+      "unit": "mm",
+      "comment": "length ±0.1 mm · faces top · ccpart:norcold_freezer_hinge_pin",
+      "kind": "length",
+      "flagged": false
+    },
+    {
+      "name": "pin_dia",
+      "expression": "6.51 mm",
+      "unit": "mm",
+      "comment": "diameter ±0.05 mm · faces top · ccpart:norcold_freezer_hinge_pin",
+      "kind": "diameter",
+      "flagged": false
+    },
+    {
+      "name": "wall",
+      "expression": "1.8 mm",
+      "unit": "mm",
+      "comment": "length ±0.05 mm · faces side · ccpart:norcold_freezer_hinge_pin",
+      "kind": "length",
+      "flagged": false
+    }
+  ],
+  "sketches": [
+    {
+      "name": "top",
+      "kind": "top",
+      "plane": "xYConstructionPlane",
+      "canvas_file": "faces/top_dimensioned.png",
+      "canvas_name": "top_photo",
+      "png_width": 1600,
+      "png_height": 1200,
+      "face_id": "face:00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "side",
+      "kind": "side",
+      "plane": "xZConstructionPlane",
+      "canvas_file": "faces/side_dimensioned.png",
+      "canvas_name": "side_photo",
+      "png_width": 1600,
+      "png_height": 1200,
+      "face_id": "face:00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "name": "end",
+      "kind": "end",
+      "plane": "yZConstructionPlane",
+      "canvas_file": "faces/end_dimensioned.png",
+      "canvas_name": "end_photo",
+      "png_width": 1200,
+      "png_height": 1600,
+      "face_id": "face:00000000-0000-4000-8000-000000000003"
+    }
+  ],
+  "flagged": [],
+  "warnings": []
+}

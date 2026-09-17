@@ -1,0 +1,10 @@
+{
+    "autodeskProduct": "Fusion360",
+    "type": "script",
+    "author": "Caliper Companion",
+    "description": {
+        "": "Import a Caliper Companion .ccpart.zip: one user parameter per feature, one empty sketch per face with the dimensioned photo as a canvas."
+    },
+    "supportedOS": "windows|mac",
+    "editEnabled": true
+}
