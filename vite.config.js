@@ -12,8 +12,17 @@ const commitSha =
   'dev'
 const sha = commitSha.slice(0, 8)
 
+// Where the app is served from. '/' for local/dev and any root deploy; a
+// GitHub Pages project site lives under '/<repo>/' (set VITE_BASE in CI).
+// Everything that hard-codes a root path reads this: Vite's own asset URLs,
+// the service worker's app shell + precache list (stamped below), and the
+// SW registration in Index.res (via the __CC_BASE__ define).
+const rawBase = process.env.VITE_BASE || '/'
+const base = `/${rawBase.replace(/^\/+|\/+$/g, '')}/`.replace('//', '/')
+console.log(`[caliper-companion] base=${base} sha=${sha}`)
+
 export default defineConfig({
-  base: '/',
+  base,
   server: {
     port: 3000,
     strictPort: true,
@@ -28,11 +37,12 @@ export default defineConfig({
         const swPath = path.resolve('dist/sw.js')
         const assetsDir = path.resolve('dist/assets')
         const assetFiles = await fs.readdir(assetsDir).catch(() => [])
-        const precacheUrls = assetFiles.map(f => `/assets/${f}`)
+        const precacheUrls = assetFiles.map(f => `${base}assets/${f}`)
         const src = await fs.readFile(swPath, 'utf8')
         const stamped = src
           .replace("'__CACHE_VERSION__'", JSON.stringify(`caliper-companion-${sha}`))
           .replace("'__PRECACHE_URLS__'", JSON.stringify(precacheUrls))
+          .replace("'__BASE__'", JSON.stringify(base))
         await fs.writeFile(swPath, stamped)
       },
     },
@@ -45,6 +55,7 @@ export default defineConfig({
     },
   },
   define: {
+    __CC_BASE__: JSON.stringify(base),
     __BUILD_SHA__: JSON.stringify(commitSha),
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
   },

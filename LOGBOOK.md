@@ -510,3 +510,21 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
   `@rescript/react`'s own `ReactEvent` uses; called out here so they stay the only ones.
 - Icons are ternpike's placeholders. Google Fonts are not loaded (no network in v0), so the
   serif/mono stacks fall through to system fonts.
+
+## 2026-09-17 — DESIGN.md added; GitHub Pages deploy
+
+- `DESIGN.md` (Dwight's visual/interaction handoff) checked in verbatim. Not applied yet: the app
+  still runs ternpike's light theme. Applying it (dark `cc-` tokens, self-hosted fonts, amber/teal
+  overlay rules, 44 px targets) is its own track.
+- Pages deploy: `.github/workflows/pages.yml` (npm ci → `npm test` → build with
+  `VITE_BASE=/<repo>/` → upload → deploy-pages) on pushes to `main` and `claude/**`. Private repos
+  need GitHub Pro for Pages; Dwight is handling that gate.
+- The scaffold assumed a root path in five places; all now derive from one `base`: Vite `base`,
+  the SW's `APP_SHELL`/precache/shell-fallback (stamped `'__BASE__'` like the cache name), the
+  manifest `start_url`/`scope` (`./`), and the SW registration (`Env.base`, a `@val` external that
+  Vite's `define` substitutes as `__CC_BASE__`). Hash routing needed nothing.
+- Verified with `scripts/pages-smoke.mjs`: SW scope is the base, page is controlled after one
+  reload, and the app relaunches offline, at both `/` and `/caliper-companion/`. Full e2e still
+  18/18 at `/`.
+- Gotcha hit twice this session: a stale `vite preview` on :3000 makes any check run against the
+  wrong build (Playwright's `reuseExistingServer` happily reuses it). Kill by PID, not by pattern.

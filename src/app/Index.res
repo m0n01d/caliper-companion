@@ -13,7 +13,7 @@ switch ReactDOM.querySelector("#root") {
 switch WebApi.ServiceWorker.container->Nullable.toOption {
 | Some(container) =>
   container
-  ->WebApi.ServiceWorker.register("/sw.js")
+  ->WebApi.ServiceWorker.register(Env.base ++ "sw.js")
   ->Promise.then(_registration => Promise.resolve())
   ->Promise.catch(err => {
     Console.error2("Caliper Companion: service worker registration failed", err)

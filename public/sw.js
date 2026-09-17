@@ -14,12 +14,17 @@
 // to serve).
 const CACHE = '__CACHE_VERSION__';
 const PRECACHE_URLS = '__PRECACHE_URLS__';
+// Served-from path, stamped at build time too (a GitHub Pages project site
+// lives under '/<repo>/'). Unstamped (`vite dev`) the placeholder doesn't
+// start with '/', so we fall back to the root.
+const RAW_BASE = '__BASE__';
+const BASE = RAW_BASE.startsWith('/') ? RAW_BASE : '/';
 
-const APP_SHELL = ['/', '/manifest.json', '/favicon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+const APP_SHELL = [BASE, ...['manifest.json', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(f => BASE + f)];
 
-// The app shell minus '/' — incidental assets whose absence still leaves a
-// usable build. '/' plus the hashed entry JS/CSS are handled separately below.
-const INCIDENTAL = APP_SHELL.filter(u => u !== '/');
+// The app shell minus BASE — incidental assets whose absence still leaves a
+// usable build. BASE plus the hashed entry JS/CSS are handled separately below.
+const INCIDENTAL = APP_SHELL.filter(u => u !== BASE);
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -29,7 +34,7 @@ self.addEventListener('install', event => {
       // precache would strand the user on an unusable generation.
       // `addAll` is all-or-nothing: a partial precache fails install, the
       // worker never reaches `waiting`, and no toast is ever offered.
-      const critical = ['/', ...(Array.isArray(PRECACHE_URLS) ? PRECACHE_URLS : [])];
+      const critical = [BASE, ...(Array.isArray(PRECACHE_URLS) ? PRECACHE_URLS : [])];
       await c.addAll(critical);
       // Icons / manifest stay tolerant: missing ones don't break the app.
       await Promise.all(
@@ -72,7 +77,7 @@ self.addEventListener('fetch', event => {
 
   // Network-first for everything (index.html, entry JS, manifest, icons).
   // Online: always the latest build. Offline: cache fallback, with a final
-  // fallback to the cached app shell ('/') for navigation requests so the
+  // fallback to the cached app shell (BASE) for navigation requests so the
   // SPA loads even when the exact requested URL isn't cached.
   event.respondWith(
     fetch(req)
@@ -94,7 +99,7 @@ self.addEventListener('fetch', event => {
         const cached = await c.match(req, {ignoreVary: true});
         if (cached) return cached;
         if (req.mode === 'navigate') {
-          const shell = await c.match('/', {ignoreVary: true});
+          const shell = await c.match(BASE, {ignoreVary: true});
           if (shell) return shell;
         }
         return Response.error();
