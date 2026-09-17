@@ -78,3 +78,42 @@ let dimensionsOfFace: (t, ~faceId: string) => promise<array<Types.dimension>>
 
 let deleteDimension: (t, string) => promise<unit>
 
+// -- settings ---------------------------------------------------------------
+//
+// Singleton doc `_id: "settings"`, type "settings".
+
+type settings = {
+  wedge: bool,
+  lastToleranceMm: float,
+  lastToleranceIn: float,
+}
+
+let defaultSettings: settings
+
+let getSettings: t => promise<settings>
+let putSettings: (t, settings) => promise<unit>
+
+// -- dogfood timer (SPEC M6) ------------------------------------------------
+//
+// Doc `_id: "timer:" ++ partId`, type "timer".
+
+type timer = {
+  partId: string,
+  startedAt: option<string>,
+  stoppedAt: option<string>,
+}
+
+let getTimer: (t, ~partId: string) => promise<option<timer>>
+
+// Sets startedAt = now only if unset (idempotent).
+let startTimer: (t, ~partId: string) => promise<timer>
+
+// Sets stoppedAt = now only if startedAt is set and stoppedAt is unset
+// (idempotent).
+let stopTimer: (t, ~partId: string) => promise<timer>
+
+// Most recently updated first.
+let listTimers: (t, ~limit: int) => promise<array<timer>>
+
+// stopped − started, whole seconds. None unless both are set.
+let handsOnSeconds: timer => option<int>

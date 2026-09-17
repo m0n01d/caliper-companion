@@ -28,6 +28,12 @@ let setStr = (d: PouchDb.doc, key: string, v: string) => Dict.set(d, key, JSON.E
 let setBool = (d: PouchDb.doc, key: string, v: bool) => Dict.set(d, key, JSON.Encode.bool(v))
 let setFloat = (d: PouchDb.doc, key: string, v: float) => Dict.set(d, key, JSON.Encode.float(v))
 
+let setOptStr = (d: PouchDb.doc, key: string, v: option<string>) =>
+  switch v {
+  | Some(s) => setStr(d, key, s)
+  | None => Dict.set(d, key, JSON.Null)
+  }
+
 let getStr = (d: PouchDb.doc, key: string): option<string> =>
   switch Dict.get(d, key) {
   | Some(JSON.String(s)) => Some(s)
@@ -42,6 +48,12 @@ let getFloat = (d: PouchDb.doc, key: string): option<float> =>
 
 let getInt = (d: PouchDb.doc, key: string): option<int> =>
   getFloat(d, key)->Option.map(Float.toInt)
+
+let getBool = (d: PouchDb.doc, key: string): option<bool> =>
+  switch Dict.get(d, key) {
+  | Some(JSON.Boolean(b)) => Some(b)
+  | _ => None
+  }
 
 let prefixEnd = (prefix: string): string => prefix ++ "￿0"
 
@@ -570,3 +582,145 @@ let deleteDimension = async (t: t, id: string): unit =>
   | None => ()
   }
 
+// -- settings ---------------------------------------------------------------
+
+type settings = {
+  wedge: bool,
+  lastToleranceMm: float,
+  lastToleranceIn: float,
+}
+
+let defaultSettings: settings = {wedge: false, lastToleranceMm: 0.10, lastToleranceIn: 0.005}
+
+let settingsId = "settings"
+
+module SettingsDoc = {
+  let toDoc = (~rev: option<string>, s: settings): PouchDb.doc => {
+    let d = Dict.make()
+    setStr(d, "_id", settingsId)
+    switch rev {
+    | Some(r) => setStr(d, "_rev", r)
+    | None => ()
+    }
+    setStr(d, "type", "settings")
+    setStr(d, "partId", "")
+    setBool(d, "wedge", s.wedge)
+    setFloat(d, "lastToleranceMm", s.lastToleranceMm)
+    setFloat(d, "lastToleranceIn", s.lastToleranceIn)
+    setStr(d, "updatedAt", Clock.nowIso())
+    d
+  }
+
+  let fromDoc = (d: PouchDb.doc): option<settings> =>
+    switch (getBool(d, "wedge"), getFloat(d, "lastToleranceMm"), getFloat(d, "lastToleranceIn")) {
+    | (Some(wedge), Some(lastToleranceMm), Some(lastToleranceIn)) =>
+      Some({wedge, lastToleranceMm, lastToleranceIn})
+    | _ => None
+    }
+}
+
+let getSettings = async (t: t): settings =>
+  switch await getDocRaw(t, settingsId) {
+  | Some(doc) =>
+    switch SettingsDoc.fromDoc(doc) {
+    | Some(s) => s
+    | None => defaultSettings
+    }
+  | None => defaultSettings
+  }
+
+let putSettings = async (t: t, s: settings): unit => {
+  let _ = await readModifyWrite(t, settingsId, existing => (
+    SettingsDoc.toDoc(~rev=revOf(existing), s),
+    (),
+  ))
+}
+
+// -- dogfood timer (SPEC M6) ------------------------------------------------
+
+type timer = {
+  partId: string,
+  startedAt: option<string>,
+  stoppedAt: option<string>,
+}
+
+module TimerDoc = {
+  let toDoc = (~rev: option<string>, tm: timer): PouchDb.doc => {
+    let d = Dict.make()
+    setStr(d, "_id", timerId(~partId=tm.partId))
+    switch rev {
+    | Some(r) => setStr(d, "_rev", r)
+    | None => ()
+    }
+    setStr(d, "type", "timer")
+    setStr(d, "partId", tm.partId)
+    setOptStr(d, "startedAt", tm.startedAt)
+    setOptStr(d, "stoppedAt", tm.stoppedAt)
+    setStr(d, "updatedAt", Clock.nowIso())
+    d
+  }
+
+  let fromDoc = (d: PouchDb.doc): option<timer> =>
+    switch getStr(d, "partId") {
+    | Some(partId) => Some({partId, startedAt: getStr(d, "startedAt"), stoppedAt: getStr(d, "stoppedAt")})
+    | None => None
+    }
+}
+
+let getTimer = async (t: t, ~partId: string): option<timer> =>
+  switch await getDocRaw(t, timerId(~partId)) {
+  | Some(doc) => TimerDoc.fromDoc(doc)
+  | None => None
+  }
+
+let startTimer = async (t: t, ~partId: string): timer =>
+  await readModifyWrite(t, timerId(~partId), existing => {
+    let current = existing->Option.flatMap(TimerDoc.fromDoc)
+    let updated = switch current {
+    | Some(tm) if tm.startedAt->Option.isSome => tm
+    | Some(tm) => {...tm, startedAt: Some(Clock.nowIso())}
+    | None => {partId, startedAt: Some(Clock.nowIso()), stoppedAt: None}
+    }
+    (TimerDoc.toDoc(~rev=revOf(existing), updated), updated)
+  })
+
+let stopTimer = async (t: t, ~partId: string): timer =>
+  await readModifyWrite(t, timerId(~partId), existing => {
+    let current = existing->Option.flatMap(TimerDoc.fromDoc)
+    let updated = switch current {
+    | Some(tm) if tm.startedAt->Option.isSome && tm.stoppedAt->Option.isNone => {
+        ...tm,
+        stoppedAt: Some(Clock.nowIso()),
+      }
+    | Some(tm) => tm
+    | None => {partId, startedAt: None, stoppedAt: None}
+    }
+    (TimerDoc.toDoc(~rev=revOf(existing), updated), updated)
+  })
+
+let listTimers = async (t: t, ~limit: int): array<timer> => {
+  let rows = await allDocsRange(t, ~startkey="timer:", ~endkey=prefixEnd("timer:"))
+  let withUpdatedAt = rows->Array.filterMap(row =>
+    switch row.doc->Nullable.toOption {
+    | Some(doc) =>
+      switch (TimerDoc.fromDoc(doc), getStr(doc, "updatedAt")) {
+      | (Some(tm), Some(updatedAt)) => Some((updatedAt, tm))
+      | _ => None
+      }
+    | None => None
+    }
+  )
+  let sorted = withUpdatedAt->Array.toSorted(((aUpdatedAt, _), (bUpdatedAt, _)) =>
+    String.compare(bUpdatedAt, aUpdatedAt)
+  )
+  sorted->Array.slice(~start=0, ~end=limit)->Array.map(((_, tm)) => tm)
+}
+
+let handsOnSeconds = (tm: timer): option<int> =>
+  switch (tm.startedAt, tm.stoppedAt) {
+  | (Some(start), Some(stop)) =>
+    let startMs = Date.fromString(start)->Date.getTime
+    let stopMs = Date.fromString(stop)->Date.getTime
+    Some(Float.toInt((stopMs -. startMs) /. 1000.0))
+  | _ => None
+  }
