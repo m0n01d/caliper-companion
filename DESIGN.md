@@ -160,3 +160,36 @@ Motion: keep it to opacity and position, 120–160ms, `cubic-bezier(0.2, 0, 0, 1
 - Whether the Calipers screen exists in v0 at all — with the keyboard wedge it may collapse to a single toggle in Settings. Recommendation: collapse it.
 - Icon set: the mocks use hand-drawn inline SVG. Use a single consistent set (Tabler or Lucide, outline, 2px) and stop.
 - Light mode: not designed. Ship dark only; add `color-scheme: dark` to the root so form controls match.
+
+## 11. v1.1 — native feel: HIG + Liquid Glass reconciliation (2026-09-17)
+
+Owner direction after the first phone dogfood: "modern Apple, Liquid Glass, a more native feel; not
+ternpike's look." Research inputs: `docs/design/hig-brief.md` and `docs/design/liquid-glass-web.md`
+(read them before touching styles). Where this section and §1–§10 differ, this section wins. Where
+this section and `SPEC.md` acceptance criteria differ, the spec still wins.
+
+### 11.1 Decisions
+
+| Area | Decision | Why |
+|---|---|---|
+| Typeface | **System stack.** UI: `-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif`. Numbers/names: `ui-monospace, "SF Mono", Menlo, monospace`. No web fonts, nothing in the precache. | SF Pro is the single strongest native cue and costs zero bytes. Departs from §2's Space Grotesk / IBM Plex; the *scale* below is what carries the rhythm. |
+| Type scale | HIG Dynamic Type "Large" step, in px: Large Title 34/41 bold (Parts root only) · Title 3 20/25 semibold · Headline 17/22 semibold (nav titles) · Body 17/22 · Callout 16/21 · Subhead 15/20 · Footnote 13/18 · Caption 1 12/16 · Caption 2 11/13. Reading value stays 38/1.0 mono 500. | `hig-brief.md` §1. Inputs are **≥ 16 px** always: iOS Safari zooms the page on focusing anything smaller. |
+| Colour | Keep §2's dark `cc-` palette and the two-accent rule (amber = tappable, teal = verified). **Dark only** for v1.1, `color-scheme: dark` on `:root`, `theme-color` = `cc-ground`. Logged as a named HIG departure (HIG expects both appearances; bench tool = the "rare case"). | `hig-brief.md` §3, §6. Two accents with fixed meanings is HIG-consistent; sprawl is the risk, so amber is limited to: the one prominent button per screen, canvas overlays, links. |
+| Materials | **Glass in exactly one place: the navigation bar**, `position: sticky` inside the page scroll container, never `fixed`. Recipe and tokens from `liquid-glass-web.md` §3 (`--glass-*`, `-webkit-backdrop-filter` first, `@supports` fallback to opaque). Everything else opaque: lists, the annotate control panel, chips, segmented control, buttons. Over-photo pills stay flat `cc-scrim`. No glass over the canvas, ever. | Apple keeps glass out of content and input layers; blur over a repainting canvas is the documented worst case; Safari cannot report `prefers-reduced-transparency`, so surfaces must clear 4.5:1 on their own. |
+| Shape | iOS 26 vocabulary: **capsule** primary/secondary buttons (999 px radius, 50 px tall), capsule chips and segmented control, 44 px circular icon buttons, inset grouped list containers at 16 px radius with 12 px inner elements (concentric: child radius = parent − padding). Cards 16, inputs 12, photo 16. | `liquid-glass-web.md` §1, `hig-brief.md` §2. |
+| Layout | Page margin **16 px** (HIG on 390-wide), safe-area insets on all four sides, `min-height: 100dvh`. Nav bar: 44 px row + `env(safe-area-inset-top)`; back = chevron icon only, `aria-label="Back"`; title centred (Headline). Parts root shows a **static Large Title** under the bar instead of a centred title. Lists are **inset grouped** (rounded container, inset separators, chevrons on navigable rows). | `hig-brief.md` §1, §2. |
+| Icons | **Lucide** outline paths inlined as SVG (ISC), 2 px stroke, 20 px in text, 24 px in icon buttons. No SF Symbols on the web (licence). Set: chevron-left, chevron-right, camera, image, plus, trash-2, check, triangle-alert, share, settings, ruler, zoom-in, zoom-out, x, circle-check, bug. One `Icon.res` component; no icon font, no dependency. | `hig-brief.md` §4. |
+| Interaction feel | `-webkit-tap-highlight-color: transparent`; pressed = opacity 0.6 (UIKit) on plain/icon buttons, `#DB8F2A` fill on the amber button; `touch-action: manipulation` on controls; `user-select: none` on chrome; focus-visible ring 2 px amber. Motion 150–200 ms, easing `cubic-bezier(0.2, 0.8, 0.2, 1)`, opacity/transform only, all zeroed under `prefers-reduced-motion`. | `hig-brief.md` §5, `liquid-glass-web.md` §4. |
+| Sheets | The annotate control panel stays **in-flow, opaque, non-modal** (an elevated surface, not a system sheet: no grabber, no detents). Stop calling it "sheet" in copy and new code; class name `.panel`. | `hig-brief.md` §6 Q1. |
+| Confirmations | Destructive actions confirm inline (a red "Delete" capsule + "Cancel"), never a modal; errors inline, one sentence. Empty states: one line + the one capsule. | §7 above, `hig-brief.md` §2. |
+
+### 11.2 Per-screen notes
+
+- **Parts**: Large Title "Parts"; trailing 44 px "+" icon button in the bar; inset grouped list rows (52 px thumbnail, name Body, meta Footnote in `cc-text-2`, chevron `cc-text-3`); empty state = one Footnote line + amber capsule "New part". Create form: inset grouped inputs + units segmented + capsule.
+- **Part**: title = part name; faces = horizontal row of 56 px slots (captured: `cc-surface-2` + 2 px teal ring; empty: dashed); features = inset grouped table (header Caption 2 uppercase; name mono; value mono right; ± tol `cc-text-2`; faces `cc-teal` when >1); warning rows per §4; one amber capsule "Export"; timer as a Footnote line.
+- **Capture**: face kind chips (capsule, selected = amber); the 76 px amber shutter with 4 px `cc-text` ring is the `<label>` for the selected kind's capture input; "From library" secondary capsule; the one-line camera note in Footnote; recapture confirm inline.
+- **Annotate**: canvas on `cc-photo-mat`, 16 px radius, capped 300 px tall; scrim pills for hint + zoom; `.panel` below with reading (38 mono + unit Subhead), name + capsule chips, segmented control, tolerance, amber capsule "Save dimension" (becomes "Update"), red-tinted "Delete" only when editing.
+- **Settings / Debug**: inset grouped rows with a system-style toggle (52×32 capsule, amber when on); Debug's CSV action is a secondary capsule.
+
+### 11.3 What stays from §1–§10
+Principles (§1), the `cc-` tokens (§2 colours, spacing, radii — §11.1 overrides typeface and button shape), layout rules (§3), canvas overlay rules (§5, as amended by SPEC §8a A3), states (§6), content rules (§7), edge cases (§8), accessibility (§9). §10's open items are now decided: Calipers screen collapsed into Settings; Lucide; dark only.
