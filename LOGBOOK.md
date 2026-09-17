@@ -516,9 +516,11 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
 - `DESIGN.md` (Dwight's visual/interaction handoff) checked in verbatim. Not applied yet: the app
   still runs ternpike's light theme. Applying it (dark `cc-` tokens, self-hosted fonts, amber/teal
   overlay rules, 44 px targets) is its own track.
-- Pages deploy: `.github/workflows/pages.yml` (npm ci → `npm test` → build with
-  `VITE_BASE=/<repo>/` → upload → deploy-pages) on pushes to `main` and `claude/**`. Private repos
-  need GitHub Pro for Pages; Dwight is handling that gate.
+- Pages deploy: `docs/pages-workflow.yml` (npm ci → `npm test` → build with `VITE_BASE=/<repo>/` →
+  upload → deploy-pages) on pushes to `main` and `claude/**`. **Both the session's git token and
+  the GitHub API tool refused to write `.github/workflows/` (no `workflow` OAuth scope)**, so the
+  file is parked in `docs/` with a one-command move in the README. Private repos need GitHub Pro
+  for Pages; Dwight is handling that gate.
 - The scaffold assumed a root path in five places; all now derive from one `base`: Vite `base`,
   the SW's `APP_SHELL`/precache/shell-fallback (stamped `'__BASE__'` like the cache name), the
   manifest `start_url`/`scope` (`./`), and the SW registration (`Env.base`, a `@val` external that
