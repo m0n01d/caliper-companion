@@ -1,7 +1,7 @@
 // RenderTest — the pure geometry in Render.res (SPEC §5 canvas cap, M5
-// bullet 1). Only the DOM-free half: no canvas exists in vitest's `node`
-// environment (vitest.config.js), so the actual drawing is exercised by
-// e2e/specs/export.spec.js instead.
+// bullet 1; SPEC §8a A3's halo/amber legibility scheme). Only the DOM-free
+// half: no canvas exists in vitest's `node` environment (vitest.config.js),
+// so the actual drawing is exercised by e2e/specs/export.spec.js instead.
 
 open Vitest
 
@@ -36,15 +36,37 @@ describe("Render.targetSize", () => {
   })
 })
 
-describe("Render.strokeWidthPx / fontSizePx", () => {
-  test("scale with height, ≈0.3% / ≥2% respectively", () => {
-    expect(Render.strokeWidthPx(~renderHeight=2000))->toBeCloseTo(6.0, 5)
-    expect(Render.fontSizePx(~renderHeight=1200))->toBeCloseTo(24.0, 5)
+describe("Render.strokeWidthPx / fontSizePx / pillHeightPx (SPEC §8a A3 bullet 2)", () => {
+  test("stroke is 0.15% of the long edge, whichever axis that is", () => {
+    expect(Render.strokeWidthPx(~renderWidth=1000, ~renderHeight=2000))->toBeCloseTo(3.0, 5)
+    expect(Render.strokeWidthPx(~renderWidth=2000, ~renderHeight=1000))->toBeCloseTo(3.0, 5)
   })
 
-  test("both floor out on a tiny render instead of vanishing", () => {
-    expect(Render.strokeWidthPx(~renderHeight=10))->toBe(2.0)
+  test("font is 1.4% of image height, pill height 2% of image height", () => {
+    expect(Render.fontSizePx(~renderHeight=1200))->toBeCloseTo(16.8, 5)
+    expect(Render.pillHeightPx(~renderHeight=1200))->toBeCloseTo(24.0, 5)
+  })
+
+  test("stroke floors at 2px min; font floors out on a tiny render instead of vanishing", () => {
+    expect(Render.strokeWidthPx(~renderWidth=10, ~renderHeight=10))->toBe(2.0)
     expect(Render.fontSizePx(~renderHeight=10))->toBe(10.0)
+  })
+})
+
+describe("Render.haloWidthPx / arrowheadSizePx / handleRadiusPx (SPEC §8a A3 bullets 1–2)", () => {
+  test("halo is 2.5x the stroke width", () => {
+    expect(Render.haloWidthPx(~strokeWidthPx=2.0))->toBeCloseTo(5.0, 5)
+    expect(Render.haloWidthPx(~strokeWidthPx=4.0))->toBeCloseTo(10.0, 5)
+  })
+
+  test("arrowhead is 10px at a 2px stroke, scaling with it (5x the stroke width)", () => {
+    expect(Render.arrowheadSizePx(~strokeWidthPx=2.0))->toBeCloseTo(10.0, 5)
+    expect(Render.arrowheadSizePx(~strokeWidthPx=4.0))->toBeCloseTo(20.0, 5)
+  })
+
+  test("handle radius scales with the arrowhead (half its size)", () => {
+    expect(Render.handleRadiusPx(~strokeWidthPx=2.0))->toBeCloseTo(5.0, 5)
+    expect(Render.handleRadiusPx(~strokeWidthPx=4.0))->toBeCloseTo(10.0, 5)
   })
 })
 
@@ -109,21 +131,45 @@ describe("Render.absLineOf", () => {
   })
 })
 
+describe("Render.dirOf", () => {
+  test("unit vector from a to b", () => {
+    let d = Render.dirOf({x: 0.0, y: 0.0}, {x: 3.0, y: 4.0})
+    expect(d.x)->toBeCloseTo(0.6, 5)
+    expect(d.y)->toBeCloseTo(0.8, 5)
+  })
+
+  test("a zero-length pair falls back to a fixed direction instead of NaN", () => {
+    expect(Render.dirOf({x: 1.0, y: 1.0}, {x: 1.0, y: 1.0}))->toEqual({x: 1.0, y: 0.0})
+  })
+})
+
+describe("Render.arrowheadTriangle (SPEC §8a A3 bullet 2)", () => {
+  test("tip at the given point, base of width `size` centred behind it along -dir", () => {
+    let t = Render.arrowheadTriangle(~tip={x: 100.0, y: 100.0}, ~dir={x: 1.0, y: 0.0}, ~size=10.0)
+    expect(t.tip)->toEqual({x: 100.0, y: 100.0})
+    expect(t.baseA.x)->toBeCloseTo(90.0, 5)
+    expect(t.baseB.x)->toBeCloseTo(90.0, 5)
+    expect(t.baseA.y)->toBeCloseTo(105.0, 5)
+    expect(t.baseB.y)->toBeCloseTo(95.0, 5)
+  })
+})
+
 describe("Render.pillFor", () => {
   test("centred on the midpoint, offset off the line along the perpendicular", () => {
     let pill = Render.pillFor(
       ~mid={x: 100.0, y: 100.0},
       ~perp={x: 0.0, y: -1.0},
       ~textWidth=40.0,
+      ~pillHeightPx=24.0,
       ~fontSizePx=20.0,
     )
     // Horizontally centred on the midpoint.
     expect(pill.x +. pill.w /. 2.0)->toBeCloseTo(100.0, 5)
     // Offset upward (away from the line) — entirely above the midpoint.
     expect(pill.y +. pill.h < 100.0)->toBeTruthy
-    // Sized to the text plus padding on both axes.
+    // Sized to the text plus padding, and exactly the given pill height.
     expect(pill.w > 40.0)->toBeTruthy
-    expect(pill.h > 20.0)->toBeTruthy
+    expect(pill.h)->toBeCloseTo(24.0, 6)
     // A stadium shape: corner radius is half the height.
     expect(pill.radius)->toBeCloseTo(pill.h /. 2.0, 6)
   })
@@ -160,5 +206,27 @@ describe("Render.labelText", () => {
       createdAt: "2026-09-17T14:02:01Z",
     }
     expect(Render.labelText(dim, Inch))->toBe("pin_dia = 0.256 in")
+  })
+})
+
+describe("Render.contrastRatio (SPEC §8a A3 bullet 3: pill/text contrast >= 4.5:1)", () => {
+  test("identical colours have a contrast ratio of exactly 1", () => {
+    expect(Render.contrastRatio("#ffffff", "#ffffff"))->toBeCloseTo(1.0, 6)
+    expect(Render.contrastRatio("#000000", "#000000"))->toBeCloseTo(1.0, 6)
+  })
+
+  test("black on white is the WCAG maximum, 21:1", () => {
+    expect(Render.contrastRatio("#000000", "#ffffff"))->toBeCloseTo(21.0, 3)
+  })
+
+  test("order doesn't matter — the lighter colour is always the numerator", () => {
+    let ab = Render.contrastRatio("#000000", "#ffffff")
+    let ba = Render.contrastRatio("#ffffff", "#000000")
+    expect(ab)->toBeCloseTo(ba, 6)
+  })
+
+  test("the pill fill/text colours clear WCAG AA (>= 4.5:1)", () => {
+    let ratio = Render.contrastRatio(Render.pillFillColor, Render.pillTextColor)
+    expect(ratio >= 4.5)->toBeTruthy
   })
 })

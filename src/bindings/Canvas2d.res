@@ -47,12 +47,21 @@ type ctx
 @send external drawImage: (ctx, imageBitmap, float, float, float, float) => unit = "drawImage"
 @send external fillRect: (ctx, float, float, float, float) => unit = "fillRect"
 @send external beginPath: ctx => unit = "beginPath"
+@send external closePath: ctx => unit = "closePath"
 @send external moveTo: (ctx, float, float) => unit = "moveTo"
 @send external lineTo: (ctx, float, float) => unit = "lineTo"
+// `(x, y, radius, startAngle, endAngle)` — this app only ever draws full
+// circles (`0` to `2π`, SPEC §8a A3's endpoint handles), so the DOM's
+// trailing optional `anticlockwise` argument is never needed.
+@send
+external arc: (ctx, float, float, float, float, float) => unit = "arc"
 @send external roundRect: (ctx, float, float, float, float, float) => unit = "roundRect"
 @send external stroke: ctx => unit = "stroke"
 @send external fill: ctx => unit = "fill"
 @send external fillText: (ctx, string, float, float) => unit = "fillText"
+// SPEC §8a A3: dashed extension ticks. `[]` (the default the drawing code
+// always resets to after a dashed stroke) draws a solid line again.
+@send external setLineDash: (ctx, array<float>) => unit = "setLineDash"
 
 type textMetrics
 @send external measureText: (ctx, string) => textMetrics = "measureText"
