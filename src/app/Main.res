@@ -142,6 +142,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
 
   <div className="app-frame">
     <Shell title back> {body} </Shell>
+    <A2hsHint />
   </div>
 }
 
