@@ -1,53 +1,84 @@
-/* global.css — reset, app frame, and base component styles. Tokens live in
-   theme.css; both are plain <link rel="stylesheet"> tags in index.html
-   (Vite serves them — no CSS-in-JS, no %%raw import from ReScript).
+/* global.css — reset, app frame, the glass navigation bar, and the shared
+   component classes. Tokens live in theme.css; both are plain
+   <link rel="stylesheet"> tags in index.html (no CSS-in-JS).
 
-   Phone portrait only, 360–430px (SPEC §4 non-goals: no desktop layout).
-   Layout rules per SPEC §5: 100dvh, env(safe-area-inset-*), no
-   `position: fixed` toolbars (the keyboard resizes the viewport and breaks
-   them) — `.app-frame` is a 100dvh flex column instead, so the shell content
-   scrolls internally and the A2HS hint (when shown) docks to the bottom
-   without needing `fixed`. */
+   Contract: DESIGN.md §11 (overrides §1–§10 where they differ), §4 components,
+   §6 states, §9 accessibility; docs/design/liquid-glass-web.md §3 for the one
+   glass surface; docs/design/hig-brief.md §1/§2 for the numbers.
 
+   Phone portrait only, 360–430 px wide. Layout per SPEC §5: 100dvh,
+   env(safe-area-inset-*), no `position: fixed` anywhere. `.app-frame` is a
+   100dvh flex column; `.shell` is the ONE scroll container, so the nav bar
+   can be `position: sticky` inside it (never fixed — Safari 26 reads
+   fixed/sticky edge elements to tint its own chrome, see the glass brief §2)
+   and the A2HS hint docks under it without `fixed`.
+
+   Sections: 1 reset · 2 frame + shell + glass bar · 3 type utilities ·
+   4 buttons · 5 inset grouped lists · 6 fields · 7 chips · 8 segmented ·
+   9 toggle · 10 warning rows · 11 pills + slots + panel · 12 utilities +
+   reduced motion · 13 compatibility (page classes wave 2 renames). */
+
+/* ── 1. Reset ─────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  -webkit-tap-highlight-color: transparent;
 }
 
 html {
   height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  background: var(--cc-ground);
+  color: var(--cc-text);
+  font: var(--cc-text-body);
 }
 
 body {
   min-height: 100dvh;
-  background: var(--color-parchment);
-  color: var(--color-ink);
-  font-family: var(--font-body);
+  /* Judgment call: keep `none` on the document. Nothing scrolls at the
+     document level (the frame is exactly 100dvh and .shell scrolls), iOS
+     standalone PWAs have no pull-to-refresh anyway, and on Chrome/Android an
+     accidental refresh mid-annotation costs more than the gesture is worth. */
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
+input,
 select,
-textarea,
-input {
-  font-family: inherit;
-  font-size: 16px;
+textarea {
+  font: inherit;
   color: inherit;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-width: 100%;
 }
 
 h1,
 h2,
 h3 {
-  font-family: var(--font-display);
-  font-weight: 700;
+  font: var(--cc-text-headline);
 }
 
-/* ── App frame ───────────────────────────────────────────────────────── */
+a {
+  color: var(--cc-amber);
+  text-decoration: none;
+}
+
+/* ── 2. App frame, shell, glass navigation bar ───────────────────────── */
 #root {
   min-height: 100dvh;
 }
@@ -55,216 +86,1387 @@ h3 {
 .app-frame {
   display: flex;
   flex-direction: column;
+  height: 100dvh;
   min-height: 100dvh;
 }
 
+/* The scroll container. The sticky bar lives inside it, so blur samples the
+   content scrolling underneath rather than the document. */
 .shell {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0; /* let .shell-content scroll instead of the whole page */
-  padding-top: env(safe-area-inset-top);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .shell-topbar {
-  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: minmax(var(--cc-tap-min), auto) minmax(0, 1fr) minmax(var(--cc-tap-min), auto);
+  grid-template-rows: minmax(var(--cc-tap-min), auto);
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-tan);
-  background: var(--color-cream);
-  box-shadow: var(--shadow-card);
+  padding-top: env(safe-area-inset-top);
+  padding-right: calc(var(--cc-space-2) + env(safe-area-inset-right));
+  padding-left: calc(var(--cc-space-2) + env(safe-area-inset-left));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The glass sits on an absolutely-positioned pseudo-child, not on the sticky
+   element itself (liquid-glass-web.md §2: fixed/sticky + backdrop-filter has a
+   scroll-lag compositing bug on iOS). Same recipe as `.glass`, bar-shaped:
+   square corners, hairline on the bottom edge only. */
+.shell-topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
 }
 
 .shell-topbar-leading,
 .shell-topbar-actions {
-  flex: 0 0 auto;
-  min-width: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-1);
+  min-width: var(--cc-tap-min);
+  min-height: var(--cc-tap-min);
 }
 
-.shell-back {
-  background: transparent;
-  border: none;
-  font-size: 28px;
-  line-height: 1;
-  color: var(--color-rust);
-  padding: 4px 8px;
+.shell-topbar-actions {
+  justify-content: flex-end;
+}
+
+.shell-topbar-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 var(--cc-space-1);
 }
 
 .shell-title {
-  flex: 1 1 auto;
+  max-width: 100%;
+  font: var(--cc-text-headline);
   text-align: center;
-  font-size: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-subtitle {
+  max-width: 100%;
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Static Large Title (root screen only, DESIGN.md §11.1 "Layout"): in the
+   content flow under the bar, at the page margin. Does not collapse on
+   scroll — the bar keeps only its leading/trailing controls. */
+.shell-large-title {
+  flex: 0 0 auto;
+  padding: var(--cc-space-1) calc(var(--cc-page-x) + env(safe-area-inset-right)) var(--cc-space-2)
+    calc(var(--cc-page-x) + env(safe-area-inset-left));
+}
+
+.shell-title.shell-title-large {
+  font: var(--cc-text-large-title);
+  letter-spacing: -0.01em;
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
+}
+
+.shell-large-title .shell-subtitle {
+  text-align: left;
+  white-space: normal;
 }
 
 .shell-content {
   flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px;
+  padding: var(--cc-page-x) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-5) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
 }
 
-/* ── Buttons ─────────────────────────────────────────────────────────── */
-button {
-  border-radius: var(--radius-card);
-  border: 1px solid var(--color-tan);
-  background: var(--color-rust-light);
-  color: var(--color-parchment);
-  padding: 12px 20px;
-  font-weight: 600;
+/* The glass recipe, verbatim from liquid-glass-web.md §3. Used by the nav bar
+   only (DESIGN.md §11.1 "Materials"); never on content, inputs, or anything
+   over the canvas. `-webkit-backdrop-filter` stays first. */
+.glass,
+.shell-topbar::before {
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 1px 3px rgba(0, 0, 0, 0.3);
+  border-radius: var(--glass-radius-sm);
+}
+
+.shell-topbar::before {
+  border-radius: 0;
+  border-width: 0 0 1px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .shell-topbar::before {
+    background: var(--cc-surface); /* fall back to a plain opaque cc-surface card */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Safari can't tell us prefers-reduced-transparency (see the brief §2) — so
+   glass surfaces must already clear DESIGN.md's 4.5:1 contrast rule on their
+   own, not rely on a fallback to become legible. This rule exists for other
+   browsers that DO report the preference, and as a statement of intent. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .shell-topbar::before {
+    background: var(--cc-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ── 3. Type utilities ───────────────────────────────────────────────── */
+.t-large-title { font: var(--cc-text-large-title); }
+.t-title-3 { font: var(--cc-text-title-3); }
+.t-headline { font: var(--cc-text-headline); }
+.t-body { font: var(--cc-text-body); }
+.t-callout { font: var(--cc-text-callout); }
+.t-subhead { font: var(--cc-text-subhead); }
+.t-footnote { font: var(--cc-text-footnote); }
+.t-caption-1 { font: var(--cc-text-caption-1); }
+.t-caption-2 { font: var(--cc-text-caption-2); }
+.t-reading { font: var(--cc-text-reading); font-variant-numeric: tabular-nums; }
+
+.mono {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--cc-text-2);
+}
+
+.text-teal {
+  color: var(--cc-teal);
+}
+
+.text-error {
+  color: var(--cc-error);
+}
+
+/* ── 4. Buttons ──────────────────────────────────────────────────────── */
+/* Bare <button> elements (the pages still render them until wave 2) get the
+   secondary capsule; the `.btn-*` classes refine it. `.btn` also dresses a
+   <label> or <a> as a button (the capture file-input labels). */
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-space-2);
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-2) var(--cc-space-5);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-surface);
+  color: var(--cc-text);
+  font: 600 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
   transition:
-    background-color 120ms ease,
-    transform 120ms ease;
+    background-color var(--cc-motion-press) linear,
+    opacity var(--cc-motion-press) linear,
+    transform var(--cc-motion) var(--cc-ease);
 }
 
-button:disabled {
-  background: var(--color-tan);
-  color: var(--color-muted);
+/* Pressed = opacity 0.6 (UIKit plain buttons); no scale, nothing bounces. */
+button:active,
+.btn:active {
+  opacity: 0.6;
 }
 
-button:focus-visible {
-  outline: 2px solid var(--color-rust);
+button:focus-visible,
+.btn:focus-visible,
+.btn:focus-within:has(input:focus-visible) {
+  outline: 2px solid var(--cc-amber);
   outline-offset: 2px;
 }
 
-.shell-back:focus-visible {
-  outline-offset: 0;
-  border-radius: 6px;
+/* Disabled: 40% opacity. `aria-disabled` keeps the element focusable so the
+   reason can be read (§6); a native `disabled` gets the same look. */
+button:disabled,
+.btn:disabled,
+button[aria-disabled="true"],
+.btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
 }
 
-/* ── Inputs (SPEC §5: inputmode="decimal", never type="number") ────────── */
-input[type='text'],
-input[type='password'],
-textarea {
+button:disabled:active,
+.btn:disabled:active,
+button[aria-disabled="true"]:active,
+.btn[aria-disabled="true"]:active {
+  opacity: 0.4;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  min-height: var(--cc-btn-height);
+  padding-left: var(--cc-space-6);
+  padding-right: var(--cc-space-6);
+}
+
+.btn-primary {
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.btn-primary:active {
+  background: var(--cc-amber-pressed);
+  border-color: var(--cc-amber-pressed);
+  opacity: 1;
+}
+
+.btn-primary:disabled:active,
+.btn-primary[aria-disabled="true"]:active {
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  opacity: 0.4;
+}
+
+.btn-secondary {
+  background: var(--cc-surface);
+  border-color: var(--cc-border);
+  color: var(--cc-text);
+}
+
+.btn-danger {
+  background: var(--cc-error);
+  border-color: var(--cc-error);
+  color: var(--cc-error-ink);
+}
+
+.btn-small {
+  min-height: 40px;
+  padding: var(--cc-space-1) var(--cc-space-4);
+  background: var(--cc-field);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+.btn-icon {
+  width: var(--cc-tap-min);
+  height: var(--cc-tap-min);
+  min-height: var(--cc-tap-min);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--cc-surface);
+}
+
+.btn-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.btn-block {
+  display: flex;
   width: 100%;
-  padding: 14px;
-  background: var(--color-cream-deep);
-  border: 1px solid var(--color-tan);
-  color: var(--color-ink);
-  border-radius: 8px;
+}
+
+/* Bar buttons: the nav bar is glass, so its icon buttons are borderless and
+   transparent — glass on glass is the one thing the brief forbids. */
+.shell-topbar .btn-icon {
+  background: transparent;
+  border-color: transparent;
+  color: var(--cc-amber);
+}
+
+.btn-row {
+  display: flex;
+  gap: var(--cc-space-2);
+}
+
+.btn-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ── 5. Inset grouped lists (DESIGN.md §11.1 "Shape", hig-brief §2) ─── */
+.list-group-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+.list-group-header {
+  padding: 0 var(--cc-page-x);
+  font: 600 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+  color: var(--cc-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.list-group-footer {
+  padding: 0 var(--cc-page-x);
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+.list-group {
+  display: flex;
+  flex-direction: column;
+  background: var(--cc-surface);
+  border-radius: var(--cc-radius-card);
+  overflow: hidden;
+}
+
+.list-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-3);
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-3) var(--cc-space-4);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cc-text);
+  font: var(--cc-text-body);
+  text-align: left;
+  text-decoration: none;
+  white-space: normal;
+}
+
+/* Inset separator: starts 16 px in like a UITableView separator, while the
+   row stays tappable edge to edge (a border-top would need a margin). */
+.list-row:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--cc-space-4);
+  right: 0;
+  height: 1px;
+  background: var(--cc-border);
+}
+
+button.list-row {
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button.list-row:active {
+  background: var(--cc-surface-2);
+  opacity: 1;
+}
+
+button.list-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.list-row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.list-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-meta {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+.list-row-meta-live {
+  color: var(--cc-amber);
+}
+
+.list-row-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--cc-text-3);
+}
+
+.list-row-trailing {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--cc-space-2);
+  color: var(--cc-text-2);
+}
+
+.list-thumb {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--cc-radius-sm);
+  background: var(--cc-surface-2);
+  object-fit: cover;
+  overflow: hidden;
+}
+
+/* ── 6. Fields (DESIGN.md §4 text input, §6 states, §11: text ≥ 16 px) ─ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label {
+  font: var(--cc-text-caption-1);
+  color: var(--cc-text-2);
+}
+
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="email"],
+input[type="url"],
+input[type="tel"],
+select,
+textarea,
+.field-input {
+  display: block;
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-2) 14px;
+  background: var(--cc-field);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  color: var(--cc-text);
+  font: var(--cc-text-body);
   -webkit-appearance: none;
   appearance: none;
 }
 
-/* Caliper readings and other inputmode-driven numeric entry get a large
-   monospace face — the digits need to read at a glance, part-in-hand. */
-input[inputmode='decimal'],
-input[inputmode='numeric'] {
-  font-family: var(--font-mono);
-  font-size: 20px;
+textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+select {
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b9b5ab' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px 20px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--cc-text-3);
 }
 
 input:focus,
-textarea:focus {
-  outline: 2px solid var(--color-rust);
-  border-color: transparent;
+select:focus,
+textarea:focus,
+.field-input:focus {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 0;
 }
 
-/* ── Lists ───────────────────────────────────────────────────────────── */
-ul.list {
-  list-style: none;
+/* Numeric entry (inputmode="decimal", SPEC §5) and feature names are mono. */
+input[inputmode="decimal"],
+input[inputmode="numeric"],
+.field-mono input,
+.field-mono textarea,
+.field-mono .field-input,
+input.mono {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-ul.list li {
-  padding: 14px 12px;
-  border-bottom: 1px solid var(--color-tan);
+input[inputmode="decimal"] {
+  font-size: 20px;
 }
 
-/* ── Warnings (SPEC §6.1: flagged features / kind conflicts) ──────────── */
+input[aria-invalid="true"],
+.field-invalid input,
+.field-invalid select,
+.field-invalid textarea,
+.field-invalid .field-input {
+  border-color: var(--cc-error);
+}
+
+.field-error {
+  font: var(--cc-text-footnote);
+  color: var(--cc-error);
+}
+
+.help-text {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.4;
+}
+
+/* ── 7. Chips ────────────────────────────────────────────────────────── */
+.chip-row {
+  display: flex;
+  gap: var(--cc-space-2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-row-wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-surface);
+  color: var(--cc-text);
+  font: 500 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-mono);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chip-lg {
+  min-height: var(--cc-tap-min);
+  padding: 0 var(--cc-space-4);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+.chip:active {
+  opacity: 0.6;
+}
+
+.chip-selected,
+.chip[aria-pressed="true"] {
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+/* ── 8. Segmented control (capsule, concentric selection) ────────────── */
+.segmented {
+  display: flex;
+  min-height: var(--cc-tap-min);
+  padding: 2px;
+  background: var(--cc-field);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-capsule);
+}
+
+.segmented-option {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: calc(var(--cc-tap-min) - 6px);
+  padding: 0 var(--cc-space-2);
+  border: 0;
+  border-radius: var(--cc-radius-capsule);
+  background: transparent;
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.segmented-option[aria-pressed="true"] {
+  background: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.segmented-option:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ── 9. Toggle (system-style switch on a real checkbox) ──────────────── */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  position: relative;
+  min-height: var(--cc-tap-min);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.toggle-track {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 32px;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-surface-2);
+  transition: background-color var(--cc-motion) var(--cc-ease);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cc-text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform var(--cc-motion) var(--cc-ease);
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--cc-amber);
+}
+
+.toggle input:checked + .toggle-track .toggle-knob {
+  transform: translateX(20px);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 2px;
+}
+
+.toggle input:disabled + .toggle-track {
+  opacity: 0.4;
+}
+
+/* ── 10. Warning rows (DESIGN.md §4) ─────────────────────────────────── */
 .warning-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-rust-tint);
-  border: 1px solid var(--color-rust);
-  color: var(--color-danger);
-  border-radius: var(--radius-card);
+  align-items: flex-start;
+  gap: var(--cc-space-3);
+  width: 100%;
   padding: 10px 14px;
-  font-size: 14px;
+  border: 1px solid var(--cc-teal-border);
+  border-radius: var(--cc-radius);
+  background: var(--cc-teal-wash);
+  color: var(--cc-teal-ink);
+  font: var(--cc-text-footnote);
+  text-align: left;
+  white-space: normal;
 }
 
-/* ── Bottom sheet (SPEC §5: visualViewport for the reading-input sheet) ─
-   `--vv-height` is kept live by Index.res from a `visualViewport` `resize`
-   listener; `100dvh` is the fallback for the (rare) browser without the
-   API. Absolutely positioned within a `relative` page container the
-   Annotate screen provides — never `position: fixed` on `.shell` itself. */
-.sheet {
+.warning-row-icon {
+  display: flex;
+  flex: 0 0 auto;
+  margin-top: -1px;
+  color: var(--cc-teal);
+}
+
+.warning-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.warning-row-error {
+  border-color: var(--cc-error);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+}
+
+.warning-row-error .warning-row-icon {
+  color: var(--cc-error);
+}
+
+button.warning-row {
+  min-height: var(--cc-tap-min);
+  cursor: pointer;
+}
+
+/* ── 11. Scrim pill, thumbnail slot, panel ───────────────────────────── */
+/* Flat, no blur: pills sit over the live canvas (brief §3, §5 #3). */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-scrim);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
+  white-space: nowrap;
+}
+
+.pill-mono {
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-teal);
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--cc-radius-sm);
+  overflow: hidden;
+  color: var(--cc-text-3);
+}
+
+.slot-captured {
+  background: var(--cc-surface-2);
+  border: 2px solid var(--cc-teal);
+}
+
+.slot-empty {
+  border: 2px dashed var(--cc-border);
+}
+
+.slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--cc-radius-sm) - 2px);
+}
+
+/* The annotate control area: opaque, in-flow, non-modal (§11.1 "Sheets").
+   Never glass — it sits under a live-repainting canvas. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
+  background: var(--cc-surface);
+  border-radius: var(--cc-radius-card) var(--cc-radius-card) 0 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+}
+
+.stack-lg {
+  gap: var(--cc-space-5);
+}
+
+/* ── 12. Utilities, reduced motion ───────────────────────────────────── */
+.visually-hidden {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: calc(var(--vv-height, 100dvh) * 0.6);
-  overflow-y: auto;
-  background: var(--color-cream);
-  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
-  box-shadow: var(--shadow-lift);
-  padding: 16px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* ── Page stub chrome (SPEC M6 acceptance) ──────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── 13. Compatibility — page classes wave 2 renames ─────────────────── */
+/* Everything below keeps the pages coherent between waves. Wave 2 deletes
+   this section as it restyles each page onto the classes above.
+
+   13a. Legacy token aliases. The page stylesheets (src/app/pages/*.css) still
+   say `var(--color-cream)` etc. An undefined custom property makes the whole
+   declaration invalid at computed-value time — it does NOT fall through to an
+   earlier rule — so a plain global rule can't rescue them. Mapping the old
+   names onto `cc-` tokens does. Semantics are inverted where ternpike's light
+   theme needs it (ink was dark text; it is now the light text colour). */
+:root {
+  --color-ink: var(--cc-text);
+  --color-forest: var(--cc-amber);
+  --color-forest-mid: var(--cc-text-2);
+  --color-forest-light: var(--cc-text-3);
+  --color-moss: var(--cc-text-3);
+  --color-rust: var(--cc-error);
+  --color-rust-light: var(--cc-amber);
+  --color-tan: var(--cc-border);
+  --color-cream: var(--cc-surface);
+  --color-cream-deep: var(--cc-field);
+  --color-parchment: var(--cc-ground);
+  --color-muted: var(--cc-text-2);
+  --color-rust-tint: var(--cc-error-wash);
+  --color-danger: var(--cc-error);
+  --font-display: var(--cc-font-ui);
+  --font-body: var(--cc-font-ui);
+  --font-mono: var(--cc-font-mono);
+  --radius-card: var(--cc-radius-card);
+  --radius-panel: var(--cc-radius-card);
+  --radius-sheet: var(--cc-radius-card);
+  --shadow-card: none;
+  --shadow-panel: none;
+  --shadow-lift: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 13b. Page scaffolding. */
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--cc-space-4);
 }
 
 .page-name {
-  font-family: var(--font-mono);
-  color: var(--color-muted);
+  font: 500 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-mono);
+  color: var(--cc-text-3);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-size: 13px;
 }
 
-.route-params {
-  font-family: var(--font-mono);
-  color: var(--color-forest-mid);
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
 }
 
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
-  padding: 24px 0;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-6) 0;
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
 }
 
+/* 13c. Legacy in-flow "sheet" = the panel. Capture's recapture dialog and
+   Annotate's control area both use it; Annotate.css pins it in flow. */
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
+  padding-bottom: calc(var(--cc-space-4) + env(safe-area-inset-bottom));
+  background: var(--cc-surface);
+  border-radius: var(--cc-radius-card) var(--cc-radius-card) 0 0;
+}
+
+/* 13d. Parts list. */
+ul.list {
+  list-style: none;
+  background: var(--cc-surface);
+  border-radius: var(--cc-radius-card);
+  overflow: hidden;
+}
+
+ul.list li {
+  position: relative;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-3) var(--cc-space-4);
+}
+
+ul.list li + li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--cc-space-4);
+  right: 0;
+  height: 1px;
+  background: var(--cc-border);
+}
+
+.part-row-name {
+  font: var(--cc-text-body);
+}
+
+.part-row-updated {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+.units-badge {
+  font: 500 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-mono);
+  color: var(--cc-text-2);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-capsule);
+  padding: 1px 8px;
+}
+
+.part-row-actions button {
+  min-height: 40px;
+  background: var(--cc-field);
+}
+
+.create-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+  padding: var(--cc-space-4);
+  background: var(--cc-surface);
+  border-radius: var(--cc-radius-card);
+}
+
+.create-form-actions button:first-child {
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.create-form-actions button:first-child:active {
+  background: var(--cc-amber-pressed);
+  opacity: 1;
+}
+
+.parts-list-page > button[data-testid="new-part"] {
+  align-self: flex-start;
+  min-height: var(--cc-btn-height);
+  padding: 0 var(--cc-space-6);
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.parts-list-page > button[data-testid="new-part"]:active {
+  background: var(--cc-amber-pressed);
+  opacity: 1;
+}
+
+/* 13e. Part page. */
+.face-tile-label {
+  font: var(--cc-text-caption-1);
+  color: var(--cc-text-2);
+}
+
+.face-tile-size {
+  font: var(--cc-text-caption-2);
+  color: var(--cc-text-2);
+}
+
+.face-thumb {
+  background: var(--cc-surface-2);
+  border: 2px solid var(--cc-teal);
+  border-radius: var(--cc-radius-card);
+}
+
+.face-thumb-placeholder {
+  border: 2px dashed var(--cc-border);
+}
+
+.faces-row .capture-tile {
+  border: 2px dashed var(--cc-amber);
+  color: var(--cc-amber);
+  font: 600 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+}
+
+.features-table {
+  font: var(--cc-text-subhead);
+}
+
+.features-table th {
+  font: 600 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
+  color: var(--cc-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.features-table td {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.flag-marker {
+  color: var(--cc-error);
+}
+
+.export-section .export-result {
+  font: var(--cc-text-footnote);
+  color: var(--cc-teal);
+}
+
+.timer {
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-text-2);
+}
+
+.part-page > button[data-testid="export"],
+.export-section > button[data-testid="export"] {
+  min-height: var(--cc-btn-height);
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.export-section > button[data-testid="export"]:active {
+  background: var(--cc-amber-pressed);
+  opacity: 1;
+}
+
+/* 13f. Debug. */
+.timers-table {
+  font: var(--cc-text-footnote);
+}
+
+.timers-table th {
+  font: 600 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
+  color: var(--cc-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.timers-table td {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 13g. Settings: the toggle row is an inset grouped row whose bare checkbox
+   is drawn as the system-style switch (`appearance: none` keeps the real
+   input as the tappable element). */
 .toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  background: var(--color-cream);
-  border: 1px solid var(--color-tan);
-  border-radius: var(--radius-card);
+  gap: var(--cc-space-3);
+  min-height: 56px;
+  padding: var(--cc-space-3) var(--cc-space-4);
+  background: var(--cc-surface);
+  border-radius: var(--cc-radius-card);
+  font: var(--cc-text-body);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* ── Add to Home Screen hint ─────────────────────────────────────────── */
+.toggle-row input[type="checkbox"] {
+  position: relative;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-surface-2);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: background-color var(--cc-motion) var(--cc-ease);
+}
+
+.toggle-row input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cc-text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform var(--cc-motion) var(--cc-ease);
+}
+
+.toggle-row input[type="checkbox"]:checked {
+  background: var(--cc-amber);
+}
+
+.toggle-row input[type="checkbox"]:checked::before {
+  transform: translateX(20px);
+}
+
+.toggle-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 2px;
+}
+
+.toggle-row input[type="checkbox"]:disabled {
+  opacity: 0.4;
+}
+
+.tolerance-readonly {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+/* 13h. Capture. */
+.face-row-kind {
+  font: var(--cc-text-headline);
+}
+
+.face-row-status {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+.face-row .face-row-progress {
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  color: var(--cc-teal);
+}
+
+.face-row-error {
+  font: var(--cc-text-footnote);
+  color: var(--cc-error);
+}
+
+.face-row-actions .capture-btn {
+  min-height: var(--cc-btn-height);
+  padding: 0 var(--cc-space-6);
+  border-radius: var(--cc-radius-capsule);
+  border-color: var(--cc-amber);
+  background: var(--cc-amber);
+  color: var(--cc-amber-ink);
+  font: 600 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.face-row-actions .capture-btn:active {
+  background: var(--cc-amber-pressed);
+}
+
+.face-row-actions .capture-btn.capture-btn-secondary {
+  background: var(--cc-surface);
+  border-color: var(--cc-border);
+  color: var(--cc-text);
+}
+
+.face-row-actions .capture-btn.capture-btn-secondary:active {
+  background: var(--cc-surface);
+  opacity: 0.6;
+}
+
+.face-row-actions .capture-btn:focus-within {
+  outline: 2px solid var(--cc-amber);
+  outline-offset: 2px;
+}
+
+.capture-page .recapture-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 0;
+}
+
+.recapture-dialog p {
+  font: var(--cc-text-body);
+}
+
+.recapture-actions button:first-child {
+  background: var(--cc-error);
+  border-color: var(--cc-error);
+  color: var(--cc-error-ink);
+}
+
+/* 13i. Annotate. The stage is the photo mat (ink → text would make it light);
+   the toolbar is a flat scrim pill; selected chip/segment go amber + ink. */
+.annotate .annotate-stage {
+  background: var(--cc-photo-mat);
+}
+
+.annotate-stage .annotate-toolbar {
+  padding: 4px;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-scrim);
+  color: var(--cc-text);
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.annotate-toolbar .annotate-zoom {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface-2);
+  color: var(--cc-text);
+  font: 500 20px / 1 var(--cc-font-ui);
+}
+
+.annotate-toolbar .annotate-count {
+  background: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.annotate-toolbar .annotate-zoom-readout {
+  color: var(--cc-teal);
+}
+
+.annotate .annotate-label {
+  font: var(--cc-text-caption-1);
+  color: var(--cc-text-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.annotate .annotate-units {
+  font: var(--cc-text-subhead);
+  color: var(--cc-text-2);
+}
+
+.annotate .annotate-error {
+  font: var(--cc-text-footnote);
+  color: var(--cc-error);
+}
+
+.annotate-status {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+.annotate-chips .annotate-chip {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--cc-radius-capsule);
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface);
+  color: var(--cc-text);
+  font: 500 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-mono);
+}
+
+.annotate-chips .annotate-chip.is-on {
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.annotate .annotate-segmented {
+  min-height: var(--cc-tap-min);
+  padding: 2px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-field);
+  overflow: hidden;
+}
+
+/* 14 px here, not Subhead 15: this control shares its row with the 132 px
+   tolerance field until wave 2 re-lays the panel out, and "Diameter" at 15 px
+   semibold clips on a 390 px phone with a wide fallback font. */
+.annotate-segmented .annotate-seg {
+  min-width: 0;
+  min-height: calc(var(--cc-tap-min) - 6px);
+  padding: 0 var(--cc-space-1);
+  border: 0;
+  border-radius: var(--cc-radius-capsule);
+  background: transparent;
+  color: var(--cc-text-2);
+  font: 600 14px / var(--cc-leading-subhead) var(--cc-font-ui);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.annotate-row-inline .annotate-tolerance {
+  width: 118px;
+}
+
+.annotate-segmented .annotate-seg + .annotate-seg {
+  border-left: 0;
+}
+
+.annotate-segmented .annotate-seg.is-on {
+  background: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.annotate-actions .annotate-primary {
+  min-height: var(--cc-btn-height);
+  background: var(--cc-amber);
+  border-color: var(--cc-amber);
+  color: var(--cc-amber-ink);
+}
+
+.annotate-actions .annotate-primary:active {
+  background: var(--cc-amber-pressed);
+  opacity: 1;
+}
+
+.annotate-actions .annotate-primary:disabled:active {
+  background: var(--cc-amber);
+  opacity: 0.4;
+}
+
+.annotate-actions .annotate-secondary {
+  min-height: var(--cc-btn-height);
+  background: var(--cc-surface);
+  border-color: var(--cc-border);
+  color: var(--cc-text);
+}
+
+.annotate-actions .annotate-danger {
+  min-height: var(--cc-btn-height);
+  background: var(--cc-error);
+  border-color: var(--cc-error);
+  color: var(--cc-error-ink);
+}
+
+/* 13j. A2HS hint: an opaque card docked under the shell (see A2hsHint.res). */
 .a2hs-hint {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--cc-space-3);
   flex: 0 0 auto;
-  padding: 12px 16px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  background: var(--color-forest);
-  color: var(--color-cream);
+  margin: var(--cc-space-2) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-2) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
+  padding: var(--cc-space-3) var(--cc-space-4);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-card);
+}
+
+.a2hs-hint-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--cc-amber);
 }
 
 .a2hs-hint-text {
   flex: 1 1 auto;
-  font-size: 14px;
+  min-width: 0;
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
 }
 
 .a2hs-hint-dismiss {
-  background: transparent;
-  border: none;
-  color: var(--color-cream);
-  font-size: 20px;
-  line-height: 1;
-  padding: 4px 8px;
+  flex: 0 0 auto;
 }
