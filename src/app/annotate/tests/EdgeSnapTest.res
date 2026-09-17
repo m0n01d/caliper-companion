@@ -57,6 +57,239 @@ let expectSnappedNear = (result: option<EdgeSnap.result>, expected: EdgeSnap.px,
   expect(Math.abs(r.point.y -. expected.y) <= tol)->toBeTruthy
 }
 
+// -- A5 hardening (agent/a5-blur): window-local Gaussian smoothing,
+// non-max suppression, distance-weighted scoring, cached median ----------
+
+// Same LCG as `noisePatch` above, but applied as an *additive* perturbation
+// on top of another patch (a step or a bar) instead of standing alone —
+// amplitude ±20 per the upgrade's own acceptance bullet ("deterministic
+// LCG noise of ±20 per pixel"), clamped back into 0..255.
+let withNoise = (patch: EdgeSnap.patch, ~seed: int): EdgeSnap.patch => {
+  let luma = Uint8Array.fromLength(patch.width * patch.height)
+  let state = ref(Int.mod(seed, 65536))
+  for i in 0 to patch.width * patch.height - 1 {
+    state := Int.mod(state.contents * 25173 + 13849, 65536)
+    let delta = Int.mod(state.contents, 41) - 20 // -20..20
+    let base = switch patch.luma->TypedArray.get(i) {
+    | Some(v) => v
+    | None => 0
+    }
+    luma->TypedArray.set(i, Math.Int.max(0, Math.Int.min(255, base + delta)))
+  }
+  {width: patch.width, height: patch.height, luma}
+}
+
+// A linear brightness ramp from 40 to 220 over `rampWidth` columns starting
+// at `x0` — a soft edge, as opposed to `stepPatch`'s hard one.
+let rampPatch = (width: int, height: int, ~x0: int, ~rampWidth: int): EdgeSnap.patch =>
+  makePatch(width, height, (x, _y) =>
+    if x < x0 {
+      40
+    } else if x >= x0 + rampWidth {
+      220
+    } else {
+      let t = Int.toFloat(x - x0) /. Int.toFloat(rampWidth - 1)
+      Float.toInt(Math.round(40.0 +. t *. (220.0 -. 40.0)))
+    }
+  )
+
+describe("EdgeSnap.snapPoint — noisy step edge (Gaussian smoothing, upgrade 1)", () => {
+  // Raw Sobel on this patch would be pulled toward whichever noise pixel
+  // in the window happens to spike highest — the point of this test is
+  // that the window-local smoothing (which averages the ±20 noise down
+  // before Sobel ever sees it) keeps the result on the real edge instead.
+  // Per the task brief's "or simply assert the upgraded result" option:
+  // asserting the upgraded result directly, not also the raw failure mode.
+  //
+  // Checks only the *x* distance to the edge (the vertical line `x = 50`),
+  // not `y` — landing at a different row is still "within 1px of the
+  // edge" for a vertical edge; staying near the tap's own row under noise
+  // is a separate property, upgrade 3's job, covered by the "distance
+  // weighting" test below. Offsets stop just short of the exact radius
+  // (14, not 16): at offset == radius exactly, only a single pixel is
+  // geometrically admissible at all, so a noise realization that happens
+  // to push *that one pixel* below threshold or off the NMS test returns
+  // `None` outright — a real but separate edge case from what this test
+  // is checking (confirmed empirically: harmless at radius-1, happens on
+  // roughly 1 in 12 seeds at radius exactly).
+  test("lands within 1px of the edge from up to 14px away on either side (radius 16)", () => {
+    let patch = withNoise(stepPatch(100, 40, 50), ~seed=777)
+    [-14.0, -7.0, 0.0, 7.0, 14.0]->Array.forEach(offset => {
+      let at: EdgeSnap.px = {x: 50.0 +. offset, y: 20.0}
+      let result = EdgeSnap.snapPoint(patch, ~at, ~radius=16.0, ~threshold=EdgeSnap.defaultThreshold)
+      let r = result->Option.getOrThrow
+      expect(Math.abs(r.point.x -. 50.0) <= 1.0)->toBeTruthy
+    })
+  })
+})
+
+describe("EdgeSnap.snapPoint — soft ramp (non-max suppression, upgrade 2)", () => {
+  test("lands on the ramp's centre, not its first or last pixel", () => {
+    // Ramp over columns 50..55 (6 px, 40 → 220); centre = 52.5.
+    let patch = rampPatch(100, 40, ~x0=50, ~rampWidth=6)
+    let result =
+      EdgeSnap.snapPoint(
+        patch,
+        ~at={x: 52.5, y: 20.0},
+        ~radius=10.0,
+        ~threshold=EdgeSnap.defaultThreshold,
+      )
+    expectSnappedNear(result, {x: 52.5, y: 20.0}, 1.0)
+  })
+})
+
+describe("EdgeSnap — thin 2-px line (non-max suppression keeps both edges distinct)", () => {
+  let patch = barPatch(100, 40, ~a=50, ~b=52) // dark columns 50,51 on a light field
+
+  test("snapPoint returns whichever of the line's two edges is nearer the tap", () => {
+    let nearLeft = EdgeSnap.snapPoint(
+      patch,
+      ~at={x: 47.0, y: 20.0},
+      ~radius=8.0,
+      ~threshold=EdgeSnap.defaultThreshold,
+    )
+    expectSnappedNear(nearLeft, {x: 50.0, y: 20.0}, 1.0)
+
+    let nearRight = EdgeSnap.snapPoint(
+      patch,
+      ~at={x: 55.0, y: 20.0},
+      ~radius=8.0,
+      ~threshold=EdgeSnap.defaultThreshold,
+    )
+    expectSnappedNear(nearRight, {x: 52.0, y: 20.0}, 1.0)
+  })
+
+  test("snapPair across the line lands both ends on the line's two edges", () => {
+    let (r1, r2) =
+      EdgeSnap.snapPair(
+        patch,
+        ~p1={x: 44.0, y: 20.0},
+        ~p2={x: 58.0, y: 20.0},
+        ~radius=8.0,
+        ~threshold=EdgeSnap.defaultThreshold,
+      )
+    expectSnappedNear(r1, {x: 50.0, y: 20.0}, 1.0)
+    expectSnappedNear(r2, {x: 52.0, y: 20.0}, 1.0)
+  })
+})
+
+describe("EdgeSnap.snapPair — noisy bar (Gaussian smoothing, upgrade 1)", () => {
+  test("both ends still land within 1px of the bar's edges", () => {
+    let patch = withNoise(barPatch(100, 50, ~a=30, ~b=70), ~seed=4242)
+    let (r1, r2) =
+      EdgeSnap.snapPair(
+        patch,
+        ~p1={x: 33.0, y: 25.0},
+        ~p2={x: 67.0, y: 25.0},
+        ~radius=12.0,
+        ~threshold=EdgeSnap.defaultThreshold,
+      )
+    expectSnappedNear(r1, {x: 30.0, y: 25.0}, 1.0)
+    expectSnappedNear(r2, {x: 70.0, y: 25.0}, 1.0)
+  })
+})
+
+describe("EdgeSnap — flat and pure-noise patches still don't snap, after smoothing", () => {
+  test("a flat patch never snaps", () => {
+    let patch = flatPatch(40, 40, 128)
+    let result =
+      EdgeSnap.snapPoint(patch, ~at={x: 20.0, y: 20.0}, ~radius=16.0, ~threshold=EdgeSnap.defaultThreshold)
+    expect(result)->toEqual(None)
+  })
+
+  test("a low-amplitude noise patch never snaps, at radii 8/16/24", () => {
+    let patch = noisePatch(80, 80, ~seed=98765)
+    [8.0, 16.0, 24.0]->Array.forEach(radius => {
+      let result =
+        EdgeSnap.snapPoint(patch, ~at={x: 40.0, y: 40.0}, ~radius, ~threshold=EdgeSnap.defaultThreshold)
+      expect(result)->toEqual(None)
+    })
+  })
+})
+
+describe("EdgeSnap.snapPoint — distance-weighted scoring keeps a tap from sliding along a long edge (upgrade 3)",
+  () => {
+    test("a tap 6px off a long noisy edge, 10px along from an arbitrary origin, stays within 1px along the edge", () => {
+      // Tall vertical edge (not just the 40px-tall patches above) so there's
+      // real room for a raw magnitude-only search to slide along it: many
+      // rows are within `radius` of the tap, and the ±20 noise means their
+      // smoothed magnitudes are close but not exactly equal — without the
+      // distance falloff, a strict "highest magnitude wins" comparison can
+      // pick a noise-favoured row several pixels away instead of the row
+      // straight across from the tap. (Verified empirically across a wide
+      // sweep of seeds/offsets during development — see the LOGBOOK entry
+      // on why the weighting coefficient ended up 1.0, not the wiring
+      // agent's illustrative 0.35.)
+      let patch = withNoise(stepPatch(100, 140, 50), ~seed=13)
+      let origin = 40.0 // arbitrary — the edge itself has no privileged row
+      let at: EdgeSnap.px = {x: 50.0 +. 6.0, y: origin +. 10.0}
+      let result =
+        EdgeSnap.snapPoint(patch, ~at, ~radius=16.0, ~threshold=EdgeSnap.defaultThreshold)
+      let r = result->Option.getOrThrow
+      expect(Math.abs(r.point.y -. at.y) <= 1.0)->toBeTruthy
+    })
+  },
+)
+
+describe("EdgeSnap — optional ~median gives identical results to computing it fresh (upgrade 4)", () => {
+  test("snapPoint", () => {
+    let patch = withNoise(stepPatch(100, 40, 50), ~seed=777)
+    let median = EdgeSnap.medianGradient(patch)
+    let at: EdgeSnap.px = {x: 42.0, y: 20.0}
+    let withoutCache =
+      EdgeSnap.snapPoint(patch, ~at, ~radius=16.0, ~threshold=EdgeSnap.defaultThreshold)
+    let withCache =
+      EdgeSnap.snapPoint(patch, ~at, ~radius=16.0, ~threshold=EdgeSnap.defaultThreshold, ~median)
+    expect(withCache)->toEqual(withoutCache)
+  })
+
+  test("snapPair", () => {
+    let patch = withNoise(barPatch(100, 50, ~a=30, ~b=70), ~seed=4242)
+    let median = EdgeSnap.medianGradient(patch)
+    let p1: EdgeSnap.px = {x: 33.0, y: 25.0}
+    let p2: EdgeSnap.px = {x: 67.0, y: 25.0}
+    let withoutCache =
+      EdgeSnap.snapPair(patch, ~p1, ~p2, ~radius=12.0, ~threshold=EdgeSnap.defaultThreshold)
+    let withCache =
+      EdgeSnap.snapPair(patch, ~p1, ~p2, ~radius=12.0, ~threshold=EdgeSnap.defaultThreshold, ~median)
+    expect(withCache)->toEqual(withoutCache)
+  })
+})
+
+describe("EdgeSnap window locality — bounded per-call cost", () => {
+  test("a huge patch with the edge far from the tap returns None", () => {
+    let patch = stepPatch(1024, 768, 900)
+    let result =
+      EdgeSnap.snapPoint(patch, ~at={x: 50.0, y: 50.0}, ~radius=16.0, ~threshold=EdgeSnap.defaultThreshold)
+    expect(result)->toEqual(None)
+  })
+
+  test("1000 snaps on a huge patch finish quickly — nothing touches the whole patch per call", () => {
+    let patch = stepPatch(1024, 768, 900)
+    // `medianGradient` is the one thing the hard rules allow to touch the
+    // whole patch (it stride-samples) — computed once here, exactly the
+    // upgrade-4 usage the wiring agent needs (two searches per tap), so
+    // this measures what the per-call cost bound actually promises: with
+    // the median cached, every one of the 1000 calls below is genuinely
+    // window-local.
+    let median = EdgeSnap.medianGradient(patch)
+    let start = Date.now()
+    for _ in 1 to 1000 {
+      EdgeSnap.snapPoint(
+        patch,
+        ~at={x: 50.0, y: 50.0},
+        ~radius=16.0,
+        ~threshold=EdgeSnap.defaultThreshold,
+        ~median,
+      )->ignore
+    }
+    let elapsed = Date.now() -. start
+    // Generous on purpose — this is a "didn't accidentally scan the whole
+    // 1024×768 patch 1000 times" smoke test, not a tight perf budget.
+    expect(elapsed < 500.0)->toBeTruthy
+  })
+})
+
 describe("EdgeSnap.snapPoint — vertical step edge", () => {
   test("snaps within 1px of the edge from up to radius away, at radii 8/16/24", () => {
     let patch = stepPatch(100, 40, 50)
