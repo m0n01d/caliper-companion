@@ -1528,3 +1528,21 @@ clean under `+a`; `npm test` 205/205 (193 baseline + 12 net new in `EdgeSnapTest
   mode, per the brief's stated option.
 - Nothing left unfinished. Did not touch `Annotate.res` or any wiring — out of scope per the brief,
   and a sibling agent owns it.
+
+## 2026-09-17 — Integration close-out: v0.1 amendments + design track
+
+- Landed, in order: A1–A4 (move dims, iOS keyboard, halo overlays, 2048 cap), design research,
+  design waves 1–3 (tokens + glass bar → pages → foundation fixes → a11y), A6 fit-to-segment,
+  A7 custom faces, A5 edge snap (pure module → wiring → blur/suppression/distance weighting),
+  Pages deploy, new icon. A8 (snap telemetry) is specified only.
+- Final: `rescript build` clean under `+a`; vitest **206/206** (core 100 % lines); Vite build clean;
+  Playwright **40/40 on Chromium**, two consecutive full runs. WebKit still never ran here.
+- Conductor fixes between agent merges: the `cutoff` signature change from the blur track broke the
+  page's on-edge rule; fixed by caching `medianGradient` once per face (`loaded.snapMedian`) and
+  passing `~median` to both snap calls — which also removes the 2–4 median passes per tap.
+  Two spec races (export: wait for each save; a11y: wait for render after reload before Tab).
+- Process notes: parallel agents must use `E2E_PORT`; a stale `vite preview` on a shared port makes
+  `reuseExistingServer` test a sibling's build. LOGBOOK conflicts are always union-merged.
+- Known follow-ups: Parts rows truncate the name behind the Rename/Delete icons at 390 px — an
+  Edit toggle in the bar (like "Edit faces") would give the row its width; hidden capture inputs
+  have no self focus ring when tabbed directly; face-delete focus management.

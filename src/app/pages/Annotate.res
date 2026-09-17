@@ -116,6 +116,7 @@ type loaded = {
   imageW: float, // the bitmap's, i.e. oriented, size
   imageH: float,
   patch: option<EdgeSnap.patch>, // SPEC §8a A5: the grayscale snap patch; None = snapping off
+  snapMedian: float, // the patch's median gradient, computed once (2–4 snap calls per tap reuse it)
   snapFloor: float, // the patch's edge cutoff (`EdgeSnap.cutoff`), computed once
   dims: array<Types.dimension>, // this face's, createdAt ascending
   suggestions: array<string>, // FeatureName.suggestions(~used = other faces' names)
@@ -297,7 +298,8 @@ let load = async (~partId: string, ~faceId: string): result<loaded, string> => {
         Console.warn(`Annotate: no snap patch for face ${face.id}: ${exnMessage(e)}`)
         None
       }
-      let snapFloor = patch->Option.mapOr(0.0, p => EdgeSnap.cutoff(p, EdgeSnap.defaultThreshold))
+      let snapMedian = patch->Option.mapOr(0.0, EdgeSnap.medianGradient)
+      let snapFloor = patch->Option.mapOr(0.0, _ => EdgeSnap.cutoff(EdgeSnap.defaultThreshold, ~median=snapMedian))
       let dims = await Store.dimensionsOfFace(store, ~faceId)
       let all = await Store.dimensionsOf(store, ~partId)
       let used = all->Array.filter(d => d.faceId != faceId)->Array.map(d => d.name)
@@ -309,6 +311,7 @@ let load = async (~partId: string, ~faceId: string): result<loaded, string> => {
         imageW: Int.toFloat(imageW),
         imageH: Int.toFloat(imageH),
         patch,
+        snapMedian,
         snapFloor,
         dims,
         suggestions: FeatureName.suggestions(~used),
@@ -574,7 +577,13 @@ let snapFirst = (m: model, l: loaded, n: Types.point): (Types.point, snapMark) =
   switch snapPatch(l) {
   | Some(patch) if !onEdge(l, patch, n) =>
     switch firstHit(snapRadii(m, l, patch), radius =>
-      EdgeSnap.snapPoint(patch, ~at=toPatchPx(patch, n), ~radius, ~threshold=EdgeSnap.defaultThreshold)
+      EdgeSnap.snapPoint(
+        patch,
+        ~at=toPatchPx(patch, n),
+        ~radius,
+        ~threshold=EdgeSnap.defaultThreshold,
+        ~median=l.snapMedian,
+      )
     ) {
     | Some(r) => (fromPatchPx(patch, r), Snapped)
     | None => (n, Unsnapped)
@@ -610,6 +619,7 @@ let snapSecond = (
           ~p2=toPatchPx(patch, p2),
           ~radius,
           ~threshold=EdgeSnap.defaultThreshold,
+          ~median=l.snapMedian,
         )
         (f1->Option.orElse(n1), f2->Option.orElse(n2))
       }
