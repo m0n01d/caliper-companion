@@ -158,119 +158,6 @@ Export bundle: `<slug>.ccpart.zip` (via `fflate`) containing `features.json`, `f
 
 **MCP skill contract (built in parallel against the golden fixture):** one user parameter per feature (`name = value units`, comment carries tolerance and faceIds); one sketch per face on top→XY, side→XZ, end→YZ, detail→XY, with the annotated PNG attached as a canvas. Never invent geometry. In v1 the skill pulls the JSON straight from CouchDB over HTTP; in v0 it reads the exported file.
 
-### A12 — Folder management: explicit folders, a picker, move, rename, delete — **no JSON delta**
-
-A10 made folders implicit (a part's `path`), so there is no way to make one before it has a part, no
-way to pick one without typing it, and no way to move several parts at once (a10-folders-review.md
-N7). A12 makes folders first-class in the store and gives them a picker. `features.json` is
-unchanged: `part.path` stays the only thing exported, and the import skill needs no change.
-
-**Store (`Store.res` / `.resi`; PouchDB docs, app-internal):**
-- [ ] `folder` docs: `_id = "folder:" ++ path`, body `{type: "folder", path, createdAt}`. `path` is
-  always normalised and validated by the page before it reaches the store (`Store` never
-  normalises — A10's rule). Root (`""`) is never a doc. Ancestors always exist: `ensureFolder(t,
-  ~path)` puts the doc for `path` and for each of `Folder.ancestors(path)` that is missing
-  (idempotent; returns the paths it created). `listFolders: t => promise<array<string>>` — every
-  folder doc's path, sorted case-insensitively. `deleteFolder(t, ~path): promise<result<unit,
-  folderError>>` removes the doc and **refuses** with `NotEmpty` if any part sits in it or under it
-  (`Folder.isUnder`) or any folder doc is under it. `renameFolder(t, ~from, ~to): promise<result<unit,
-  folderError>>` (`to` already validated by the page) refuses `Exists` when `to` or a case-insensitive
-  twin is a folder doc, `Nested` when `to` is under `from`; otherwise one `bulkDocs` rewrites the
-  folder doc, every descendant folder doc (`Folder.rebase`) and every part whose `path == from` or is
-  under it (`updatedAt` bumped, same as `putPart`), so the subtree follows. `moveParts(t, ~partIds,
-  ~path): promise<array<Types.part>>` — one `bulkDocs` for the multi-select case, `ensureFolder`
-  first. `createPart` and `putPart` call `ensureFolder` for a non-empty path, so every path a part
-  carries always has a doc. Migration for A10 data: `PartsList.init` runs `ensureFolder` once for
-  each distinct part path after `PartsLoaded`, so existing folders show up in the picker on first
-  launch. `type folderError = NotEmpty | Exists | Nested`.
-- [ ] `core/Folder.res` gains pure helpers, tabled tests: `parent("a/b/c") = "a/b"`, `parent("a") =
-  ""`; `leaf("a/b/c") = "c"`, `leaf("") = ""`; `ancestors("a/b/c") = ["a", "a/b"]`, `ancestors("a")
-  = []`; `isUnder("a/b/c", ~folder="a") = true`, `isUnder("ab", ~folder="a") = false`, `isUnder(x,
-  ~folder="") = true` for every x; `rebase("a/b/c", ~from="a", ~to="z") = "z/b/c"`, identity when
-  not under; `depth("") = 0`, `depth("a/b") = 2`; `join(~parent, ~name)` (`join(~parent="",
-  ~name="a") = "a"`).
-
-**Folder picker (`FolderPicker`, a PartsList sub-view, not a route).** Replaces A10's free-text
-Folder field in **both** the create form and the inline rename (`part-path`, `part-path-chip` go
-away; `part-path-error` is reused by the picker's new-folder field).
-- [ ] The form shows a **Folder row** (`part-folder-row`: a `list-row` with a chevron, `role=button`)
-  — title "Folder", trailing value the current choice in display form (`Miata / Interior`) or
-  "None" at root. Tapping it opens the picker, which **takes over the page** the way the create form
-  already does (list, search and bar actions hidden): bar title "Choose Folder", a leading
-  **Cancel** text action in the Shell's leading slot (`folder-picker-cancel`; `Shell.back` can only
-  push a route, and cancelling is a page message — returns to the form with its draft intact) and
-  a trailing **Done** (`folder-picker-done`). `PartsList` therefore exports `leading` (the gear
-  normally, Cancel while the picker is open) and `Main.res` threads it like `actions`.
-- [ ] Picker body: one `Ui.ListGroup` (`folder-picker-list`, `role="listbox"`) with a row per folder
-  (`folder-option`, `role="option"`, `aria-selected`, `data-path`), a **flat tree**: root first (title
-  "None", subtitle "Top level", `data-path=""`), then every folder from `listFolders` ∪ the paths of
-  loaded parts, ordered depth-first so children follow their parent (case-insensitive within a
-  level); each row indented `depth × 20 px`, title = leaf name, a folder glyph leading, a `Check`
-  glyph in `accent` on the selected row. Tapping a row selects it (single tap, no navigation). Under
-  the list a secondary capsule **New Folder** (`folder-new`) reveals an inline field
-  (`folder-new-name`: `autocapitalize="words" autocorrect="off" spellcheck="false"
-  enterkeyhint="done"`, placeholder "Folder name", **one segment** — a `/` fails the A10 segment
-  rule, shown inline as `part-path-error`) with Create (`folder-new-create`, disabled while invalid)
-  and Cancel (`folder-new-cancel`). Create = `Folder.join(~parent=selected, ~name)` → `Folder.snap`
-  against the known folders (so `interior` under `Miata` selects the existing `Interior` instead of
-  making a twin) → `ensureFolder` → the new folder becomes the selection and the field closes. When
-  the selection is already 6 deep the capsule is disabled with a Footnote "Folders go six deep."
-- [ ] Done applies the selection to the form's draft and returns to it; Create / Save then proceed
-  exactly as A10 (`Store.createPart(~path)` / `putPart`). Back discards the picker's selection, never
-  the form's other fields. Focus: opening the picker focuses the selected row; Done returns focus to
-  `part-folder-row`.
-
-**Moving parts (Edit mode):**
-- [ ] "Edit" now makes every row selectable: a leading selection circle (`part-select`, a real
-  `<input type="checkbox">` visually restyled, `aria-label="Select <name>"`); tapping anywhere on the
-  row toggles it and rows **stop navigating** while editing (the chevron hides). The per-row
-  `part-rename` (pencil) stays trailing; the per-row `part-delete` and its inline confirm strip go
-  away in favour of the toolbar below (`part-delete-confirm` / `part-delete-cancel` are retired).
-- [ ] A **selection toolbar** sits at the bottom of the scroll container while editing
-  (`edit-toolbar`: `position: sticky; bottom: 0` inside `.shell`, the nav bar's glass recipe on a
-  pseudo-child, hairline on top, `padding-bottom: env(safe-area-inset-bottom)`; never `fixed` — §5):
-  "Move" (`parts-move`) and "Delete" (`parts-delete`), both disabled until ≥ 1 row is selected, with
-  the count in the label ("Move 2", "Delete 2"). Move opens the same picker with the title "Move 2
-  Parts"; Done = `moveParts` → sections re-derive, live region "Moved 2 parts to Miata / Interior"
-  (or "to the top level"), selection cleared, Edit mode stays on. Delete → an inline confirm strip in
-  the toolbar ("Delete 2 parts?", `parts-delete-confirm` / `parts-delete-cancel`) → each part is
-  deleted as today (faces, dimensions, timer), live region "Deleted 2 parts". "Done" clears the
-  selection and any open strip (P1's no-leftover-state rule).
-
-**Folder rename / delete (Edit mode, on the section header):**
-- [ ] While editing, each folder section header gains trailing icon buttons: `folder-rename`
-  (pencil, `aria-label="Rename folder"`) and `folder-delete` (trash, `aria-label="Delete folder"`),
-  the latter present **only** when the folder has no parts and no subfolders. Rename = the header
-  becomes an inline field (`folder-rename-input`, prefilled with the leaf name, one segment, the
-  A10 rule inline as `part-path-error`) with Save (`folder-rename-save`) / Cancel
-  (`folder-rename-cancel`); Save = `renameFolder(~from, ~to=Folder.join(~parent=Folder.parent(from),
-  ~name))`; the subtree follows (`Miata` → `MX-5` also moves the parts in `Miata/Interior/Dashboard`).
-  `Exists` → inline "A folder named "X" already exists here." Delete = `deleteFolder`, no confirm (it
-  is empty by construction).
-- [ ] An **empty explicit folder** renders as a section too: header "`<display> · 0`" and one muted
-  Footnote row "Empty folder" (`parts-section-empty`) so it is visible, pickable, renamable and
-  deletable. Sections stay one folder each (A10) — counts never include descendants. Search hides
-  an empty folder unless its path matches the query.
-
-**Not in A12 (v1):** drag-and-drop; moving a folder under a different parent (inline rename is one
-segment — rename keeps the parent); nested counts; a folder-scoped "+"; a Folders screen of its own.
-
-- [ ] `DESIGN.md` §11.2 Parts entry updated (Edit mode = selection + bottom toolbar; the picker as a
-  take-over screen); `docs/testids.md` updated (retired ids struck, new ids listed); LOGBOOK section.
-- [ ] Playwright (`parts.spec.js`, new describe "folders — management (SPEC §8a A12)"): New Folder
-  "Miata", then with it selected "Interior" → `folder-option` rows `None`, `Miata`, `Interior`
-  (indented, `data-path="Miata/Interior"`); Done → `part-folder-row` reads `Miata / Interior`; create
-  → header `Miata / Interior · 1`. An explicit empty `Archive` shows as a section with
-  `parts-section-empty` and header `Archive · 0`. Edit → select two rows → `parts-move` reads
-  "Move 2" → pick `Archive` → Done → header `Archive · 2`, `parts-live` "Moved 2 parts to Archive".
-  Edit → `folder-rename` on `Miata` → `MX-5` → header `MX-5 / Interior · 1` and that part's page
-  subtitle `MX-5 / Interior`. `folder-delete` absent on a non-empty section, present on an empty
-  one, removes it. Select one → `parts-delete` → confirm → row gone, `parts-live` "Deleted 1 part".
-  The new-folder field rejects `a/b` and `?` inline (`part-path-error`, Create disabled) and snaps
-  `interior` to the existing `Interior`. `a11y.spec.js`: in Edit mode the first Tab lands on the
-  first `part-select`; the picker's options are reachable and `aria-selected` is truthful.
-  `export.spec.js` is unchanged (no JSON delta).
-
 ## 8. Modules, in build order, with acceptance criteria
 
 One module → green tests → commit → next. Never start N+1 with red tests in N.
@@ -574,3 +461,225 @@ zip gives a standard, Claude-free import path: export → AirDrop → ParameterI
   asserts the zip holds `parameters.csv` with N lines of four fields matching the features.
 - [ ] README ("Import into Fusion without Claude"): install ParameterIO from the Fusion App Store,
   Utilities → ParameterIO → Import → pick `parameters.csv`; canvases stay a manual Insert → Canvas.
+
+### A12 — Folder management: explicit folders, a picker, move, rename, delete — **no JSON delta**
+
+A10 made folders implicit (a part's `path`), so there is no way to make one before it has a part, no
+way to pick one without typing it, and no way to move several parts at once (a10-folders-review.md
+N7). A12 makes folders first-class in the store and gives them a picker. `features.json` is
+unchanged: `part.path` stays the only thing exported, and the import skill needs no change.
+Reviewed before build in `docs/design/a12-folders-review.md` (B1–B5 and S1–S10 are applied in the
+text below). Two checklists under this one heading: **A12a** (store, helpers, picker) ships first;
+**A12b** (selection toolbar, folder rename / delete) builds on the landed A12a. Serial, never
+parallel — both edit `PartsList.res`.
+
+#### A12a — folder docs, helpers, the picker
+
+**Store (`Store.res` / `.resi`; PouchDB docs, app-internal):**
+- [ ] `folder` docs: `_id = "folder:" ++ path`, body `{type: "folder", path, createdAt, updatedAt}`
+  (`updatedAt` = `createdAt`, bumped on rename — §5's every-doc rule). `path` is always normalised,
+  validated and snapped by the page before it reaches the store (`Store` never normalises — A10's
+  rule; checking *existence* is not normalising). Root (`""`) is never a doc.
+  `ensureFolders(t, ~paths: array<string>): promise<array<string>>` — one `allDocs` range on
+  `folder:`, then one `bulkDocs` of every path in `paths` and every `Folder.ancestors` of them that
+  has no doc; a per-doc 409 in the `bulkDocs` result (the binding returns `array<doc>`, nothing
+  throws) counts as already existing; returns the paths it created. `ensureFolder(t, ~path)` is
+  `ensureFolders([path])`. `listFolders: t => promise<array<string>>` — every folder doc's path,
+  sorted case-insensitively. `createPart` and `putPart` call `ensureFolder` for a non-empty path
+  before writing the part, so every path a part carries always has a doc. Store tests (vitest,
+  LevelDB, the existing `StoreTest` pattern): `ensureFolders(["a/b/c", "a/x"])` creates `a`, `a/b`,
+  `a/b/c`, `a/x` and a second call creates nothing; `createPart(~path="Miata/Interior")` leaves
+  `folder:Miata` and `folder:Miata/Interior` behind.
+- [ ] `core/Folder.res` gains pure helpers, tabled tests: `parent("a/b/c") = "a/b"`, `parent("a") =
+  ""`; `leaf("a/b/c") = "c"`, `leaf("") = ""`; `ancestors("a/b/c") = ["a", "a/b"]`, `ancestors("a")
+  = []`; `isUnder("a/b/c", ~folder="a") = true`, `isUnder("ab", ~folder="a") = false`, `isUnder(x,
+  ~folder="") = true` for every x; `rebase("a/b/c", ~from="a", ~to="z") = "z/b/c"`, identity when
+  not under; `depth("") = 0`, `depth("a/b") = 2`; `join(~parent, ~name)` (`join(~parent="",
+  ~name="a") = "a"`); `validateSegment(name): result<string, error>` — `normalizeSegment`, then
+  `Error(BadSegment(name))` when the result is empty or contains `/`, else the A10 segment rule
+  (`"Interior"` Ok, `" interior "` → `Ok("interior")`, `"a/b"`, `"?"`, `""` and a 33-char name →
+  Error; `validate` stays for whole paths). `snap` becomes **prefix-wise**: each ancestor prefix is
+  snapped against `~existing` in turn, so `snap("miata/exterior", ~existing=["Miata/Interior"]) =
+  "Miata/exterior"` and `snap("miata/interior", ~existing=["Miata/Interior"]) = "Miata/Interior"`;
+  the A10 whole-path cases still hold.
+- [ ] Migration for A10 data lives in `PartsList` (not Store) and runs **once**, after
+  `PartsLoaded`: take the distinct non-root part paths in `updatedAt` order, prefix-snap each
+  against the running set of paths seen so far, `putPart` any part whose spelling changed (rare:
+  A10's whole-path snap let `Miata/Interior` and `miata/Exterior` coexist), then one
+  `ensureFolders` over the result ∪ `listFolders` → `FoldersLoaded(array<string>)`, which fills the
+  model's `folders` (every explicit folder path). Never re-run on re-render. A failure lands in the
+  existing page error line.
+
+**Folder picker (`FolderPicker`, a PartsList sub-view, not a route).** Replaces A10's free-text
+Folder field in **both** the create form and the inline rename strip (`part-path`, `part-path-chip`
+and `part-path-error` are retired).
+- [ ] The create form shows a **Folder row** (`part-folder-row`: a `list-row` with a chevron,
+  `role="button"`) — title "Folder", trailing value the current choice in display form (`Miata /
+  Interior`) or "None" at root. In the inline rename strip the same control renders as a
+  `.parts-form-field` button (same testid and role), not a `.list-row` — no row inside a row.
+  Tapping it opens the picker, which **takes over the page** the way the create form already does
+  (list, search and bar actions hidden). The picker remembers where it came from — the create form
+  or one row's rename strip (A12b adds a move) — and returns there. Bar: `PartsList.title` returns
+  "Choose Folder" while the picker is open and a new `PartsList.largeTitle: model => bool` returns
+  false (true otherwise); `Main.view` reads `largeTitle` from the page instead of its hard-coded
+  switch, so the title sits in the bar as a centred Headline. Leading: a **Cancel** text action in
+  the Shell's leading slot (`folder-picker-cancel`; `Shell.back` can only push a route, and
+  cancelling is a page message); trailing **Done** (`folder-picker-done`). `PartsList` therefore
+  exports `leading` (normally the gear, `settings-link` — `shell.spec.js` depends on it; Cancel
+  while the picker is open) and `Main.res` threads it like `actions`.
+- [ ] Picker body: one `Ui.ListGroup` (`folder-picker-list`, `role="listbox"`) with a row per
+  folder: `<button type="button" role="option" data-testid="folder-option" data-path aria-selected
+  aria-label="<Folder.display path>">` (root: `data-path=""`, `aria-label="None, top level"`), a
+  **flat tree**: root first (title "None", subtitle "Top level"), then every path in
+  `model.folders` ∪ the paths of loaded parts ∪ their ancestors, ordered depth-first so children
+  follow their parent (case-insensitive within a level); each row indented `depth × 20 px`, visible
+  title = leaf name, a leading `Icon.Folder` glyph (`Icon.res` gains Lucide `folder`; `FolderPlus`
+  already exists), a `Check` glyph in `accent` on the selected row. Tapping a row selects it (single
+  tap, no navigation). Opening the picker focuses the selected row. Under the list a secondary
+  capsule **New Folder** (`folder-new`, `FolderPlus` glyph) reveals an inline field
+  (`folder-new-name`: `autocapitalize="words" autocorrect="off" spellcheck="false"
+  enterkeyhint="done"`, placeholder "Folder name", focused on open) with Create
+  (`folder-new-create`, disabled while `Folder.validateSegment` is `Error` — so also while empty)
+  and Cancel (`folder-new-cancel`, focus back to `folder-new`); the rule shows inline as
+  `folder-new-error` (`Folder.errorMessage`; a `/` reads `Folder name "a/b" can use …`). Create =
+  `Folder.join(~parent=selected, ~name)` → `Folder.snap` against the picker's known paths (so
+  `interior` under `Miata` selects the existing `Interior` instead of making a twin) →
+  `ensureFolder` → the created (or snapped) path becomes the selection, `folders` gains what
+  `ensureFolders` returned, the field closes and focus moves to that option. When the selection is
+  already 6 deep (`Folder.depth`) the capsule is disabled with a Footnote "Folders go six deep."
+- [ ] Done applies the selection to the form's draft and returns to it; Create / Save then proceed
+  exactly as A10 (`Store.createPart(~path)` / `putPart`, each calling `ensureFolder`). Done with an
+  unchanged selection is the same return and nothing else happens. Cancel discards the picker's
+  selection, never the form's other fields (Name, units, a rename draft). A folder created in the
+  picker persists even if the picker is then Cancelled — it is a real folder (A12b shows it as an
+  empty section). Cancel and Done both return focus to `part-folder-row`. Picker state is page-local
+  (`Main.pageForRoute` re-inits the page per route, as A10's search does).
+- [ ] A12a leaves rows, Edit mode, per-row delete and the section headers exactly as A10 built
+  them; a single part still moves through its rename strip.
+
+#### A12b — selection toolbar, folder rename / delete (builds after A12a lands)
+
+**Store:**
+- [ ] `type folderError = NotEmpty | Exists | Nested`. `moveParts(t, ~partIds, ~path):
+  promise<array<Types.part>>` — `ensureFolder` first, then one `bulkDocs` rewriting each part whose
+  `path` differs (`updatedAt` bumped, same as `putPart`); parts already there are skipped; returns
+  the moved records. `deleteFolder(t, ~path): promise<result<unit, folderError>>` removes the doc
+  and **refuses** with `NotEmpty` if any part sits in it or under it (`Folder.isUnder`) or any
+  folder doc is under it. `renameFolder(t, ~from, ~to): promise<result<unit, folderError>>` (`to`
+  already validated by the page) refuses `Exists` when a folder doc **other than `from`** equals
+  `to` case-insensitively (a case-only rename `Miata` → `miata` is allowed), `Nested` when `to` is
+  under `from`; otherwise one `bulkDocs` deletes the old folder doc, creates the new one
+  (`updatedAt` bumped) and rewrites every descendant folder doc (`Folder.rebase`) and every part
+  whose `path == from` or is under it (`updatedAt` bumped, same as `putPart`), so the subtree
+  follows. `deleteParts(t, ~partIds): promise<unit>` — `deletePart` for each id in sequence inside
+  one promise. Store tests: rename `Miata` → `MX-5` moves `Miata/Interior/Dashboard`'s folder doc
+  and part; `Miata` → `miata` is `Ok`; rename onto an existing sibling is `Error(Exists)`; delete of
+  a folder with a part under it is `Error(NotEmpty)`; `moveParts` bumps only the moved parts.
+  `NotEmpty` and `Nested` are unreachable from the UI below (delete only shows on empty leaves;
+  rename keeps the parent) — store guards with store tests only, no inline copy.
+
+**Moving parts (Edit mode):**
+- [ ] "Edit" now makes every row selectable. An editing row is a plain `<div class="list-row"
+  role="listitem" data-testid="part-row">` — no `href`, no chevron: leading `<input type="checkbox"
+  id="part-select-<id>" data-testid="part-select" aria-label="Select <name>">` restyled as a
+  selection circle (a real checkbox; never `Ui.ListRow ~onClick`, which renders a `<button>` around
+  the checkbox and the pencil — nested interactive content); the body (thumbnail, title, meta) is a
+  `<label for="part-select-<id>">`, so tapping the body toggles; the per-row `part-rename` (pencil)
+  stays trailing as a sibling **outside** the label and never toggles. The per-row `part-delete`
+  and its inline confirm strip go away in favour of the toolbar below (`part-delete-confirm` /
+  `part-delete-cancel` are retired). Tab order while editing: gear (`settings-link`), Edit/Done
+  (`parts-edit`), "+" (`new-part`), search (`parts-search`), then the first `part-select`.
+- [ ] A **selection toolbar** (`edit-toolbar`) renders in a new `Shell ~footer:
+  option<React.element>=?` slot — a sibling **after** `<main class="shell-content">` directly inside
+  `.shell` (a flex column; `main` is `flex: 1 1 auto`, so a short list still pushes the footer to
+  the bottom edge and a long one lets `position: sticky; bottom: 0` catch it — inside the page body
+  it would sit mid-screen under a three-part list); the nav bar's glass recipe on a pseudo-child,
+  hairline on top, `padding-bottom: env(safe-area-inset-bottom)`; never `fixed` (§5). `PartsList`
+  exports `footer` (`Some` while editing and no form or picker is open) and `Main.res` threads it
+  like `actions`. Contents: "Move" (`parts-move`) and "Delete" (`parts-delete`), both disabled until
+  ≥ 1 row is selected, with the count in the label ("Move 2", "Delete 2"; bare "Move" / "Delete" at
+  zero). Move opens the A12a picker titled "Move 2 Parts" ("Move 1 Part"), preselecting the root;
+  Done = `moveParts` → sections re-derive, live region "Moved 2 parts to Miata / Interior" ("Moved 1
+  part to …", "… to the top level"; counts only the parts actually moved — if none moved, nothing
+  is announced), selection cleared, Edit mode stays on, focus returns to `parts-move`; Cancel
+  returns to the list with the selection intact, focus on `parts-move`. Delete → an inline confirm
+  strip in the toolbar ("Delete 2 parts? This removes their faces and dimensions." / "Delete 1
+  part? …", `parts-delete-confirm` / `parts-delete-cancel`) → `Store.deleteParts` → rows removed,
+  selection and strip cleared, live region "Deleted 2 parts" ("Deleted 1 part"), focus to
+  `parts-edit`; if no parts remain, `editing` resets to false (Edit leaves the bar) and focus goes
+  to `new-part`. "Done" clears the selection and any open strip (P1's no-leftover-state rule); a
+  search query change clears the selection too. Store errors from move / delete / rename surface
+  in the existing `rowError` line, one sentence.
+- [ ] `DESIGN.md` §11.1 Materials: "Glass in exactly one place: the navigation bar" becomes "the
+  nav bar and, while editing, the Parts bottom toolbar" — same recipe, both `sticky`, never `fixed`.
+
+**Folder rename / delete (Edit mode, on the section header):**
+- [ ] `Ui.ListGroup` gains `~headerTrailing: option<React.element>=?` (rendered as a sibling of the
+  `<h2>` inside a `.list-group-header-row` flex wrapper — never inside the heading, which would
+  leak the button names into the heading's accessible name) and `~headerEl:
+  option<React.element>=?` (replaces the `<h2>` outright, for the rename form).
+- [ ] While editing, each folder section header gains trailing icon buttons: `folder-rename`
+  (pencil, `aria-label="Rename folder"`) and `folder-delete` (trash, `aria-label="Delete folder"`),
+  the latter present **only** when the folder has no parts and no subfolders. Rename = the header
+  becomes an inline form (`folder-rename-input`, prefilled with the leaf name, focused on open,
+  `autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done"`,
+  `Folder.validateSegment` inline as `folder-rename-error`) with Save (`folder-rename-save`,
+  disabled while invalid or unchanged) / Cancel (`folder-rename-cancel`, focus back to
+  `folder-rename`); Save = `renameFolder(~from, ~to=Folder.join(~parent=Folder.parent(from),
+  ~name))`; the subtree follows (`Miata` → `MX-5` also moves the parts in
+  `Miata/Interior/Dashboard`); the page rebases its `parts` and `folders` from the result and
+  re-sorts; focus goes to the renamed section's `folder-rename`. `Exists` → inline `A folder named
+  "X" already exists here.` as `folder-rename-error`. One inline editor at a time: starting a folder
+  rename resets `rowStates`; `RenameStart` on a row cancels a folder rename. Delete =
+  `deleteFolder`, no confirm (it is empty by construction); the section disappears; live region
+  "Deleted folder Archive"; focus to `parts-edit`.
+- [ ] Empty folders: a **leaf** explicit folder (no parts, no subfolders) renders as a section too:
+  header "`<display> · 0`" and one muted Footnote row "Empty folder" (`parts-section-empty`) so it
+  is visible, pickable, renamable and deletable. A folder with subfolders but no direct parts
+  renders **no** section outside Edit mode and a header-only row (the `<h2>` + pencil, no
+  `.list-group` container) while editing, so it can be renamed. Sections stay one folder each (A10)
+  — counts never include descendants. Section order is unchanged (root first, then paths
+  case-insensitively). Search hides an empty folder unless its path matches the query.
+
+**Not in A12 (v1):** drag-and-drop; moving a folder under a different parent (inline rename is one
+segment — rename keeps the parent); nested counts; a folder-scoped "+"; a Folders screen of its
+own; "Rename" in the toolbar (the per-row pencil stays).
+
+- [ ] Docs, per half: `DESIGN.md` §11.2 Parts entry updated (A12a: the picker as a take-over screen
+  replacing the Folder field + chips; A12b: Edit mode = selection + bottom toolbar, plus the §11.1
+  Materials line above); `docs/testids.md` updated (retired ids struck, new ids listed); a LOGBOOK
+  section per half.
+- [ ] Playwright, A12a (`parts.spec.js`, new describe "folders — picker (SPEC §8a A12a)"): New
+  Folder "Miata", then with it selected "Interior" → `folder-option` rows `None`, `Miata`,
+  `Interior` (indented, `data-path="Miata/Interior"`, `aria-label="Miata / Interior"`); Done →
+  `part-folder-row` reads `Miata / Interior`; create → header `Miata / Interior · 1` and the Part
+  page's `.shell-subtitle` reads `Miata / Interior`. Edit → `part-rename` on a root part →
+  `part-folder-row` → pick `Miata/Interior` → Done → `part-rename-save` → header `· 2`, root
+  section gone. The new-folder field rejects `a/b` and `?` inline (`folder-new-error` visible,
+  `folder-new-create` disabled) and snaps `interior` to the existing `Interior` (no second
+  `Interior` option). Cancel from the picker leaves the form's Name intact and focuses
+  `part-folder-row`. `a11y.spec.js`: the picker's options are `role="option"` buttons reachable by
+  Tab, `aria-selected` truthful, the selected one focused on open. **Existing specs that change in
+  A12a:** `parts.spec.js` "sections with counts, root first and headerless; search filters; rename
+  moves and re-sorts" and "folder field: a//b normalises, ? is rejected inline, a different case
+  snaps to the existing spelling" (both drive `part-path` / `part-path-chip`; `a//b` is no longer
+  typeable — retire that case, move `?` and the snap to the picker) and the `createPartIn` helper
+  (walks the segments: select the `folder-option` when it exists, else New Folder). Unchanged:
+  "rename persists after reload", "delete with confirm returns to the empty state" (until A12b),
+  `shell.spec.js`, `export.spec.js` (no JSON delta).
+- [ ] Playwright, A12b (`parts.spec.js`, new describe "folders — management (SPEC §8a A12b)"): an
+  explicit empty `Archive` (created in the picker, then Cancel) shows as a section with
+  `parts-section-empty` and header `Archive · 0`. Edit → `parts-section` contains no link → select
+  two rows → `parts-move` reads "Move 2" → pick `Archive` → Done → header `Archive · 2`,
+  `parts-live` "Moved 2 parts to Archive", `parts-move` focused. `folder-rename` on `Miata` (a
+  header-only row while editing) → `MX-5` → header `MX-5 / Interior · 1` and that part's page
+  subtitle `MX-5 / Interior`; `Miata` → `miata` saves; renaming onto a sibling shows
+  `folder-rename-error`. `folder-delete` absent on a non-empty section, present on an empty one,
+  removes it (`parts-live` "Deleted folder Archive"). Select one → `parts-delete` reads "Delete 1"
+  → confirm → row gone, `parts-live` "Deleted 1 part", `parts-edit` focused; deleting the last part
+  exits Edit mode and focuses `new-part`. `a11y.spec.js`: in Edit mode, Tab reaches
+  `settings-link`, `parts-edit`, `new-part`, `parts-search`, then the first `part-select`, and
+  `Space` checks it. **Existing specs that change in A12b:** `parts.spec.js` "delete with confirm
+  returns to the empty state" (`part-delete` → select + `parts-delete` + `parts-delete-confirm`);
+  `a11y.spec.js` "parts list — rename autofocuses its draft input; deleting a part sends focus to
+  New part" (toolbar delete; focus target per above).
