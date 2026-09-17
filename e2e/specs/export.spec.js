@@ -377,8 +377,9 @@ const pixelAt = (png, x, y) => {
 // draws), and reports whether an amber-core pixel and a dark-halo pixel are
 // both present somewhere in that column.
 //
-// Thresholds: amber `#F2A33A` = (242,163,58), comfortably inside
-// R>200/G∈[130,190]/B<90 even after PNG's lossless re-encode. The halo
+// Thresholds: the accent orange (Dark Sky `#FF7F2A` = (255,127,42), or the
+// earlier amber `#F2A33A` = (242,163,58)) sits inside R>200/G∈[100,190]/B<90
+// even after PNG's lossless re-encode. The halo
 // (`rgba(23,24,26,0.85)`) composited over a pure-white background works out
 // to ≈(58,59,60) — right at the edge of a literal "<60" on the blue
 // channel after 8-bit rounding, so this uses <70 instead: still nowhere
@@ -391,7 +392,10 @@ function sampleLegibility(png, {xFrac, yFrac, spanPx}) {
   let sawHalo = false
   for (let y = Math.max(0, cy - spanPx); y <= Math.min(png.height - 1, cy + spanPx); y++) {
     const {r, g, b} = pixelAt(png, cx, y)
-    if (r > 200 && g >= 130 && g <= 190 && b < 90) sawAmber = true
+    // Accent core: warm orange family. Dark Sky's #FF7F2A is (255,127,42);
+    // the pre-palette amber #F2A33A was (242,163,58). Both fit R>200 /
+    // G∈[100,190] / B<90; white (255,255,255) and the halo never do.
+    if (r > 200 && g >= 100 && g <= 190 && b < 90) sawAmber = true
     if (r < 70 && g < 70 && b < 70) sawHalo = true
   }
   return {sawAmber, sawHalo}
