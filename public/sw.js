@@ -83,10 +83,18 @@ self.addEventListener('fetch', event => {
       })
       .catch(async () => {
         const c = await caches.open(CACHE);
-        const cached = await c.match(req);
+        // `ignoreVary: true` matters here: `vite preview` (and Vite dev)
+        // serve every hashed asset with `Vary: Origin` (its default `cors:
+        // true`), and the entry `install` cached was fetched from *within
+        // the worker* with no `Origin` header, while the page's own
+        // `<script crossorigin>`/`<link crossorigin>` tags fetch *with*
+        // one. Without `ignoreVary`, `match()` treats those as different
+        // requests and misses on a byte-identical URL — every hashed asset
+        // 404s offline even though it's sitting right there in the cache.
+        const cached = await c.match(req, {ignoreVary: true});
         if (cached) return cached;
         if (req.mode === 'navigate') {
-          const shell = await c.match('/');
+          const shell = await c.match('/', {ignoreVary: true});
           if (shell) return shell;
         }
         return Response.error();
