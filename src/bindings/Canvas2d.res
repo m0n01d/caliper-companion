@@ -47,12 +47,21 @@ type ctx
 @send external drawImage: (ctx, imageBitmap, float, float, float, float) => unit = "drawImage"
 @send external fillRect: (ctx, float, float, float, float) => unit = "fillRect"
 @send external beginPath: ctx => unit = "beginPath"
+@send external closePath: ctx => unit = "closePath"
 @send external moveTo: (ctx, float, float) => unit = "moveTo"
 @send external lineTo: (ctx, float, float) => unit = "lineTo"
+// `(x, y, radius, startAngle, endAngle)` — this app only ever draws full
+// circles (`0` to `2π`, SPEC §8a A3's endpoint handles), so the DOM's
+// trailing optional `anticlockwise` argument is never needed.
+@send
+external arc: (ctx, float, float, float, float, float) => unit = "arc"
 @send external roundRect: (ctx, float, float, float, float, float) => unit = "roundRect"
 @send external stroke: ctx => unit = "stroke"
 @send external fill: ctx => unit = "fill"
 @send external fillText: (ctx, string, float, float) => unit = "fillText"
+// SPEC §8a A3: dashed extension ticks. `[]` (the default the drawing code
+// always resets to after a dashed stroke) draws a solid line again.
+@send external setLineDash: (ctx, array<float>) => unit = "setLineDash"
 
 type textMetrics
 @send external measureText: (ctx, string) => textMetrics = "measureText"
@@ -62,7 +71,10 @@ type textMetrics
 
 type offscreenCanvas
 @send external getOffscreenContext: (offscreenCanvas, string) => Nullable.t<ctx> = "getContext"
-type blobOptions = {@as("type") type_: string}
+// `quality` is only meaningful for `image/jpeg`/`image/webp` (SPEC §8a A4's
+// re-encode); omitted (`None`) for the PNG export path, where the browser
+// ignores it anyway.
+type blobOptions = {@as("type") type_: string, quality?: float}
 @send
 external convertToBlob: (offscreenCanvas, blobOptions) => promise<blob> = "convertToBlob"
 
@@ -82,6 +94,9 @@ type canvasElement
 @send external getElementContext: (canvasElement, string) => Nullable.t<ctx> = "getContext"
 @send
 external toBlobRaw: (canvasElement, Nullable.t<blob> => unit, string) => unit = "toBlob"
+@send
+external toBlobRawQuality: (canvasElement, Nullable.t<blob> => unit, string, float) => unit =
+  "toBlob"
 
 type target = OffscreenTarget(offscreenCanvas) | ElementTarget(canvasElement)
 
@@ -118,19 +133,26 @@ exception ToBlobFailed(string)
 
 let pngMimeType = "image/png"
 
-let toBlob = (target: target, ~mimeType: string=pngMimeType): promise<blob> =>
+// `~quality` (0.0–1.0) is SPEC §8a A4's JPEG re-encode knob; left out for
+// the (default) PNG export path, where it has no effect.
+let toBlob = (target: target, ~mimeType: string=pngMimeType, ~quality: option<float>=None): promise<blob> =>
   switch target {
-  | OffscreenTarget(oc) => convertToBlob(oc, {type_: mimeType})
+  | OffscreenTarget(oc) =>
+    let opts: blobOptions = switch quality {
+    | Some(q) => {type_: mimeType, quality: q}
+    | None => {type_: mimeType}
+    }
+    convertToBlob(oc, opts)
   | ElementTarget(el) =>
-    Promise.make((resolve, reject) =>
-      toBlobRaw(
-        el,
-        nb =>
-          switch nb->Nullable.toOption {
-          | Some(b) => resolve(b)
-          | None => reject(ToBlobFailed("canvas toBlob() returned null"))
-          },
-        mimeType,
-      )
-    )
+    Promise.make((resolve, reject) => {
+      let onResult = nb =>
+        switch nb->Nullable.toOption {
+        | Some(b) => resolve(b)
+        | None => reject(ToBlobFailed("canvas toBlob() returned null"))
+        }
+      switch quality {
+      | Some(q) => toBlobRawQuality(el, onResult, mimeType, q)
+      | None => toBlobRaw(el, onResult, mimeType)
+      }
+    })
   }

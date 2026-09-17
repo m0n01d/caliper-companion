@@ -55,6 +55,12 @@ let run = async (store: Store.t, ~partId: string, ~appVersion: string): result<o
               let originalBuf = await PouchDb.blobArrayBuffer(image)
               let original = Uint8Array.fromBuffer(originalBuf)
               let faceDimensions = dimensions->Array.filter(d => d.faceId == face.id)
+              // `renderScale` stays a real, computed value here (not
+              // hardcoded) even though SPEC §8a A4's 2048px capture-time
+              // cap means it's always `1.0` in practice now — `image` is
+              // already at or under Render's own 4096 cap by the time it
+              // gets here, so that branch is unreachable, not removed (see
+              // Render.res's `canvasCapLongEdge` comment).
               let (pngBlob, renderWidth, renderHeight, renderScale) = await Render.renderFace(
                 ~faceImage=image,
                 ~dimensions=faceDimensions,

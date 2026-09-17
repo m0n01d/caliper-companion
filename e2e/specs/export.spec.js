@@ -31,6 +31,7 @@ import {unzipSync} from 'fflate'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import zlib from 'node:zlib'
 
 const FIXTURE_TOP = 'fixtures/hinge_pin/top.jpg'
 const GOLDEN_PATH = 'fixtures/hinge_pin/features.json'
@@ -242,4 +243,197 @@ test.describe('export (M5)', () => {
     await page.waitForTimeout(2_000)
     expect(downloadFired).toBe(false)
   })
+})
+
+// -- render legibility (SPEC §8a A3) ----------------------------------------
+//
+// A3's whole point: the pre-amendment navy overlay (#14213d) was unreadable
+// on a dark photo. Proving it needs actual pixels, not just the pure
+// geometry RenderTest.res already covers — so this builds two flat JPEGs
+// in-page (an all-white one, an all-black one), runs them through the real
+// capture -> annotate -> export pipeline, and decodes the resulting PNG
+// itself (a small pure-JS PNG reader below, `zlib.inflateSync` doing the
+// deflate half — no new npm package) to sample actual pixel values.
+
+// A flat `color` JPEG, `width`x`height`, built on an in-page <canvas> and
+// handed back as a Buffer — passed to `setInputFiles` as a synthetic
+// "photo" (no fixture file needed for an all-white/all-black background).
+async function makeFlatJpegBuffer(page, {width, height, color}) {
+  const base64 = await page.evaluate(async ({width, height, color}) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = color
+    ctx.fillRect(0, 0, width, height)
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92))
+    const buf = await blob.arrayBuffer()
+    const bytes = new Uint8Array(buf)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
+  }, {width, height, color})
+  return Buffer.from(base64, 'base64')
+}
+
+// A minimal PNG reader: signature + chunks -> IHDR (width/height/bitDepth/
+// colorType) + concatenated IDAT -> `zlib.inflateSync` -> per-scanline
+// unfilter (PNG spec's five filter types: None/Sub/Up/Average/Paeth).
+// Handles what `OffscreenCanvas`/`<canvas>` `convertToBlob("image/png")`
+// actually emits: 8-bit, non-interlaced, truecolor (RGB) or truecolor+alpha
+// (RGBA) — the two colour types Render.res's export path can produce.
+function decodePng(buffer) {
+  let offset = 8 // past the 8-byte PNG signature
+  let width = 0
+  let height = 0
+  let bitDepth = 0
+  let colorType = 0
+  const idatChunks = []
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset)
+    const type = buffer.toString('ascii', offset + 4, offset + 8)
+    const dataStart = offset + 8
+    const data = buffer.subarray(dataStart, dataStart + length)
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0)
+      height = data.readUInt32BE(4)
+      bitDepth = data.readUInt8(8)
+      colorType = data.readUInt8(9)
+    } else if (type === 'IDAT') {
+      idatChunks.push(data)
+    } else if (type === 'IEND') {
+      break
+    }
+    offset = dataStart + length + 4 // + 4-byte CRC
+  }
+  if (bitDepth !== 8) {
+    throw new Error(`decodePng: unsupported bit depth ${bitDepth}`)
+  }
+  const channels = {0: 1, 2: 3, 4: 2, 6: 4}[colorType]
+  if (!channels) {
+    throw new Error(`decodePng: unsupported color type ${colorType}`)
+  }
+
+  const raw = zlib.inflateSync(Buffer.concat(idatChunks))
+  const rowBytes = width * channels
+  const pixels = Buffer.alloc(height * rowBytes)
+  let rawOffset = 0
+  let prevRowStart = -1
+  for (let y = 0; y < height; y++) {
+    const filterType = raw[rawOffset]
+    rawOffset += 1
+    const rowStart = y * rowBytes
+    for (let x = 0; x < rowBytes; x++) {
+      const filt = raw[rawOffset + x]
+      const a = x >= channels ? pixels[rowStart + x - channels] : 0
+      const b = prevRowStart >= 0 ? pixels[prevRowStart + x] : 0
+      const c = prevRowStart >= 0 && x >= channels ? pixels[prevRowStart + x - channels] : 0
+      let recon
+      switch (filterType) {
+        case 0:
+          recon = filt
+          break
+        case 1:
+          recon = filt + a
+          break
+        case 2:
+          recon = filt + b
+          break
+        case 3:
+          recon = filt + ((a + b) >> 1)
+          break
+        case 4: {
+          const p = a + b - c
+          const pa = Math.abs(p - a)
+          const pb = Math.abs(p - b)
+          const pc = Math.abs(p - c)
+          const pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+          recon = filt + pr
+          break
+        }
+        default:
+          throw new Error(`decodePng: unsupported filter type ${filterType}`)
+      }
+      pixels[rowStart + x] = recon & 0xff
+    }
+    rawOffset += rowBytes
+    prevRowStart = rowStart
+  }
+  return {width, height, channels, pixels}
+}
+
+const pixelAt = (png, x, y) => {
+  const idx = (y * png.width + x) * png.channels
+  return {r: png.pixels[idx], g: png.pixels[idx + 1], b: png.pixels[idx + 2]}
+}
+
+// Scans a vertical column at `xFrac`*width, `± spanPx` around `yFrac`*height
+// (the dimension line's own y, for the horizontal line this suite always
+// draws), and reports whether an amber-core pixel and a dark-halo pixel are
+// both present somewhere in that column.
+//
+// Thresholds: amber `#F2A33A` = (242,163,58), comfortably inside
+// R>200/G∈[130,190]/B<90 even after PNG's lossless re-encode. The halo
+// (`rgba(23,24,26,0.85)`) composited over a pure-white background works out
+// to ≈(58,59,60) — right at the edge of a literal "<60" on the blue
+// channel after 8-bit rounding, so this uses <70 instead: still nowhere
+// near amber (R>200) or a white/near-white background (255), but with
+// enough margin not to flake on that composite.
+function sampleLegibility(png, {xFrac, yFrac, spanPx}) {
+  const cx = Math.round(png.width * xFrac)
+  const cy = Math.round(png.height * yFrac)
+  let sawAmber = false
+  let sawHalo = false
+  for (let y = Math.max(0, cy - spanPx); y <= Math.min(png.height - 1, cy + spanPx); y++) {
+    const {r, g, b} = pixelAt(png, cx, y)
+    if (r > 200 && g >= 130 && g <= 190 && b < 90) sawAmber = true
+    if (r < 70 && g < 70 && b < 70) sawHalo = true
+  }
+  return {sawAmber, sawHalo}
+}
+
+test.describe('render legibility (SPEC §8a A3)', () => {
+  for (const bg of [
+    {name: 'white', color: '#ffffff'},
+    {name: 'black', color: '#000000'},
+  ]) {
+    test(`amber line + halo are both visible on an all-${bg.name} photo`, async ({
+      page,
+      browserName,
+    }) => {
+      test.skip(browserName !== 'chromium', 'this suite is written for chromium only — see e2e/README.md')
+
+      const dir = tmpDir()
+      const partId = await createPart(page, `Legibility ${bg.name}`)
+      const jpegBuffer = await makeFlatJpegBuffer(page, {width: 800, height: 600, color: bg.color})
+
+      await page.goto(`/#/parts/${partId}/capture`)
+      await page.setInputFiles('[data-testid=capture-file-top]', {
+        name: `${bg.name}.jpg`,
+        mimeType: 'image/jpeg',
+        buffer: jpegBuffer,
+      })
+      await page.waitForURL(/#\/parts\/[^/]+\/faces\/[^/]+\/?$/, {timeout: 10_000})
+
+      // A horizontal dimension roughly through the image's middle, so a
+      // vertical sample column crosses the line/halo cleanly (SPEC §8a A3
+      // bullet 1's arrowheads/handles sit only near the endpoints, and the
+      // pill sits centred on the line — this samples a quarter of the way
+      // along the line, clear of both).
+      await addDimension(page, {
+        p1: [0.2, 0.5],
+        p2: [0.8, 0.5],
+        reading: '10.00',
+        name: 'd',
+      })
+
+      await page.goto(`/#/parts/${partId}`)
+      const {entries} = await exportAndUnzip(page, dir, `legibility-${bg.name}`)
+      const png = decodePng(Buffer.from(entries['faces/top_dimensioned.png']))
+
+      const {sawAmber, sawHalo} = sampleLegibility(png, {xFrac: 0.35, yFrac: 0.5, spanPx: 25})
+      expect(sawAmber).toBe(true)
+      expect(sawHalo).toBe(true)
+    })
+  }
 })
