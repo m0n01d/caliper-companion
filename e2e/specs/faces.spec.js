@@ -127,6 +127,7 @@ test.describe('custom faces (SPEC §8a A7)', () => {
     expect(Object.keys(entries).sort()).toEqual(
       [
         'features.json',
+        'parameters.csv',
         'faces/top.jpg',
         'faces/top_dimensioned.png',
         'faces/left_side.jpg',
