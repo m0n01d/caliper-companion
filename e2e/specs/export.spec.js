@@ -65,10 +65,14 @@ async function clickNormalizedPoint(page, nx, ny) {
   const canvas = page.getByTestId('annotate-canvas')
   const box = await canvas.boundingBox()
   if (!box) throw new Error('annotate-canvas has no bounding box (not visible?)')
+  // data-transform maps IMAGE pixels to canvas CSS pixels (screen = img * scale + t);
+  // data-image-size is the oriented bitmap size, so a normalized point is first
+  // scaled to image pixels. Same mapping as annotate.spec.js.
   const raw = await canvas.getAttribute('data-transform')
   const [scale, tx, ty] = (raw ?? '1,0,0').split(',').map(Number)
-  const x = box.x + tx + nx * box.width * scale
-  const y = box.y + ty + ny * box.height * scale
+  const [imgW, imgH] = ((await canvas.getAttribute('data-image-size')) ?? '1x1').split('x').map(Number)
+  const x = box.x + tx + nx * imgW * scale
+  const y = box.y + ty + ny * imgH * scale
   await page.mouse.click(x, y)
 }
 

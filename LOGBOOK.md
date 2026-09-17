@@ -484,3 +484,29 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
     leaving no face doc. This script and its local `vite.config.js` patch (superseded by the
     cherry-picks above) were fully reverted/deleted before finishing — nothing from it is
     committed.
+
+## 2026-09-17 — Integration (conductor)
+
+- Seven agent branches merged in two waves: M1 core, M2 store, app shell; then M2 UI + M6 pages,
+  M3 capture, M4 annotate, M5 export. LOGBOOK conflicts were resolved by keeping every section.
+- **Bug found by the M2-UI agent:** `vite.config.js` aliased `pouchdb-find` to a file the package
+  never ships; the pouchdb `dist/pouchdb.find.js` alternative is a self-registering browser script
+  with no ESM export. Fix: no alias for `pouchdb-find`; Vite resolves its `browser` field. Only the
+  `pouchdb` alias (ternpike's) remains.
+- Spec-side fixes after merge (the app was right, the specs' cross-page assumptions weren't):
+  `capture.spec.js` clicked a part row that no longer appears because create navigates straight
+  to the part; `export.spec.js` mapped taps through the canvas CSS size instead of the image
+  size (`data-transform` maps image pixels → CSS pixels; `data-image-size` gives the bitmap).
+  `shell.spec.js` asserted a stub-era `.page-name` marker.
+- Part page face tiles now show the oriented pixel size (`1200 × 1600`) — useful on screen, and it
+  is how the capture spec proves the EXIF fixture decoded portrait.
+- Final: `rescript build` clean under `+a`, vitest 136/136 (one unreproducible single failure seen
+  once in the store suite mid-integration; three consecutive clean runs after — watch for a
+  same-millisecond `updatedAt` ordering race in `listParts`/`listTimers`), Vite build clean,
+  Playwright **18/18 on Chromium**. **WebKit never ran:** the sandbox lacks GTK/WPE system libs;
+  run `npm run e2e` on the Mac before trusting any iOS-specific claim (SPEC §5, §10).
+- Escape-hatch audit: no `%raw`, no `Obj.magic`. Two `"%identity"` externals in
+  `ImageDecode.res` (File → Blob upcast, event-target narrowing), the same technique
+  `@rescript/react`'s own `ReactEvent` uses; called out here so they stay the only ones.
+- Icons are ternpike's placeholders. Google Fonts are not loaded (no network in v0), so the
+  serif/mono stacks fall through to system fonts.

@@ -176,6 +176,9 @@ let renderFaces = (model: model): React.element =>
         | None => <div className="face-thumb face-thumb-placeholder" />
         }}
         <span className="face-tile-label"> {React.string(kindLabel)} </span>
+        <span className="face-tile-size">
+          {React.string(Int.toString(face.pixelWidth) ++ " × " ++ Int.toString(face.pixelHeight))}
+        </span>
       </a>
     })
     ->React.array}

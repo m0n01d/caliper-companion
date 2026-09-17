@@ -101,3 +101,11 @@
   font-family: var(--font-mono);
   color: var(--color-forest-mid);
 }
+
+.face-tile-size {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}

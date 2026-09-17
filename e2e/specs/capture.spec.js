@@ -22,7 +22,6 @@ const createPart = async (page, name) => {
   await page.getByTestId('new-part').click()
   await page.getByTestId('part-name').fill(name)
   await page.getByTestId('part-create').click()
-  await page.getByTestId('part-row').filter({hasText: name}).click()
   await expect(page).toHaveURL(/#\/parts\/[^/]+$/)
   return page.url().split('/parts/')[1].split(/[/?#]/)[0]
 }
