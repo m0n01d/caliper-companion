@@ -1,5 +1,5 @@
 // Render — the dimensioned PNG per face (SPEC §5 canvas cap, M5 bullet 1;
-// SPEC §8a A3 for the amber/halo legibility scheme).
+// SPEC §8a A3 for the accent/halo legibility scheme).
 //
 // Geometry is pure and sits at the top so `tests/RenderTest.res` can check
 // it without a DOM (this repo's vitest runs in `node`, which has no
@@ -199,19 +199,19 @@ let contrastRatio = (hexA: string, hexB: string): float => {
 // -- drawing --------------------------------------------------------------
 //
 // SPEC §8a A3 bullet 1: every stroke is drawn twice, a near-black halo
-// underneath then amber on top — replacing the old navy scheme, which the
+// underneath then accent on top — replacing the old navy scheme, which the
 // phone dogfood found unreadable on dark photos.
 
-let haloColor = "rgba(23,24,26,0.85)" // cc-ground at 85% alpha (DESIGN.md §2)
-let lineColor = "#F2A33A" // cc-amber
-let pillFillColor = "#F2A33A" // cc-amber
-let pillTextColor = "#2B1A02" // cc-amber-ink
-let pillBorderColor = "#17181A" // cc-ground, "near-black"
+let haloColor = "rgba(21,24,29,0.85)" // cc-ground at 85% alpha (DESIGN.md §2, Dark Sky)
+let lineColor = "#FF7F2A" // cc-accent
+let pillFillColor = "#FF7F2A" // cc-accent
+let pillTextColor = "#2A1200" // cc-accent-ink
+let pillBorderColor = "#15181D" // cc-ground, "near-black"
 let pillBorderWidthPx = 1.0 // SPEC §8a A3 bullet 1: "1px near-black border" — literal, not scaled
 let labelFontFamily = "\"IBM Plex Mono\", ui-monospace, Menlo, monospace" // cc-font-mono, DESIGN.md §2
 
 // Strokes `path` twice on `ctx`: a halo pass (near-black, `haloWidthPx`
-// wide) underneath, then the amber line on top at `strokeWidthPx` — SPEC
+// wide) underneath, then the accent line on top at `strokeWidthPx` — SPEC
 // §8a A3 bullet 1. `path` only issues `moveTo`/`lineTo` calls; this
 // function owns `beginPath`/`stroke` for each pass so the same path can be
 // replayed twice with different line widths and colours.
@@ -240,7 +240,7 @@ let strokeHaloed = (
 
 // Fills `path` twice: a halo pass (fill, then a `haloWidthPx` outline
 // stroke so the halo also bleeds past the shape's own edge) underneath,
-// then the amber fill on top — the filled-shape equivalent of
+// then the accent fill on top — the filled-shape equivalent of
 // `strokeHaloed`, for the arrowheads and endpoint handles (SPEC §8a A3
 // bullet 1 lists both alongside the line and ticks).
 let fillHaloed = (ctx: Canvas2d.ctx, ~strokeWidthPx: float, ~path: unit => unit): unit => {
