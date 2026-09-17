@@ -135,3 +135,74 @@ Running log of decisions, judgment calls, and hand-off state. Newest entry last.
   `npm run build` (`dist/sw.js` stamped with a real `CACHE` version and `PRECACHE_URLS`),
   `npm test` (existing `SmokeTest` still green — nothing in `src/core` touched), `npm run e2e`
   (3/3 passing on chromium, 3/3 failing to *launch* — not fail assertions — on webkit).
+
+## M4 annotate (agent/m4-annotate)
+
+- Files: `src/app/annotate/Viewport.res` (pure transform math) + `tests/ViewportTest.res` (vitest,
+  15 tests), `src/app/annotate/Draw.res` (2D-context drawing), `src/bindings/Canvas.res` (canvas /
+  ImageBitmap / pointer / ResizeObserver / input bindings), `src/app/pages/Annotate.res` + `.css`,
+  `e2e/specs/annotate.spec.js`, the Annotate section of `docs/testids.md`.
+- **The photo is never measured** (SPEC §1) is enforced structurally: the only way a point enters
+  the model is `Viewport.toNormalized(viewport, screenPt)`, and every gesture (pan, pinch, zoom
+  buttons) changes the transform, never a stored point. `ViewportTest` proves the same feature taps
+  to the same normalized point at 1× and 3×; the e2e proves it on the EXIF-rotated fixture in a
+  real Chromium (`end.jpg` → 1200×1600, hole at (0.55, 0.30) within 0.005 at 1× and ≥3×).
+- **EXIF**: `createImageBitmap(blob, {imageOrientation: "from-image"})` is the decode; the bitmap's
+  width/height are treated as the oriented size. If they disagree with `face.pixelWidth/Height`
+  the page logs a warning and trusts the bitmap (the brief's rule).
+- **TEA shape.** All state — viewport, live pointers (`pointers` by id), the gesture in progress
+  (`Press | Pan | DragHandle | Pinch`), pending points, selection, field texts — is in the page
+  model. Handlers only dispatch; `focus()`/`select()` and Store calls are `Tea.cmd`s. The one
+  DOM-ref spot is `CanvasView`, which reports its CSS size + DPR (`ViewSized`, via a
+  ResizeObserver) and redraws in an effect whose deps are the scene's fields, so unrelated model
+  updates (typing a reading) don't repaint the bitmap. `setPointerCapture` is called in the
+  pointerdown handler — event plumbing, not state.
+- **Gestures.** Slop 8 px; pending-handle hit radius 24 px; line hit radius 16 px (nearest wins).
+  One pointer: press → tap on release, or pan/handle-drag once past the slop. A second pointer
+  turns any one-pointer gesture into a pinch (no tap on release); when one finger lifts the other
+  continues as a pan. A third finger is ignored. Tap semantics: p1 placed and no p2 → the tap is
+  p2 (even on p1's handle — the brief's literal rule); otherwise tapping an existing line selects
+  it, tapping empty space deselects if something is selected, else starts a new p1 (discarding an
+  unsaved pair).
+- **Clamp policy** (`Viewport.clamp`): scale within [fit, 8×fit], re-zooming about the view centre
+  when it hits a bound; an axis smaller than the view is centred, a larger one can be panned until
+  the image edge reaches the view's centre line — so any pixel (edges of a part are where taps go)
+  can be brought to the middle of the screen without ever losing the image.
+- **Layout judgment call.** `.app-frame` has `min-height: 100dvh`, not `height`, so nothing below
+  it has a definite height and a percentage-height stage would collapse. The stage is
+  `calc(var(--vv-height, 100dvh) * 0.5)` instead — `--vv-height` is the `visualViewport` height
+  Index.res already maintains — and the sheet sits *in flow* below it (`.annotate .sheet` overrides
+  the global `.sheet`'s `position: absolute`). Side effect worth keeping: when the iOS keyboard
+  shrinks the visual viewport, the stage shrinks with it and the sheet rides up into view. No
+  `position: fixed` anywhere (SPEC §5); the zoom toolbar is absolute *inside the stage*.
+- **Hyphenated attributes.** ReScript JSX rejects `data-transform=…` (it parses as a record
+  field) and `JsxDOM.domProps` has no `enterKeyHint`/`autoCorrect`. So: the canvas's test hooks
+  (`data-transform`, `data-image-size`) are `setAttribute` calls in the redraw effect, and the
+  sheet's inputs go through `Canvas.Input.make`, a typed `react/jsx-runtime` binding (the same
+  `jsx` call `ReactDOM.jsx` uses) with a props record that carries exactly the SPEC §5 attributes.
+  No `%raw`, no `Obj.magic`, no `%identity`.
+- **Save** sets `busy` and clears the entry only on `Saved(Ok)` (so a failed write doesn't lose
+  the reading); it also writes the tolerance back to settings as the part-units default and
+  refreshes the face's dimensions from the Store. Editing keeps the dimension's id and
+  `createdAt`. Kind and tolerance follow a selection and survive save/clear. A `cancel` ("Clear")
+  button and a `dimension-count` readout were added beyond the brief's list (both in testids.md).
+- **12 MP images**: the bitmap is drawn directly on every redraw (the effect deps keep that to
+  transform/point/dimension changes). If it stutters on an iPhone 13, the fallback is a 2048-wide
+  working copy for the canvas with the original attachment kept for export (SPEC §13).
+- **Draw colours** are theme.css token values inlined (a canvas can't read custom properties).
+- **Shared-config bug found: the `pouchdb-find` Vite alias** in `vite.config.js` pointed at
+  `pouchdb-find/dist/pouchdb.find.js`, which doesn't exist in pouchdb-find 9 (it ships `lib/`).
+  Nothing on the wave-2 base imported `Store` from a page, so `vite build` never resolved it until
+  Annotate did (`pouchdb/dist/pouchdb.find.js` exists but self-registers on a global and exports
+  nothing, so it can't satisfy `PouchDb.res`'s `import … from "pouchdb-find"` either). Reported to
+  the conductor; the fix landed on the integration branch as two commits (alias → the pouchdb
+  bundle, then drop the alias so Vite bundles pouchdb-find's own browser entry) and both are
+  cherry-picked onto this branch, attribution intact. Net state: `resolve.alias` holds only the
+  `pouchdb` entry. `vite.config.js` is otherwise untouched by M4.
+- **e2e.** Setup per test is the real Parts → Capture flow through docs/testids.md. Those pages
+  were still in flight on sibling branches, so `ANNOTATE_SEED=pouch` seeds the same part + face
+  docs straight into PouchDB (same shapes as Store.res) and the five tests run against the
+  Annotate page in isolation. All five pass on chromium that way; the UI-flow path is written but
+  could not be executed here. WebKit still can't launch in this sandbox (see e2e/README.md).
+- Verified: `npx rescript build` clean under `warnings.error = "+a"`, `npm test` (ViewportTest
+  15/15 plus the existing suites), `npm run build`, chromium e2e 8/8 (3 shell + 5 annotate).

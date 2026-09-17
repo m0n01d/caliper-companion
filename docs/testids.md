@@ -24,13 +24,27 @@ stable; add to this list before you rely on a new one.
 - `capture-note` — the one-line explanation shown when camera access is unavailable
 
 ## Annotate (`#/parts/:id/faces/:faceId`)
-- `annotate-canvas` — the `<canvas>`
-- `reading` — reading text input (`inputmode="decimal"`) · `reading-error`
-- `name` — feature-name input · `name-error` · `name-chip` — suggestion chips
-- `kind-<length|diameter|depth>` — segmented control buttons
-- `tolerance` — tolerance input
-- `save` — save button · `delete` — delete selected dimension
-- `zoom` — hidden readout of the current zoom factor (text), for tests
+- `annotate-canvas` — the `<canvas>`. Carries two live attributes for tests: `data-transform="scale,tx,ty"`
+  (oriented-image px → canvas CSS px: `screen = img * scale + t`) and `data-image-size="WxH"` (the
+  oriented bitmap, e.g. `1200x1600` for the EXIF-rotated `end.jpg`). Screen point of a normalized
+  `(nx, ny)` = `canvasBox.xy + (nx*W, ny*H) * scale + (tx, ty)`.
+- `pending-points` — hidden readout of the pending/selected endpoints, `x1,y1;x2,y2` normalized to 4 dp
+  (`x1,y1` with only p1 placed; empty when none)
+- `dimension-count` — readout of the number of saved dimensions on this face
+- `zoom` — readout of `scale / fitScale` to two decimals · `zoom-in` / `zoom-out` — ×1.5 about the
+  canvas centre (Playwright can't pinch; pinch is Pointer Events on device)
+- `reading` — reading text input (`inputmode="decimal" enterkeyhint="next"`) · `reading-error` ·
+  `reading-units` — the part's units label next to it
+- `name` — feature-name input (`enterkeyhint="done"`) · `name-error` · `name-chip` — suggestion chips
+  in `FeatureName.suggestions` order (tap fills the name)
+- `kind-<length|diameter|depth>` — segmented control buttons, `aria-pressed` on the active one
+- `tolerance` — tolerance input (defaults to the part-units last-used tolerance) · `tolerance-error`
+- `save` — save/update button (disabled until p1, p2, a valid reading, name and tolerance exist) ·
+  `delete` — present only while an existing dimension is selected · `cancel` — clears the entry in
+  progress (points, reading, name; keeps kind and tolerance) and deselects
+- `annotate-error` — inline Store failure message · `annotate-missing` — the not-found message
+- Focus order (the keyboard-wedge seam): p2 placed → `reading`; Enter in `reading` → `name`; Enter
+  in `name` → Save → `annotate-canvas`.
 
 ## Settings (`#/settings`)
 - `wedge-toggle` — "Readings come from a wedge dongle" checkbox
