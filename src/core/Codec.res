@@ -214,6 +214,7 @@ let encodePart = (p: Types.part): JSON.t =>
       ("id", JSON.String(p.id)),
       ("name", JSON.String(p.name)),
       ("slug", JSON.String(p.slug)),
+      ("path", JSON.String(p.path)),
       ("units", JSON.String(Enums.unitsToString(p.units))),
       ("notes", JSON.String(p.notes)),
       ("anchors", JSON.Array(Array.map(p.anchors, encodeAnchor))),
@@ -245,7 +246,10 @@ let decodePart = (json: JSON.t): option<Types.part> =>
         Some(createdAt),
         Some(updatedAt),
       ) =>
-      Some({id, name, slug, units, notes, anchors, createdAt, updatedAt})
+      // SPEC §8a A10: `path` is additive. A part object written before A10
+      // has none; it reads back at the root (the A7 `label` precedent).
+      let path = strField(fields, "path")->Option.getOr("")
+      Some({id, name, slug, path, units, notes, anchors, createdAt, updatedAt})
     | _ => None
     }
   | _ => None

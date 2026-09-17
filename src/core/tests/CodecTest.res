@@ -131,14 +131,22 @@ describe("Codec — part", () => {
     expect(Codec.decodePart(Codec.encodePart(Fixture.part)))->toEqual(Some(Fixture.part))
   })
 
-  test("decode rejects a missing required field", () => {
-    let json = switch Codec.encodePart(Fixture.part) {
-    | Object(fields) =>
-      Dict.delete(fields, "slug")
-      JSON.Object(fields)
-    | other => other
-    }
-    expect(Codec.decodePart(json))->toEqual(None)
+  // One case per required field: since A10's read-time `path` default
+  // sits between the tuple match and the record build, the compiler emits
+  // one early return per field (same as A7's `decodeFace`), and each has
+  // to be hit for core/ to stay at 100 % lines.
+  test("decode rejects each missing required field", () => {
+    ["id", "name", "slug", "units", "notes", "anchors", "createdAt", "updatedAt"]->Array.forEach(
+      field => {
+        let json = switch Codec.encodePart(Fixture.part) {
+        | Object(fields) =>
+          Dict.delete(fields, field)
+          JSON.Object(fields)
+        | other => other
+        }
+        expect(Codec.decodePart(json))->toEqual(None)
+      },
+    )
   })
 
   test("round-trips an Inch-units part", () => {
@@ -158,6 +166,44 @@ describe("Codec — part", () => {
 
   test("decode rejects a non-object", () => {
     expect(Codec.decodePart(JSON.Null))->toEqual(None)
+  })
+
+  // SPEC §8a A10 — `path` on parts: additive, defaults to "" (root) when
+  // absent so pre-A10 data keeps decoding.
+  test("round-trips a part with a folder path", () => {
+    let folderPart: Types.part = {...Fixture.part, path: "Miata/Interior"}
+    expect(Codec.decodePart(Codec.encodePart(folderPart)))->toEqual(Some(folderPart))
+  })
+
+  test("a part object without path decodes at the root", () => {
+    let json = switch Codec.encodePart({...Fixture.part, path: "Miata/Interior"}) {
+    | Object(fields) =>
+      Dict.delete(fields, "path")
+      JSON.Object(fields)
+    | other => other
+    }
+    expect(Codec.decodePart(json))->toEqual(Some(Fixture.part))
+    expect(Codec.decodePart(json)->Option.map(p => p.path))->toEqual(Some(""))
+  })
+
+  test("a non-string path is treated as absent", () => {
+    let json = switch Codec.encodePart(Fixture.part) {
+    | Object(fields) =>
+      Dict.set(fields, "path", JSON.Number(1.0))
+      JSON.Object(fields)
+    | other => other
+    }
+    expect(Codec.decodePart(json)->Option.map(p => p.path))->toEqual(Some(""))
+  })
+
+  test("encodes path directly after slug", () => {
+    switch Codec.encodePart(Fixture.part) {
+    | Object(fields) =>
+      let keys = Dict.keysToArray(fields)
+      let slugAt = Array.indexOf(keys, "slug")
+      expect(Array.get(keys, slugAt + 1))->toEqual(Some("path"))
+    | _ => expect(false)->toBeTruthy
+    }
   })
 })
 

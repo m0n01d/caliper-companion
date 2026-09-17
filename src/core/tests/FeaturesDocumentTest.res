@@ -227,3 +227,35 @@ describe("FeaturesDocument — face labels (SPEC §8a A7)", () => {
     expect(at("side") < at("end"))->toBeTruthy
   })
 })
+
+// SPEC §8a A10 — the part's folder path rides in features.json right after
+// `slug`; "" at the root (the golden above covers that case).
+describe("FeaturesDocument — part path (SPEC §8a A10)", () => {
+  let linesFor = (path: string): array<string> =>
+    switch FeaturesDocument.make(
+      ~part={...Fixture.part, path},
+      ~faces,
+      ~dimensions=Fixture.dimensions,
+      ~exportedAt="2026-09-17T14:12:03Z",
+      ~appVersion="0.1.0",
+      ~handsOnSeconds=Some(187),
+    ) {
+    | Ok(text) => String.split(text, "\n")
+    | Error(_) => []
+    }
+
+  test("emits path on the line right after slug, verbatim", () => {
+    let lines = linesFor("Miata/Interior")
+    let slugAt = Array.findIndex(lines, l => l == `    "slug": "norcold_freezer_hinge_pin",`)
+    expect(slugAt >= 0)->toBeTruthy
+    expect(Array.get(lines, slugAt + 1))->toEqual(Some(`    "path": "Miata/Interior",`))
+  })
+
+  test("a folder path changes the golden output on exactly that one line", () => {
+    let root = linesFor("")
+    let folder = linesFor("Miata (NB)/Interior")
+    expect(Array.length(folder))->toBe(Array.length(root))
+    let differing = root->Array.filterWithIndex((line, i) => Array.get(folder, i) != Some(line))
+    expect(differing)->toEqual([`    "path": "",`])
+  })
+})
