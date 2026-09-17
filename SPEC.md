@@ -256,3 +256,36 @@ Do not change the features.json shape; if the schema must change, stop and ask.
 One commit per acceptance-criteria group; the message names the module and criteria met.
 Ambiguous criterion → simplest reading, note it in the commit body, keep going.
 ```
+
+## 8a. v0.1 amendments (phone dogfood, 2026-09-17)
+
+Findings from the first real capture → dimension → export → open-on-Mac loop. Same rules as §8:
+one amendment → green tests → commit.
+
+### A1 — Move dimensions directly on the photo (extends M4)
+
+- [ ] A **saved** dimension's endpoint handles drag without selecting it first: `pointerdown` within 22 CSS px (a 44 px target, DESIGN.md §2) of a handle starts a handle drag; releasing writes the new point to the store (same id) immediately and redraws. No Save tap.
+- [ ] Dragging a saved dimension's **line body** (within 16 px of the segment, not on a handle) translates both points together; releasing persists the same way.
+- [ ] The pending (unsaved) dimension behaves identically for its handles and body, without persisting.
+- [ ] Hit priority: handle > line body > pan. A second finger during a drag cancels the drag (points revert) and becomes a pinch.
+- [ ] A tap (no movement) on a saved dimension still selects it for edit/delete, as before.
+- [ ] Playwright: drag a saved handle by a known screen delta → after `page.reload()` the stored point moved by the matching normalized delta within 0.005; a body drag moves both points by the same delta.
+
+### A2 — The keyboard must come up on the second tap (M4 bullet 6, iOS Safari)
+
+- [ ] Given iOS Safari, when the second tap lands, then the reading field has focus and the keyboard is open, with no extra tap. `focus()` called from a `pointerup` handler does not open the iOS keyboard; the call has to run inside the `click` (or `touchend`) handler of the same tap. Implement as: `update` records the focus intent in the model on p2; the canvas `click` handler, which fires after a tap and never after a drag or pinch, performs the pending intent. Chromium e2e keeps asserting focus; Dwight verifies on the phone.
+
+### A3 — Overlays legible on any photo (M5 PNG and the live canvas)
+
+- [ ] Every stroke in the exported PNG (dimension line, arrowheads, extension ticks, handles) is drawn twice: a **halo** in near-black `#17181A` at 85 % alpha and 2.5× the line width underneath, then the line in amber `#F2A33A` on top (DESIGN.md §5 colours). Labels sit on solid amber pills with `#2B1A02` text and a 1 px near-black border.
+- [ ] Sizes per DESIGN.md §5: stroke 0.15 % of the long edge (min 2 px), pill height 2 % of image height, label font 1.4 % of image height, 10×10-equivalent arrowheads scaled the same way.
+- [ ] Test: render the same dimension onto an all-white and an all-black image; the line's amber core and its halo are both present in each (sample pixels across the line), and the pill text contrast against the pill is ≥ 4.5:1.
+- [ ] The live annotate canvas uses the same halo treatment so what you see is what exports.
+
+### A4 — Cap stored photo size (resolves the §13 "12 MP" question)
+
+- [ ] At capture, after the oriented decode, an image whose long edge exceeds **2048 px** is redrawn to 2048 on the long edge and re-encoded as JPEG quality 0.85 before storage. `pixelWidth`/`pixelHeight` are the stored size; `features.json` reports the stored size; `renderScale` is therefore always `1.0`.
+- [ ] Images already at or below 2048 are stored exactly as picked (the EXIF fixture test still yields 1200×1600).
+- [ ] The cap is a single constant (`Capture.maxLongEdge`) so a later tier can raise it.
+- [ ] Re-encoded images carry no EXIF: orientation is baked in, so downstream decodes are unaffected.
+- [ ] Playwright: a synthetic 4000×3000 JPEG (generated in-page via canvas, passed to `setInputFiles` as a buffer) stores as 2048×1536; the stored attachment is smaller than the input.
