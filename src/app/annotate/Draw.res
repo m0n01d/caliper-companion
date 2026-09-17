@@ -136,6 +136,23 @@ let handle = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~style: style): unit => {
   ctx->Canvas.Ctx.restore
 }
 
+// SPEC §8a A5 feedback: the ring a snapped point draws for 150 ms — a
+// second circle growing from the handle's edge to `ringGrowth` × its radius
+// while it fades out. `progress` is 0..1; Annotate.res drives it from the
+// same frame machinery as the A6 viewport tween (and skips it under reduced
+// motion). Amber over the halo, like every pending stroke.
+let ringGrowth = 1.6
+
+let snapRing = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~progress: float): unit => {
+  let k = Math.min(Math.max(progress, 0.0), 1.0)
+  let r = handleRadius *. (1.0 +. (ringGrowth -. 1.0) *. k)
+  ctx->Canvas.Ctx.save
+  ctx->Canvas.Ctx.setGlobalAlpha(1.0 -. k)
+  ctx->Canvas.Ctx.setLineCap("round")
+  stroked(ctx, ~width=lineWidth, ~colour=amber, ~dash=[], () => circle(ctx, p, r))
+  ctx->Canvas.Ctx.restore
+}
+
 // A dashed extension line through `p`, perpendicular to the dimension line
 // (unit normal nx, ny).
 let extension = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~nx: float, ~ny: float): unit => {
