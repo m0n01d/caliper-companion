@@ -433,7 +433,8 @@ project folder.
   `Miata/Interior`, then `Hinge pin` at root → `parts-section` count 2, root section first and
   headerless (`parts-section-header` count 1, text `Miata / Interior · 2`); search `bezel` → one
   `part-row`; rename `Hinge pin`'s folder to `Miata/Interior` → header reads `· 3`, root section
-  gone; `a//b` saves and the header reads `A / B · 1`; `?` → `part-path-error` visible,
+  gone; `a//b` saves and the header reads `a / b · 1` (rendered
+  uppercase as `A / B · 1` — the header is `text-transform: uppercase`); `?` → `part-path-error` visible,
   `part-create` disabled; `miata/interior` on a new part snaps into the existing section; the Part
   page's `.shell-subtitle` reads `Miata / Interior`. `export.spec.js`: `doc.part.path === ''` on the
   golden test; one part with a folder exports it verbatim.

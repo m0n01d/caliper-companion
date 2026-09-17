@@ -40,10 +40,13 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'export-e2e-'))
 
 // -- helpers ----------------------------------------------------------------
 
-async function createPart(page, name) {
+async function createPart(page, name, folder) {
   await page.goto('/')
   await page.getByTestId('new-part').click()
   await page.getByTestId('part-name').fill(name)
+  if (folder !== undefined) {
+    await page.getByTestId('part-path').fill(folder) // SPEC §8a A10
+  }
   await page.getByTestId('part-create').click()
   // See header comment (1): assumes create navigates to the new part page.
   await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
@@ -159,6 +162,8 @@ test.describe('export (M5)', () => {
     expect(doc.schema).toBe('caliper-companion/features/1')
     expect(doc.app.name).toBe('Caliper Companion')
     expect(doc.part.slug).toBe('norcold_freezer_hinge_pin')
+    // SPEC §8a A10: a root part exports `"path": ""`, the golden's own line.
+    expect(doc.part.path).toBe('')
 
     expect(doc.faces).toHaveLength(1)
     expect(doc.faces[0].kind).toBe('top')
@@ -224,6 +229,27 @@ test.describe('export (M5)', () => {
     const diffLine = onlyDifferingLineIndex(featuresText, secondText)
     expect(diffLine).toBeGreaterThanOrEqual(0)
     expect(featuresText.split('\n')[diffLine]).toContain('"exportedAt"')
+  })
+
+  test('a part in a folder exports its path verbatim (SPEC §8a A10)', async ({page, browserName}) => {
+    test.skip(browserName !== 'chromium', 'this suite is written for chromium only — see e2e/README.md')
+
+    const dir = tmpDir()
+    const partId = await createPart(page, 'Window switch bezel', 'Miata/Interior')
+    await captureTopFace(page, partId)
+    await addDimension(page, {p1: [0.2, 0.3], p2: [0.6, 0.3], reading: '12.4', name: 'overall_w'})
+
+    await page.goto(`/#/parts/${partId}`)
+    await expect(page.locator('.shell-subtitle')).toHaveText('Miata / Interior')
+    const {entries} = await exportAndUnzip(page, dir, 'folder')
+    const doc = JSON.parse(Buffer.from(entries['features.json']).toString('utf8'))
+    expect(doc.part.path).toBe('Miata/Interior')
+    // `path` sits right after `slug` (FeaturesDocument.encodePart key order).
+    const keys = Object.keys(doc.part)
+    expect(keys[keys.indexOf('slug') + 1]).toBe('path')
+    // A11's parameters.csv carries no path — its header line is unchanged.
+    const csv = Buffer.from(entries['parameters.csv']).toString('utf8')
+    expect(csv.includes('Miata')).toBe(false)
   })
 
   test('kind conflict blocks export and names the feature (SPEC M5 bullet 3)', async ({

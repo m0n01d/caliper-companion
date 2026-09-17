@@ -20,8 +20,33 @@ stable; add to this list before you rely on a new one.
 - `parts-empty` — the empty state
 - `parts-live` — visually hidden `aria-live="polite"` line (design wave 3b, DESIGN.md §9): "Part
   created" / "Part deleted"; empty otherwise
+- `parts-search` — the `<input type="search" inputmode="search" enterkeyhint="search">` above the
+  list (SPEC §8a A10), present once the list is non-empty and the create form is closed; live,
+  case-insensitive filter on name or folder path (stored or display form), sections preserved ·
+  `parts-search-clear` — the page's own 44 px clear icon button (`aria-label="Clear search"`),
+  present only while the query is non-empty; clearing refocuses the field ·
+  `parts-search-empty` — the one Footnote line `No parts match "<q>".` when nothing matches
+- `parts-section` — one `role="list"` container per folder section, root first (only while the
+  root has parts), then folders sorted case-insensitively; each holds its `part-row`s ·
+  `parts-section-header` — the section's `<h2>`, text `"<display path> · <count>"` (e.g.
+  `Miata / Interior · 2`; rendered uppercase by `.list-group-header`, so `textContent` is the
+  mixed-case spelling and `innerText` the uppercase one). **Absent for the root section**, so a
+  list with no folders has zero headers
+- `part-path` — the Folder text input (`autocapitalize="words" autocorrect="off" enterkeyhint="done"`,
+  placeholder `Miata/Interior`) in **both** the create form and the inline rename strip (they
+  share one `PartForm`; the create form's name input stays `part-name`, the rename strip's
+  `part-rename-input`). Free text with `/`; `a//b` saves as `a/b` (`Folder.normalize`) and a case-
+  only variant of an existing folder snaps to its spelling · `part-path-chip` — one `Ui.Chip` per
+  existing folder under the field (at most 8, newest `updatedAt` first, `aria-pressed` when the
+  field already holds it); tapping fills the field and refocuses it, never submits ·
+  `part-path-error` — the inline rule while the field is invalid (`?`, a leading `-`, `..`, > 32
+  chars per segment, > 6 deep); the primary (`part-create` / `part-rename-save`) is
+  `aria-disabled` meanwhile
 
 ## Part (`#/parts/:id`)
+- `.shell-subtitle` (a class, not a testid — `Shell.res` owns it) — the part's folder path in
+  display form (`Miata / Interior`, SPEC §8a A10); **absent** for a root part. Layout A's
+  "n faces · n features · unit" line is the features group header, not this slot
 - `face-<label>` — one per captured face (P2a: a 171 px `Ui.FaceCard`, 2-column grid, links to
   annotate). `<label>` is the face's label (SPEC §8a A7): `top|side|end|detail` for the four
   defaults (so `face-top` etc. are unchanged), the custom slug otherwise (`face-left_side`).
