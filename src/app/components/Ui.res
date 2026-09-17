@@ -136,12 +136,21 @@ module Segmented = {
 }
 
 // Inset grouped list container (§11.1 "Layout"), with the optional iOS-style
-// uppercase header and footnote footer.
+// uppercase header and footnote footer. `~asList` (DESIGN.md §9 "Semantics":
+// "lists are <ul>/<li> or role=list") marks the container `role="list"` —
+// true for a container of *repeating same-kind items* (parts, faces,
+// timers); left `false` (default) when `ListGroup` is instead grouping form
+// fields or wrapping a `<table>` (Part.res's features section), where a
+// list role would misdescribe the content. `Ui.ListRow` below always
+// carries `role="listitem"` since that component's whole purpose is "one
+// row of a list" — safe even where the enclosing container isn't marked
+// `asList` (an orphaned `listitem` is tolerated, never wrong).
 module ListGroup = {
   @react.component
   let make = (
     ~header: option<string>=?,
     ~footer: option<string>=?,
+    ~asList: bool=false,
     ~testId: option<string>=?,
     ~children: React.element,
   ) =>
@@ -150,7 +159,9 @@ module ListGroup = {
       | Some(text) => <h2 className="list-group-header"> {React.string(text)} </h2>
       | None => React.null
       }}
-      <div className="list-group" dataTestId=?testId> children </div>
+      <div className="list-group" role=?{asList ? Some("list") : None} dataTestId=?testId>
+        children
+      </div>
       {switch footer {
       | Some(text) => <p className="list-group-footer"> {React.string(text)} </p>
       | None => React.null
@@ -210,7 +221,7 @@ module ListRow = {
       // Meta). Nesting the chevron straight into a column would stack it
       // under the meta line as a third line instead of sitting beside the
       // text.
-      <div className="list-row" dataTestId=?testId ariaLabel=?ariaLabel>
+      <div className="list-row" role="listitem" dataTestId=?testId ariaLabel=?ariaLabel>
         leadingEl
         <a className="list-row-link" href=url>
           <span className="list-row-body"> children </span>
@@ -229,10 +240,16 @@ module ListRow = {
       switch onClick {
       | Some(handler) =>
         <button
-          type_="button" className="list-row" onClick=handler dataTestId=?testId ariaLabel=?ariaLabel>
+          type_="button"
+          className="list-row"
+          role="listitem"
+          onClick=handler
+          dataTestId=?testId
+          ariaLabel=?ariaLabel>
           body
         </button>
-      | None => <div className="list-row" dataTestId=?testId ariaLabel=?ariaLabel> body </div>
+      | None =>
+        <div className="list-row" role="listitem" dataTestId=?testId ariaLabel=?ariaLabel> body </div>
       }
     }
   }
@@ -359,4 +376,20 @@ module WarningRow = {
     | None => <div className dataTestId=?testId> body </div>
     }
   }
+}
+
+// Visually hidden `aria-live="polite"` status line (DESIGN.md §9): mount it
+// once per page (unconditionally — never behind an `option`/`switch`) and
+// pass the current announcement as `~text`. A screen reader announces a
+// live region's *content changes*, not its initial mount, so a region that
+// only appears once there's something to say never gets heard; `""` is the
+// silent/idle state, not "don't render". Modelled on Annotate.res's own
+// `annotate-live` (design wave 2), pulled up into `Ui.res` here since every
+// page this track owns needs its own copy of the same pattern.
+module Live = {
+  @react.component
+  let make = (~text: string, ~testId: option<string>=?) =>
+    <p className="visually-hidden" role="status" ariaLive=#polite dataTestId=?testId>
+      {React.string(text)}
+    </p>
 }
