@@ -390,21 +390,14 @@ let kindGlyph = (kind: Types.dimensionKind): string =>
   | Length => ""
   }
 
-let countLabel = (n: int, singular: string, plural: string): string =>
-  Int.toString(n) ++ " " ++ (n == 1 ? singular : plural)
 
-// review-2026-09-17.md §3 layout A's own stats line ("n faces · n features ·
-// unit") was written for the bar subtitle; a10-folders-review.md §1 B2
-// (blocker) resolves that slot to A10's future folder path instead and
-// tells this line to move into the features group header — so it lives
-// here, not in `subtitle` above.
-let featuresHeader = (~faceCount: int, ~featureCount: int, ~units: Types.units): string =>
-  "Features · " ++
-  countLabel(faceCount, "face", "faces") ++
-  " · " ++
-  countLabel(featureCount, "feature", "features") ++
-  " · " ++
-  NumberParse.unitsLabel(units)
+// A count and nothing else: "Features · 3". The face count is visible in
+// the gallery right above and the unit sits on every row, so the earlier
+// "Features · 1 face · 3 features · mm" (layout A's stats line, parked here
+// by a10-folders-review.md B2) said everything twice — owner's words:
+// "drives me crazy". Only reached with ≥ 1 feature (the empty state is a
+// separate branch), so the count is never 0.
+let featuresHeader = (~featureCount: int): string => "Features · " ++ Int.toString(featureCount)
 
 // DESIGN.md §4 "Feature row" / §11.2: a role=list of role=listitem rows (no
 // `<table>`, no column header — F5) live/error warning rows are split by
@@ -424,11 +417,7 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
     {if Array.length(features) == 0 && Array.length(conflicts) == 0 {
       <p className="t-footnote muted"> {React.string("No dimensions captured yet.")} </p>
     } else {
-      let header = featuresHeader(
-        ~faceCount=Array.length(model.faces),
-        ~featureCount=Array.length(features),
-        ~units=part.units,
-      )
+      let header = featuresHeader(~featureCount=Array.length(features))
       <Ui.ListGroup header asList=true testId="features-list">
         {features
         ->Array.map(feature => {

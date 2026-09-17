@@ -45,8 +45,8 @@ stable; add to this list before you rely on a new one.
 
 ## Part (`#/parts/:id`)
 - `.shell-subtitle` (a class, not a testid — `Shell.res` owns it) — the part's folder path in
-  display form (`Miata / Interior`, SPEC §8a A10); **absent** for a root part. Layout A's
-  "n faces · n features · unit" line is the features group header, not this slot
+  display form (`Miata / Interior`, SPEC §8a A10); **absent** for a root part. The features group
+  header (`features-list`) reads `Features · n` — a count only
 - `face-<label>` — one per captured face (P2a: a 171 px `Ui.FaceCard`, 2-column grid, links to
   annotate). `<label>` is the face's label (SPEC §8a A7): `top|side|end|detail` for the four
   defaults (so `face-top` etc. are unchanged), the custom slug otherwise (`face-left_side`).
