@@ -12,7 +12,12 @@
 
 type pendingCapture = {
   kind: Types.faceKind,
-  file: ImageDecode.file,
+  // The bytes actually destined for `Store.putFace` — already the
+  // SPEC §8a A4 resize/re-encode outcome (or the picked file verbatim,
+  // unchanged, if it was already at or under the cap), decided once at
+  // `Decoded` so recapture-confirm/keep just replays this, no re-decode.
+  image: PouchDb.blob,
+  contentType: string,
   pixelWidth: int,
   pixelHeight: int,
   levelDegrees: option<float>,
@@ -67,7 +72,7 @@ type msg =
   | CaptureArmed
   | OrientationPermissionResult(option<Orientation.permissionState>)
   | FileChosen(Types.faceKind, bool, option<ImageDecode.file>)
-  | Decoded(Types.faceKind, bool, ImageDecode.file, int, int, option<float>)
+  | Decoded(Types.faceKind, bool, PouchDb.blob, string, int, int, option<float>)
   | DecodeFailed(Types.faceKind, string)
   | Saved(Types.face)
   | SaveFailed(Types.faceKind, string)
@@ -126,13 +131,34 @@ let contentTypeOf = (file: ImageDecode.file): string =>
   | t => t
   }
 
+// SPEC §8a A4: "a single constant so a later tier can raise the cap."
+let maxLongEdge = 2048
+
+// The stored size for a decoded bitmap — unchanged if already at or under
+// `maxLongEdge` ("Images already at or below 2048 are stored exactly as
+// picked"), else scaled so the long edge is exactly `maxLongEdge`. Mirrors
+// `Render.targetSize`'s own long-edge-cap shape (src/app/export/Render.res)
+// one layer down the pipeline.
+let cappedSize = (~width: int, ~height: int): (int, int) => {
+  let longEdge = Math.Int.max(width, height)
+  if longEdge <= maxLongEdge {
+    (width, height)
+  } else {
+    let k = Int.toFloat(maxLongEdge) /. Int.toFloat(longEdge)
+    let w = Float.toInt(Math.round(Int.toFloat(width) *. k))
+    let h = Float.toInt(Math.round(Int.toFloat(height) *. k))
+    (w, h)
+  }
+}
+
 // -- cmds ------------------------------------------------------------------
 
 let saveFaceCmd = (
   ~partId: string,
   ~kind: Types.faceKind,
   ~id: string,
-  ~file: ImageDecode.file,
+  ~image: PouchDb.blob,
+  ~contentType: string,
   ~width: int,
   ~height: int,
   ~level: option<float>,
@@ -149,8 +175,7 @@ let saveFaceCmd = (
     capturedAt: Clock.nowIso(),
   }
   Tea.fromPromise(
-    () =>
-      Store.putFace(Store.shared(), face, ~image=ImageDecode.asBlob(file), ~contentType=contentTypeOf(file)),
+    () => Store.putFace(Store.shared(), face, ~image, ~contentType),
     saved => Saved(saved),
     _err => SaveFailed(kind, "Couldn't save the photo. Try again."),
   )
@@ -161,11 +186,33 @@ let saveFromPending = (~partId: string, pending: pendingCapture): Tea.cmd<msg> =
     ~partId,
     ~kind=pending.kind,
     ~id=pending.existingFaceId,
-    ~file=pending.file,
+    ~image=pending.image,
+    ~contentType=pending.contentType,
     ~width=pending.pixelWidth,
     ~height=pending.pixelHeight,
     ~level=pending.levelDegrees,
   )
+
+// SPEC §8a A4: decode oriented, then either keep the picked file verbatim
+// (at or under `maxLongEdge`) or redraw+re-encode it capped. Bundles both
+// outcomes into one shape so the caller (`FileChosen` below) doesn't need
+// to know which branch ran. The bitmap is closed here — every caller of
+// `decodeOriented` owns closing what it opens (mirrors `Decoded`'s own
+// close in the pre-A4 version of this function).
+let decodeAndCap = async (file: ImageDecode.file): (PouchDb.blob, string, int, int) => {
+  let bitmap = await ImageDecode.decodeOriented(file)
+  let w = ImageDecode.bitmapWidth(bitmap)
+  let h = ImageDecode.bitmapHeight(bitmap)
+  let (cw, ch) = cappedSize(~width=w, ~height=h)
+  let result = if cw == w && ch == h {
+    (ImageDecode.asBlob(file), contentTypeOf(file), w, h)
+  } else {
+    let resized = await ImageDecode.resizeToJpeg(bitmap, ~width=cw, ~height=ch)
+    (resized, "image/jpeg", cw, ch)
+  }
+  ImageDecode.closeBitmap(bitmap)
+  result
+}
 
 // -- init --------------------------------------------------------------
 
@@ -265,28 +312,24 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     (
       nextModel,
       Tea.fromPromise(
-        () => ImageDecode.decodeOriented(file),
-        bitmap => {
-          let w = ImageDecode.bitmapWidth(bitmap)
-          let h = ImageDecode.bitmapHeight(bitmap)
-          ImageDecode.closeBitmap(bitmap)
-          Decoded(kind, fromLibrary, file, w, h, level)
-        },
+        () => decodeAndCap(file),
+        ((image, contentType, w, h)) => Decoded(kind, fromLibrary, image, contentType, w, h, level),
         _err => DecodeFailed(kind, "Couldn't read that photo. Try a different one."),
       ),
     )
-  | Decoded(kind, fromLibrary, file, width, height, level) =>
+  | Decoded(kind, fromLibrary, image, contentType, width, height, level) =>
     switch existingFaceOf(model.faces, kind) {
     | None =>
       let id = Ids.face()
       (
         {...model, busy: None},
-        saveFaceCmd(~partId=model.partId, ~kind, ~id, ~file, ~width, ~height, ~level),
+        saveFaceCmd(~partId=model.partId, ~kind, ~id, ~image, ~contentType, ~width, ~height, ~level),
       )
     | Some(existing) =>
       let pending: pendingCapture = {
         kind,
-        file,
+        image,
+        contentType,
         pixelWidth: width,
         pixelHeight: height,
         levelDegrees: level,

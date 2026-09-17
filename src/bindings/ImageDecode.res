@@ -72,6 +72,34 @@ external createImageBitmapFromFile: (file, imageBitmapOptions) => promise<imageB
 let decodeOriented = (f: file): promise<imageBitmap> =>
   createImageBitmapFromFile(f, {imageOrientation: "from-image"})
 
+// -- downscale + re-encode (SPEC §8a A4: cap stored photos at 2048px) -----
+//
+// Redraws an oversized bitmap onto a canvas at the capped size and
+// re-encodes it as JPEG. Reuses `Canvas2d`'s render-target / drawImage /
+// toBlob machinery (OffscreenCanvas, falling back to a detached
+// `<canvas>` — same fallback Render.res's export path already relies on)
+// instead of duplicating that machinery here. `asCanvasBitmap` is a
+// same-representation cast, exactly like `asBlob` above: this file's own
+// `imageBitmap` and `Canvas2d`'s are both just a DOM `ImageBitmap` at
+// runtime, decoded by the identical `createImageBitmap(…, {imageOrientation:
+// "from-image"})` call (Canvas2d.res's own header comment notes it applies
+// the same rule "again here — the app never trusts a stored width/height
+// over a fresh decode"; capture time is the one place that redraw also has
+// to actually *store* the result).
+external asCanvasBitmap: imageBitmap => Canvas2d.imageBitmap = "%identity"
+
+let resizedJpegMimeType = "image/jpeg"
+let resizedJpegQuality = 0.85
+
+// The bitmap is the caller's to close, same as `decodeOriented` above —
+// this only draws and encodes.
+let resizeToJpeg = (bitmap: imageBitmap, ~width: int, ~height: int): promise<PouchDb.blob> => {
+  let target = Canvas2d.makeTarget(~width, ~height)
+  let ctx = Canvas2d.context2d(target)
+  Canvas2d.drawImage(ctx, asCanvasBitmap(bitmap), 0.0, 0.0, Int.toFloat(width), Int.toFloat(height))
+  Canvas2d.toBlob(target, ~mimeType=resizedJpegMimeType, ~quality=Some(resizedJpegQuality))
+}
+
 // -- camera permission (SPEC M3 "camera denied") ---------------------------
 //
 // A file input can't detect OS-level camera denial by itself — there's no

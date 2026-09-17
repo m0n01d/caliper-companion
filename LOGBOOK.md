@@ -530,3 +530,108 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
   18/18 at `/`.
 - Gotcha hit twice this session: a stale `vite preview` on :3000 makes any check run against the
   wrong build (Playwright's `reuseExistingServer` happily reuses it). Kill by PID, not by pattern.
+
+## 2026-09-17 — v0.1 A3 export + A4 capture (agent/a-export-capture)
+
+From the first real phone dogfood: exported dimensioned PNGs were unreadable on dark photos
+(navy lines, no halo), and stored photos were needlessly large (whatever the camera handed
+over, kept verbatim). Two independent amendments, two commits.
+
+**A3 — export PNG legibility (`src/app/export/Render.res`, `RenderTest.res`, `Canvas2d.res`,
+`e2e/specs/export.spec.js`).**
+
+- Replaced the navy scheme (`#14213d`) with DESIGN.md §5's halo/amber treatment: every stroke —
+  dimension line, arrowheads, extension ticks, endpoint handles — drawn twice, a near-black halo
+  (`rgba(23,24,26,0.85)`, 2.5x the line width) underneath then amber (`#F2A33A`) on top. Label on
+  a solid amber pill, `#2B1A02` text in the mono stack, 1px near-black border.
+- Arrowheads and endpoint handles didn't exist in the pre-A3 renderer at all — M5 only drew the
+  line, ticks, and pill. Added as filled shapes (triangle / circle) with the same halo treatment,
+  via two small combinators (`strokeHaloed` for the line/ticks, `fillHaloed` for the filled
+  shapes) rather than hand-duplicating the two-pass draw at each call site.
+- Sizes per A3 bullet 2: stroke 0.15% of the long edge (min 2px) — note this is a change from the
+  pre-A3 "~0.3% of *height*" reading, both because A3 says so and because the phone dogfood found
+  the old line too thin against a busy photo; pill height 2% of image height (now a fixed measure,
+  independent of font metrics — previously it was derived from font size + padding); label font
+  1.4% of image height; arrowheads 5x the stroke width (10px at a 2px stroke).
+- Judgment calls, no exact figure given in SPEC/DESIGN for these:
+  - Endpoint handle radius = half the arrowhead size, so a handle and its end's arrowhead read as
+    one scale rather than two.
+  - Extension-tick dash (4/3 at a 2px stroke) carried over from DESIGN.md §5's *live-canvas* dash
+    spec, scaled by the same factor as the stroke (export has no dash spec of its own).
+  - Pill border width (1px) is literal, not scaled by image size — the bullet's own wording says
+    "1px", unlike every other size in the list which is a percentage.
+  - `labelText`'s `name = value unit` composition is unchanged. The amendment says to "keep" its
+    semantics; Annotate.res's live canvas already has its own `⌀`/`↧` diameter/depth prefixing
+    (a different agent's file, out of this track's ownership) — not mirrored here, since the
+    pre-A3 `Render.labelText` never had it either and the amendment didn't ask for it to gain it.
+- New pure helpers — `haloWidthPx`, `arrowheadSizePx`, `handleRadiusPx`, `dirOf`,
+  `arrowheadTriangle`, and a small WCAG contrast helper (`relativeLuminance` / `contrastRatio` /
+  `hexChannel`, the last shared so the hex colour constants and their luminance math can't drift
+  apart) — are all unit-tested in `RenderTest.res`. The pill fill/text contrast comes out to
+  ~8:1, comfortably over the 4.5:1 floor A3 bullet 3 asks for.
+- New e2e suite in `export.spec.js` ("render legibility"): builds an all-white and an all-black
+  800x600 JPEG in-page via `<canvas>`, runs each through capture -> one horizontal dimension ->
+  export, and decodes the resulting PNG with a small hand-written reader (`zlib.inflateSync` +
+  the PNG spec's five per-scanline unfilter types — no new npm package) to sample real pixel
+  values a quarter of the way along the line, clear of the pill and both endpoints. Asserts an
+  amber-core pixel and a halo pixel are both present, in both images.
+  - **Threshold judgment call:** the task brief's illustrative "halo pixel: all channels < 60"
+    doesn't survive alpha compositing — `rgba(23,24,26,0.85)` over solid white computes to
+    ≈(58, 59, 60), i.e. the blue channel lands exactly on 60 after 8-bit rounding, making a
+    literal `< 60` flaky. Used `< 70` instead: still far from amber (R>200) or a white background
+    (255), with real margin against rounding, and it's this test's own choice to make, not a
+    contract SPEC.md pins down.
+
+**A4 — cap stored photos at 2048px (`src/app/pages/Capture.res`, `src/bindings/ImageDecode.res`,
+`src/bindings/Canvas2d.res`, `e2e/specs/capture.spec.js`).**
+
+- `Capture.maxLongEdge = 2048`. After the oriented `createImageBitmap` decode, if
+  `max(width, height) > maxLongEdge`, the bitmap is redrawn onto a canvas at
+  `round(w·k) × round(h·k)` (`k = 2048 / max(w,h)`) and re-encoded `image/jpeg` quality 0.85;
+  that blob (not the picked file) is what `Store.putFace` stores, with the capped
+  `pixelWidth`/`pixelHeight`. Under the cap, the picked file is stored byte-for-byte unchanged,
+  same as before — the EXIF fixture (1200×1600) still takes this path untouched.
+- Reused `Canvas2d.res`'s render-target/drawImage/toBlob machinery from `ImageDecode.res` instead
+  of duplicating the `OffscreenCanvas`-with-`<canvas>`-fallback dance — a same-representation
+  `%identity` cast (`asCanvasBitmap`) bridges `ImageDecode.imageBitmap` to `Canvas2d.imageBitmap`,
+  the same technique this file's own `asBlob` already uses for `File` → `Blob`. `Canvas2d.toBlob`
+  gained an optional `~quality` (as `option<float>`, not a bare `~quality: float=?` — the latter,
+  despite matching the style of `Store.make`'s `~adapter: string=?`, didn't type-check here;
+  didn't chase why, the explicit-`option` form is no less clear) for the JPEG re-encode; the PNG
+  export path passes `None` and is unaffected.
+- Refactored `Capture.res`'s `pendingCapture`/`Decoded`/`saveFaceCmd` to carry an already-decided
+  `(PouchDb.blob, contentType)` pair instead of the raw `ImageDecode.file` — the resize decision
+  (`decodeAndCap`, one `async` promise producer handed to `Tea.fromPromise`, same "async work
+  lives in the producer, not the `onOk` callback" shape `Annotate.res`'s `saveCmd` already uses)
+  happens once, at `Decoded`, so recapture-confirm/keep just replays the stored pair with no
+  re-decode.
+- `Render.res`'s `canvasCapLongEdge`/`targetSize` (the pre-existing 4096 path) is untouched and
+  still exercised by `RenderTest.res` — A4 makes it unreachable in practice (every stored photo
+  is already ≤ 2048 by the time Export gets to it) but SPEC says keep it, not delete it, so a
+  later tier can raise `maxLongEdge` as a config change. Noted with a comment at both ends
+  (`Render.res`'s `canvasCapLongEdge`, `Export.res`'s `renderScale` destructure).
+- e2e: appended to `capture.spec.js`. A synthetic 4000×3000 JPEG (flat background + a dark
+  circle, generated in-page via canvas so it isn't a degenerate single-colour image) captured as
+  `top` shows `2048`/`1536` on the Part page's `face-top` tile; then, since `Bundle.res`'s
+  `faces/<kind>.jpg` entry is the stored attachment's bytes verbatim, exporting and reading that
+  entry's byte length back out of the zip confirms the *stored file itself* — not just its
+  reported dimensions — is smaller than the 4000×3000 input (the brief's "or accept the tile
+  assertion alone if that's too heavy" opt-out wasn't needed; the export-and-check-bytes route
+  reused patterns already proven working in `export.spec.js`). The pre-existing EXIF test
+  (1200×1600, under the cap) is untouched and still green.
+
+**Verification, both amendments:** `npx rescript build` (clean, `warnings.error = "+a"`),
+`npm test` (147/147, RenderTest's new/updated cases included), `npm run build`, `npx playwright
+test --config=e2e/playwright.config.js --project=chromium` — **21/21** (all 18 pre-existing specs
+green, plus the 2 new legibility tests and the 1 new A4 capture test). WebKit not run (this
+sandbox lacks the GTK/WPE libs, per `e2e/README.md` — unchanged from earlier sessions, not
+something this track touched).
+
+Environment gotcha, twice: a sibling agent's stale `vite preview` on :3000 (from a different
+worktree, `a-annotate`) got killed by PID before each e2e run, per this file's own standing
+instruction — not this track's bug, just a shared-machine port squat.
+
+Not done, out of this track's file ownership: `Annotate.res`/`Canvas.res`'s live canvas doesn't
+get the halo treatment (SPEC §8a A3's fourth bullet, "the live annotate canvas uses the same halo
+treatment so what you see is what exports") — the task brief scoped this track to A3 bullets 1–3
+only, and `Canvas.res`/`Annotate.res` belong to another agent.

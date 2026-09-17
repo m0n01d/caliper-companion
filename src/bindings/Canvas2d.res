@@ -71,7 +71,10 @@ type textMetrics
 
 type offscreenCanvas
 @send external getOffscreenContext: (offscreenCanvas, string) => Nullable.t<ctx> = "getContext"
-type blobOptions = {@as("type") type_: string}
+// `quality` is only meaningful for `image/jpeg`/`image/webp` (SPEC §8a A4's
+// re-encode); omitted (`None`) for the PNG export path, where the browser
+// ignores it anyway.
+type blobOptions = {@as("type") type_: string, quality?: float}
 @send
 external convertToBlob: (offscreenCanvas, blobOptions) => promise<blob> = "convertToBlob"
 
@@ -91,6 +94,9 @@ type canvasElement
 @send external getElementContext: (canvasElement, string) => Nullable.t<ctx> = "getContext"
 @send
 external toBlobRaw: (canvasElement, Nullable.t<blob> => unit, string) => unit = "toBlob"
+@send
+external toBlobRawQuality: (canvasElement, Nullable.t<blob> => unit, string, float) => unit =
+  "toBlob"
 
 type target = OffscreenTarget(offscreenCanvas) | ElementTarget(canvasElement)
 
@@ -127,19 +133,26 @@ exception ToBlobFailed(string)
 
 let pngMimeType = "image/png"
 
-let toBlob = (target: target, ~mimeType: string=pngMimeType): promise<blob> =>
+// `~quality` (0.0–1.0) is SPEC §8a A4's JPEG re-encode knob; left out for
+// the (default) PNG export path, where it has no effect.
+let toBlob = (target: target, ~mimeType: string=pngMimeType, ~quality: option<float>=None): promise<blob> =>
   switch target {
-  | OffscreenTarget(oc) => convertToBlob(oc, {type_: mimeType})
+  | OffscreenTarget(oc) =>
+    let opts: blobOptions = switch quality {
+    | Some(q) => {type_: mimeType, quality: q}
+    | None => {type_: mimeType}
+    }
+    convertToBlob(oc, opts)
   | ElementTarget(el) =>
-    Promise.make((resolve, reject) =>
-      toBlobRaw(
-        el,
-        nb =>
-          switch nb->Nullable.toOption {
-          | Some(b) => resolve(b)
-          | None => reject(ToBlobFailed("canvas toBlob() returned null"))
-          },
-        mimeType,
-      )
-    )
+    Promise.make((resolve, reject) => {
+      let onResult = nb =>
+        switch nb->Nullable.toOption {
+        | Some(b) => resolve(b)
+        | None => reject(ToBlobFailed("canvas toBlob() returned null"))
+        }
+      switch quality {
+      | Some(q) => toBlobRawQuality(el, onResult, mimeType, q)
+      | None => toBlobRaw(el, onResult, mimeType)
+      }
+    })
   }
