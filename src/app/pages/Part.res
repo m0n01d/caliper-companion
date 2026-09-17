@@ -1,6 +1,7 @@
 // Part — the part screen (`#/parts/:id`), SPEC M2 bullet 3 + M6 bullet 2.
-// Faces row, features table (via Reconcile), a warning row, export, and the
-// per-part hands-on timer.
+// P2a (docs/design/review-2026-09-17.md §3/§4 layout A "Gallery-first"): a
+// 2-column Face-card grid, Feature rows (via Reconcile) in a role=list,
+// warning rows, export, and the per-part hands-on timer.
 
 type partStatus =
   | Pending
@@ -191,10 +192,30 @@ let title = (model: model): string =>
   }
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
-// Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
-// optional trailing bar action. Default none; pages override.
+// Shell slots (DESIGN.md §11.1). Layout A's own bar note ("subtitle 'n faces
+// · n features · unit'") is superseded by docs/design/a10-folders-review.md
+// §1 B2 (blocker, resolved in the spec's favour): the subtitle slot is
+// reserved for A10's future folder path, so it stays unused here — the
+// faces/features/unit stats line moves into the features group header
+// instead (see `featuresHeader` below).
 let subtitle = (_model: model): option<string> => None
-let actions = (_model: model, ~dispatch as _dispatch: msg => unit): option<React.element> => None
+
+// Trailing bar text action (DESIGN.md §11.2 "trailing Edit/Done text
+// action"; review-2026-09-17.md F3 — this used to be a lone in-body
+// "Edit faces" capsule). Only appears once there's a face to edit, same
+// condition the old in-body button used.
+let actions = (model: model, ~dispatch: msg => unit): option<React.element> =>
+  Array.length(model.faces) > 0
+    ? Some(
+        <Ui.Button
+          variant=Ui.Button.Plain
+          className="bar-action"
+          testId="faces-edit"
+          onClick={_ => dispatch(FacesEditToggled)}>
+          {React.string(model.facesEditing ? "Done" : "Edit")}
+        </Ui.Button>,
+      )
+    : None
 
 // -- view helpers -----------------------------------------------------------
 
@@ -234,49 +255,49 @@ let uniqueSorted = (names: array<string>): array<string> =>
 let isDefaultLabel = (face: Types.face): bool =>
   face.label == Enums.faceKindToString(face.kind)
 
-let faceLabelEl = (face: Types.face): React.element =>
-  isDefaultLabel(face)
-    ? <span className="face-slot-label t-caption-1"> {React.string(face.label)} </span>
-    : <span className="t-caption-1 mono"> {React.string(face.label)} </span>
-
 let sizeText = (face: Types.face): string =>
   Int.toString(face.pixelWidth) ++ " × " ++ Int.toString(face.pixelHeight)
 
-// DESIGN.md §11.2: 56 px .slot tiles in a horizontal scroll row (reusing
-// global.css's .chip-row scroller — it already hides the scrollbar and
-// scrolls horizontally, so this page doesn't need its own). The size text
-// stays a descendant of the face-<label> element (capture.spec.js reads it
-// off the tile itself, not a Part-page-specific location). Faces come in
-// Store order (kind, then label — SPEC §8a A7).
-let renderFaces = (model: model): React.element =>
-  <div className="chip-row faces-row">
+let dimWord = (n: int): string => n == 1 ? "dim" : "dims"
+
+// Layout A (review-2026-09-17.md §3/§4, mockups/part-a.html): a 2-column
+// grid of `Ui.FaceCard` — the grid/card CSS itself is global.css §14
+// (Ui.FaceCard's own doc comment), nothing page-scoped needed for it.
+// 3-up (`.face-grid-dense`) at ≥ 5 faces per DESIGN.md §4's Face card row.
+// `face-<label>` still names the whole card, so capture.spec.js's size-text
+// read (`tileSize`'s innerText fallback) and faces.spec.js's `toContainText`
+// checks keep working. Faces come in Store order (kind, then label — SPEC
+// §8a A7).
+let renderFaceGrid = (model: model): React.element => {
+  let dimCountOfFace = (face: Types.face) =>
+    model.dimensions->Array.filter(d => d.faceId == face.id)->Array.length
+  let gridClass = Array.length(model.faces) >= 5 ? "face-grid face-grid-dense" : "face-grid"
+  <div className=gridClass>
     {model.faces
-    ->Array.map(face =>
-      <a
-        key={face.id}
-        className="face-slot"
-        dataTestId={"face-" ++ face.label}
-        href={Route.href(Route.Annotate(model.partId, face.id))}>
-        <span className="slot slot-captured">
-          {switch Dict.get(model.faceImages, face.id) {
-          | Some(url) => <img src={url} alt={face.label} />
-          | None => React.null
-          }}
-          <span className="slot-check" ariaHidden=true> <Icon name=Check size=10 /> </span>
-        </span>
-        {faceLabelEl(face)}
-        <span className="face-slot-size t-caption-2 muted"> {React.string(sizeText(face))} </span>
-      </a>
-    )
+    ->Array.map(face => {
+        let n = dimCountOfFace(face)
+        let caption = sizeText(face) ++ " · " ++ Int.toString(n) ++ " " ++ dimWord(n)
+        <Ui.FaceCard
+          key={face.id}
+          label={face.label}
+          caption
+          image={Dict.get(model.faceImages, face.id)}
+          state=Ui.FaceCard.Captured
+          href={Route.href(Route.Annotate(model.partId, face.id))}
+          badge={<span className="face-card-check"> <Icon name=Check /> </span>}
+          testId={"face-" ++ face.label}
+        />
+      })
     ->React.array}
-    <a
-      className="face-slot"
-      dataTestId="capture-face"
-      href={Route.href(Route.Capture(model.partId))}>
-      <span className="slot slot-empty"> <Icon name=Camera size=20 /> </span>
-      <span className="face-slot-label t-caption-1"> {React.string("Capture")} </span>
-    </a>
+    <Ui.FaceCard
+      label="Capture"
+      image=None
+      state=Ui.FaceCard.Empty
+      href={Route.href(Route.Capture(model.partId))}
+      testId="capture-face"
+    />
   </div>
+}
 
 // SPEC §8a A7 "a captured custom face is deleted from the Part page like any
 // face (delete confirms inline, removes its dimensions)". Edit mode swaps
@@ -349,27 +370,45 @@ let renderFacesEdit = (model: model, ~dispatch: msg => unit): React.element => {
   </div>
 }
 
-// The slot row (or, in edit mode, the list) plus the small Edit/Done toggle,
-// which only appears once there is a face to remove.
+// The face grid, or in edit mode the removable list (`renderFacesEdit`).
+// The Edit/Done toggle itself moved to the bar's trailing action (`actions`
+// above, F3) — no in-body button here any more.
 let renderFacesSection = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="stack">
-    {model.facesEditing ? renderFacesEdit(model, ~dispatch) : renderFaces(model)}
-    {Array.length(model.faces) > 0
-      ? <div>
-          <Ui.Button
-            variant=Secondary size=Small testId="faces-edit" onClick={_ => dispatch(FacesEditToggled)}>
-            {React.string(model.facesEditing ? "Done" : "Edit faces")}
-          </Ui.Button>
-        </div>
-      : React.null}
-  </div>
+  model.facesEditing ? renderFacesEdit(model, ~dispatch) : renderFaceGrid(model)
 
-// DESIGN.md §11.2: inset grouped table; live/error warning rows are split by
+// A dimension's kind, spelled as the prefix its canvas pill already uses
+// (DESIGN.md §5 "Diameter kind"/"Depth kind"): the row's only remaining cue
+// to kind now that there's no FACES/kind column (F5, "no column header").
+let kindGlyph = (kind: Types.dimensionKind): string =>
+  switch kind {
+  | Diameter => "⌀ "
+  | Depth => "↓ "
+  | Length => ""
+  }
+
+let countLabel = (n: int, singular: string, plural: string): string =>
+  Int.toString(n) ++ " " ++ (n == 1 ? singular : plural)
+
+// review-2026-09-17.md §3 layout A's own stats line ("n faces · n features ·
+// unit") was written for the bar subtitle; a10-folders-review.md §1 B2
+// (blocker) resolves that slot to A10's future folder path instead and
+// tells this line to move into the features group header — so it lives
+// here, not in `subtitle` above.
+let featuresHeader = (~faceCount: int, ~featureCount: int, ~units: Types.units): string =>
+  "Features · " ++
+  countLabel(faceCount, "face", "faces") ++
+  " · " ++
+  countLabel(featureCount, "feature", "features") ++
+  " · " ++
+  NumberParse.unitsLabel(units)
+
+// DESIGN.md §4 "Feature row" / §11.2: a role=list of role=listitem rows (no
+// `<table>`, no column header — F5) live/error warning rows are split by
 // cause (a kind conflict blocks export and is a different severity than a
 // spread flag) rather than one merged "Check: …" line.
 let renderFeatures = (model: model, ~part: Types.part): React.element => {
   let (features, conflicts) = reconcileForDisplay(model.dimensions)
-  // SPEC §8a A7: the faces column shows labels ("top", "left_side").
+  // SPEC §8a A7: the faces line shows labels ("top", "left_side").
   let faceLabelById = model.faces->Array.reduce(Dict.make(), (acc, f) => {
     Dict.set(acc, f.id, f.label)
     acc
@@ -381,68 +420,73 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
     {if Array.length(features) == 0 && Array.length(conflicts) == 0 {
       <p className="t-footnote muted"> {React.string("No dimensions captured yet.")} </p>
     } else {
-      <Ui.ListGroup header="Features">
-        // The `display: grid` + `display: contents` layout (Part.css —
-        // needed so the NAME column can shrink+ellipsis below its content
-        // width, see that file's comment) makes Chromium/Firefox compute
-        // this table's accessibility-tree roles from CSS `display` instead
-        // of its HTML tag: a `<table>` whose own `display` isn't
-        // `table`/`table-row`/etc. loses its implicit `table` role, and a
-        // `<tr>`/`<thead>`/`<tbody>` styled `display: contents` loses
-        // `row`/`rowgroup` the same way (a documented interaction between
-        // the CSS Display and Core-AAM specs — DESIGN.md §9's own
-        // parenthetical "role=table grid with proper roles if it stays a
-        // CSS grid" anticipates exactly this). Explicit `role`s restore the
-        // real table semantics regardless of the CSS `display` value.
-        <table className="features-table" role="table">
-          <thead role="rowgroup">
-            <tr role="row">
-              <th role="columnheader" scope="col"> {React.string("Name")} </th>
-              <th role="columnheader" scope="col" className="num"> {React.string("Value")} </th>
-              <th role="columnheader" scope="col" className="num"> {React.string("Tol")} </th>
-              <th role="columnheader" scope="col" className="num"> {React.string("Faces")} </th>
-            </tr>
-          </thead>
-          <tbody role="rowgroup">
-            {features
-            ->Array.map(feature => {
-              let facesLabel =
-                feature.faceIds
-                ->Array.map(id =>
-                  switch Dict.get(faceLabelById, id) {
-                  | Some(label) => label
-                  | None => "?"
-                  }
-                )
-                ->Array.join(", ")
-              let facesOnMultiple = Array.length(feature.faceIds) > 1
-              <tr key={feature.name} role="row" dataTestId="feature-row">
-                <td role="cell" className="mono">
-                  {React.string(feature.name)}
+      let header = featuresHeader(
+        ~faceCount=Array.length(model.faces),
+        ~featureCount=Array.length(features),
+        ~units=part.units,
+      )
+      <Ui.ListGroup header asList=true testId="features-list">
+        {features
+        ->Array.map(feature => {
+            let facesLabel =
+              feature.faceIds
+              ->Array.map(id =>
+                switch Dict.get(faceLabelById, id) {
+                | Some(label) => label
+                | None => "?"
+                }
+              )
+              ->Array.join(", ")
+            let facesOnMultiple = Array.length(feature.faceIds) > 1
+            let valueText = NumberParse.format(feature.value, part.units)
+            let unitLabel = NumberParse.unitsLabel(part.units)
+            let tolText = NumberParse.format(feature.tolerance, part.units)
+            // "<name>, <value> <unit>, ± <tol>, faces <labels>" — the row's
+            // own accessible name (it carries an explicit `aria-label`, so
+            // nothing inside it needs to spell this out again).
+            let accessibleName =
+              feature.name ++
+              ", " ++
+              valueText ++
+              " " ++
+              unitLabel ++
+              ", ± " ++
+              tolText ++
+              ", faces " ++
+              facesLabel
+            <div
+              key={feature.name}
+              className="feature-row"
+              role="listitem"
+              dataTestId="feature-row"
+              ariaLabel=accessibleName>
+              <div className="feature-row-name">
+                <span className="feature-row-name-text mono">
                   {feature.flagged
-                    ? <span className="flag-marker" ariaLabel="flagged">
-                        <Icon name=TriangleAlert size=14 />
-                        {React.string(" flagged")}
+                    ? <span className="flag-marker">
+                        <Icon name=TriangleAlert size=14 label="Flagged" />
                       </span>
                     : React.null}
-                </td>
-                <td role="cell" className="num mono">
-                  {React.string(NumberParse.format(feature.value, part.units))}
-                  <span className="unit t-subhead muted">
-                    {React.string(" " ++ NumberParse.unitsLabel(part.units))}
-                  </span>
-                </td>
-                <td role="cell" className="num mono muted">
-                  {React.string("± " ++ NumberParse.format(feature.tolerance, part.units))}
-                </td>
-                <td role="cell" className={facesOnMultiple ? "num mono text-live" : "num mono muted"}>
+                  {React.string(kindGlyph(feature.kind) ++ feature.name)}
+                </span>
+                <span
+                  className={"feature-row-faces t-footnote " ++
+                  (facesOnMultiple ? "text-live" : "muted")}>
                   {React.string(facesLabel)}
-                </td>
-              </tr>
-            })
-            ->React.array}
-          </tbody>
-        </table>
+                </span>
+              </div>
+              <div className="feature-row-value mono">
+                {React.string(valueText)}
+                <span className="feature-row-unit t-subhead muted">
+                  {React.string(" " ++ unitLabel)}
+                </span>
+              </div>
+              <div className="feature-row-tol t-footnote mono muted">
+                {React.string("±" ++ tolText)}
+              </div>
+            </div>
+          })
+        ->React.array}
       </Ui.ListGroup>
     }}
     {if Array.length(conflictNames) > 0 {

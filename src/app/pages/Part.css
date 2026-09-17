@@ -1,148 +1,83 @@
-/* Part — page-scoped styles. The 56 px slot shape, list-group card, mono
-   type and warning-row tones all come from src/global.css / Ui.res; this
-   file only carries the faces-row/face-slot layout and the features table
-   (there's no shared table component). Tokens: src/theme.css (--cc-*). */
+/* Part — page-scoped styles. P2a (docs/design/review-2026-09-17.md §3/§4
+   layout A): the face grid itself is `.face-grid`/`Ui.FaceCard`, entirely
+   global.css §14 — nothing page-scoped needed for it. This file carries
+   what's still page-specific: the edit-mode list's label capitalisation,
+   the Feature row (no shared table/list-row component fits its 3-column
+   shape), and the bar's trailing text action. Tokens: src/theme.css
+   (--cc-*). */
 
-.faces-row {
-  padding-bottom: 2px;
-}
-
-.face-slot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  width: 78px;
-  color: inherit;
-  text-decoration: none;
-  text-align: center;
-  /* A plain `<a>`, not `.btn`/`<button>` (see Ui.res's base rule) — DESIGN.md
-     §11.1 "Interaction feel" applies to it explicitly. Its focus-visible
-     ring comes from global.css's blanket `a:focus-visible` now. */
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.face-slot:active {
-  opacity: 0.6;
-}
-
+/* SPEC §8a A7: a default face's label (e.g. "top") is capitalised for
+   display; a custom label (e.g. "left_side") stays mono, as-is (DESIGN.md
+   §7) — used only by `renderFacesEdit`'s list-row title now that the
+   captured-state grid (`Ui.FaceCard`) capitalises every label uniformly via
+   its own CSS (global.css §14 `.face-card-label`). */
 .face-slot-label {
   text-transform: capitalize;
 }
 
-/* "1200 × 1600" wraps across the two spaces around "×" inside the slot at
-   Caption 2 — one line is the whole point of a caption. Keep it on one
-   line; `.faces-row` is a `.chip-row` (scrolls horizontally already), so a
-   caption a few px wider than the slot just claims a touch more of that
-   scroll room instead of breaking onto a clipped second line. Widened the
-   slot itself slightly too (72 → 78 px) so the common case doesn't need the
-   overflow at all. */
-.face-slot-size {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+/* Bar trailing text action (Part's `faces-edit`, PartsList's `parts-edit`):
+   DESIGN.md §11.2 "trailing Edit/Done text action", per
+   docs/design/mockups/part-a.html's `.bar-action`. `Ui.Button
+   ~variant=Plain` (global.css `.btn-plain`) already gives borderless/
+   transparent + the base `.btn`'s 44 px tap floor; this adds only what
+   Plain doesn't carry — accent colour and the bar's tighter horizontal
+   padding. CSS in this app is unscoped app-wide (index.html links every
+   page's stylesheet unconditionally, plain `<link>` tags, no CSS Modules),
+   so one rule here serves both pages' trailing action; it lives in this
+   file since Part introduces the pattern in this same track. See
+   PartsList.css for the reuse note on its side. */
+.bar-action {
+  padding: 0 var(--cc-space-2);
+  color: var(--cc-accent);
 }
 
-/* `table-layout: fixed` with a tiny percentage on the fixed columns (the
-   usual trick for "one flexible ellipsis column, the rest content-sized")
-   turns out NOT to work here: fixed layout takes a specified width
-   literally, including padding under `box-sizing: border-box`, and a
-   column whose specified width is smaller than its own left+right padding
-   renders degenerately — Chromium was laying the VALUE/TOL/FACES text out
-   starting past the cell's own right edge, off past the viewport, instead
-   of the intended narrow-but-visible column. CSS Grid doesn't have that
-   failure mode: `display: contents` on the row-grouping elements lifts
-   `th`/`td` straight into the grid so `grid-template-columns` controls
-   them directly, and a `minmax(0, 1fr)` track can shrink NAME below its
-   content's width (ordinary tables can't do this in auto layout, which
-   never shrinks a column below min-content) while the `auto` tracks stay
-   exactly as wide as VALUE/TOL/FACES need. */
-.features-table {
+/* Feature row (DESIGN.md §4 "Feature row", review-2026-09-17.md F4/F5): a
+   3-column grid per row instead of a `<table>` — name (wraps, never
+   truncates) with the faces line under it / value + unit / ± tolerance.
+   No column header row; the group header (Part.res's `featuresHeader`)
+   carries the unit instead. Padding 12/16 (vertical/horizontal — the P1
+   rhythm fix; the pre-P1 table used 9/10/14), min 44 px tall. */
+.feature-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  width: 100%;
-}
-
-.features-table thead,
-.features-table tbody,
-.features-table tr {
-  display: contents;
-}
-
-/* 9 px row padding per DESIGN.md §4 (tighter than wave 2's 10/14 — with
-   four columns, 14 px a side compounded to over 100 px of pure padding,
-   crowding NAME harder than the numbers actually need). */
-.features-table th,
-.features-table td {
-  min-width: 0;
-  padding: 9px 10px;
-  text-align: left;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: var(--cc-space-2);
+  align-items: start;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-3) var(--cc-space-4);
   border-bottom: 1px solid var(--cc-border);
 }
 
-.features-table th:first-child,
-.features-table td:first-child {
-  padding-left: 14px;
-}
-
-.features-table th:last-child,
-.features-table td:last-child {
-  padding-right: 14px;
-}
-
-.features-table tr:last-child td {
+.feature-row:last-child {
   border-bottom: 0;
 }
 
-.features-table th {
-  font: 600 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
-  color: var(--cc-text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.feature-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.features-table td {
-  font: var(--cc-text-body);
+.feature-row-name-text {
+  overflow-wrap: anywhere;
 }
 
-/* NAME is the only column allowed to shrink+ellipsis; VALUE/TOL/FACES stay
-   on one line at whatever width their content needs — this is the fix for
-   the reported "VALUE/TOL wrap at 390 px" bug, which the un-mono
-   proportional font (below) made worse than it needed to be. */
-.features-table th:first-child,
-.features-table td:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.features-table .num {
-  white-space: nowrap;
+.feature-row-value {
   text-align: right;
+  white-space: nowrap;
 }
 
-/* `.mono` (global.css) sets `font-family`/`font-variant-numeric` as
-   longhands, but `.features-table td { font: ... }` above is a shorthand at
-   higher specificity (class+element beats class) that resets font-family
-   right back to the UI stack — so VALUE/TOL/FACES were silently rendering
-   proportional, not mono, despite carrying the `mono` class (DESIGN.md §4/
-   §11.2: "value mono right"). Restated at equal-or-higher specificity so it
-   actually wins; tabular-nums also keeps digit columns from jittering
-   between rows. */
-.features-table td.mono {
-  font-family: var(--cc-font-mono);
-  font-variant-numeric: tabular-nums;
+.feature-row-tol {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .flag-marker {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  margin-left: 4px;
+  margin-right: 4px;
   color: var(--cc-error);
-  font: var(--cc-text-caption-2);
+  vertical-align: -2px;
 }
 
 .page-error {
