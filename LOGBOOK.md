@@ -2164,3 +2164,19 @@ that text. Branch `agent/a10-folders`, not pushed.
 - **Tooling note.** `resq set decl` hung indefinitely on `Canvas.res` for an `@val @scope(...)`
   external (killed after 5 min, file untouched — writes are atomic as promised); appended with a
   heredoc instead. Not reproduced or chased here.
+
+## 2026-09-17 — Settings and Debug were unreachable from the installed app
+
+- **Reported as "Debug? As in Safari inspector".** Fair: nothing linked to `#/settings` or
+  `#/debug`, and a home-screen app has no URL bar, so both pages only ever existed for this
+  sandbox's Playwright runs. The Snap and wedge toggles were equally unreachable on the phone.
+- **Fix.** `Shell` gained a `leading` slot, rendered only when a page has no Back (the root); the
+  Parts root puts a gear there (`settings-link`, an anchor to `#/settings`, `aria-label`
+  "Settings" — HIG: one bar button on the root). Settings gained a Diagnostics group with a
+  "Debug" row (`debug-link`, bug glyph, chevron) and Debug's Back now returns to Settings, not
+  Parts, so Back retraces the way in. `.list-row-leading` in `Settings.css` sizes the glyph in
+  the slot `Ui.ListThumb` fills on part rows.
+- **Verified.** `rescript build` clean; Chromium e2e 47/47 with `shell.spec.js` rewritten to
+  reach both pages through the UI and walk Back → Settings → Parts; a11y "first Tab on the root
+  lands on a real control" still holds (it is now the gear). Screenshot tour regenerated
+  (`12-parts-list`, `09-settings`, `10-debug` show the three changes).

@@ -156,9 +156,25 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
   | PartsList(_) => true
   | _ => false
   }
+  // Settings and Debug have no other way in from an installed app (no URL
+  // bar), so the Parts root carries a gear in the bar's leading slot;
+  // Settings then links on to Debug.
+  let leading = switch model.page {
+  | PartsList(_) =>
+    Some(
+      <a
+        className="btn btn-icon"
+        href={Route.href(Route.Settings)}
+        ariaLabel="Settings"
+        dataTestId="settings-link">
+        <Icon name=Settings size=22 />
+      </a>,
+    )
+  | _ => None
+  }
 
   <div className="app-frame">
-    <Shell title back ?subtitle ?actions largeTitle> {body} </Shell>
+    <Shell title back ?subtitle ?actions largeTitle ?leading> {body} </Shell>
     <A2hsHint />
   </div>
 }

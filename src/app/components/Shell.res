@@ -3,7 +3,9 @@
 // the scroll container — never `fixed`), with a chevron back button, a
 // centred Headline title (or, on the root screen, a static Large Title in
 // the content flow), an optional Footnote subtitle, a trailing actions slot,
-// and the content area. `Main.res` wraps every page's view in one.
+// and the content area, plus a leading slot that root screens (no back
+// button) use for a navigation control. `Main.res` wraps every page's view
+// in one.
 
 @react.component
 let make = (
@@ -12,6 +14,7 @@ let make = (
   ~actions: option<React.element>=?,
   ~largeTitle: bool=false,
   ~subtitle: option<string>=?,
+  ~leading: option<React.element>=?,
   ~children: React.element,
 ) => {
   let subtitleEl = switch subtitle {
@@ -21,8 +24,8 @@ let make = (
   <div className="shell">
     <header className="shell-topbar">
       <div className="shell-topbar-leading">
-        {switch back {
-        | Some(route) =>
+        {switch (back, leading) {
+        | (Some(route), _) =>
           <button
             type_="button"
             className="btn btn-icon shell-back"
@@ -30,7 +33,10 @@ let make = (
             onClick={_ => Tea.run(Route.push(route), _msg => ())}>
             <Icon name=ChevronLeft />
           </button>
-        | None => React.null
+        // Root screens have nowhere to go back to, so the leading slot is
+        // free for one navigation control (HIG: a bar button on the root).
+        | (None, Some(el)) => el
+        | (None, None) => React.null
         }}
       </div>
       <div className="shell-topbar-center">

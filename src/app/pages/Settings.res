@@ -152,4 +152,14 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
         </span>
       </div>
     </Ui.ListGroup>
+    <Ui.ListGroup
+      header="Diagnostics" footer="Dogfood timers, CSV export and the on-device viewport readout.">
+      <Ui.ListRow
+        href={Route.href(Route.Debug)}
+        chevron=true
+        testId="debug-link"
+        leading={<span className="list-row-leading"> <Icon name=Bug size=20 /> </span>}>
+        <Ui.ListRow.Title> {React.string("Debug")} </Ui.ListRow.Title>
+      </Ui.ListRow>
+    </Ui.ListGroup>
   </div>

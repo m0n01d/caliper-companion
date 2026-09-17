@@ -15,3 +15,12 @@
   color: var(--cc-text);
   font: var(--cc-text-footnote);
 }
+
+/* Leading glyph on the Diagnostics row — same slot `Ui.ListThumb` fills on
+   part/face rows, sized for a 20 px Lucide icon instead of a thumbnail. */
+.list-row-leading {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--cc-text-2);
+}

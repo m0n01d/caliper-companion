@@ -153,7 +153,8 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   }
 
 let title = (_model: model): string => "Debug"
-let back = (_model: model): option<Route.t> => Some(Route.Parts)
+// Reached from Settings' Diagnostics row, so Back returns there.
+let back = (_model: model): option<Route.t> => Some(Route.Settings)
 
 // Shell slots (DESIGN.md §11.1): an optional Footnote under the title and an
 // optional trailing bar action. Default none; pages override.

@@ -11,15 +11,23 @@ test.describe('app shell', () => {
     await expect(page.getByRole('button', {name: 'New part'})).toBeVisible()
   })
 
-  test('#/settings and #/debug render their stubs; back returns to /', async ({page}) => {
-    await page.goto('/#/settings')
+  test('Settings is reached from the Parts bar, Debug from Settings; Back walks the same way home', async ({
+    page,
+  }) => {
+    // No URL bar in an installed app — the gear in the root bar is the only
+    // way in, and the Diagnostics row the only way on to Debug.
+    await page.goto('/')
+    await page.getByRole('link', {name: 'Settings'}).click()
+    await expect(page).toHaveURL(/#\/settings$/)
     await expect(page.locator('.shell-title')).toHaveText('Settings')
     await expect(page.getByText('Readings come from a wedge dongle')).toBeVisible()
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page).toHaveURL(/#\/?$/)
     await expect(page.locator('.shell-title')).toHaveText('Parts')
 
-    await page.goto('/#/debug')
+    await page.goto('/#/settings')
+    await page.getByTestId('debug-link').getByRole('link').click()
+    await expect(page).toHaveURL(/#\/debug$/)
     await expect(page.locator('.shell-title')).toHaveText('Debug')
     await expect(page.getByRole('heading', {name: 'Timers'})).toBeVisible()
     // Viewport readout (LOGBOOK 2026-09-17 "iOS 26/27 standalone"): every
@@ -27,6 +35,8 @@ test.describe('app shell', () => {
     await expect(page.getByRole('heading', {name: 'Viewport'})).toBeVisible()
     await expect(page.getByTestId('viewport-row')).toHaveCount(13)
     await expect(page.getByTestId('viewport-row').filter({hasText: '100dvh'})).toContainText('844.0')
+    await page.getByRole('button', {name: 'Back'}).click()
+    await expect(page).toHaveURL(/#\/settings$/)
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page).toHaveURL(/#\/?$/)
     await expect(page.locator('.shell-title')).toHaveText('Parts')
