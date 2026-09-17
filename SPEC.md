@@ -367,3 +367,23 @@ same thing.
 - [ ] Selection made on the canvas highlights the matching row and scrolls it into view (`scrollIntoView({block: "nearest"})`, instant under reduced motion). Saving, deleting and Clear update the list immediately.
 - [ ] Focus order per DESIGN.md §9: … → Save → the list. Rows are real `<button>`s with an accessible name "<name>, <value> <unit>, <kind>".
 - [ ] Playwright: save two dimensions with identical endpoints; tapping the second row makes `delete` visible and the panel's reading equal the second value; Delete removes only that one (`dimension-count` 1, the remaining row is the first); tapping the canvas on the shared line selects one and its row gets `aria-selected`; the list is empty-state on a fresh face.
+
+### A10 — Folders (a Fusion-style path on every part) — **schema delta, additive**
+
+Parts are organised the way Fusion's Data Panel is: a `/`-separated folder path plus the part name
+as the leaf. A path, not tags, because the import skill can save the Fusion design into that same
+project folder.
+
+**JSON delta (`features.json`, additive; `schema` stays `caliper-companion/features/1`):**
+```json
+"part": { "id": "part:…", "name": "window_switch_bezel", "slug": "window_switch_bezel",
+          "path": "Miata/Interior/Dashboard", "units": "mm", "notes": "", "anchors": [] }
+```
+
+- [ ] `Types.part` gains `path: string` (`""` = root). Each segment matches `^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$` (folder names are display names, so spaces and capitals are allowed; slashes separate; leading/trailing/double slashes are normalised away). `Codec`, `Store` (docs without `path` read back as `""`), `FeaturesDocument` (`"path"` emitted after `"slug"`), the golden fixture (`"path": ""` added), tests.
+- [ ] Parts list: parts grouped by folder as inset grouped sections with the path as the section header (root parts first, then folders sorted by path); a section header shows its part count. A **search field** above the list (`parts-search`, `type="search"`, `inputmode="search"`, 17 px) filters by name and path, case-insensitive, live; empty result shows one Footnote line.
+- [ ] Create and rename forms gain a **Folder** field (`part-path`) with suggestion chips of existing paths (most recently used first, then alphabetical; `part-path-chip`), free text accepted; invalid segments show the rule inline and disable the primary button. Rename lets a part be moved by editing its folder.
+- [ ] Part page: the path is the Shell subtitle under the title ("Miata / Interior / Dashboard").
+- [ ] Existing parts migrate as root; nothing else changes for them.
+- [ ] Import skill (v1 line in `docs/fusion/IMPORT-SKILL-SPEC.md`): save the new design into the Fusion project folder named by `path`, creating folders as needed.
+- [ ] Playwright: create two parts in `Miata/Interior` and one at root → two sections in order (root, then `Miata/Interior`) with counts; search `bezel` filters to one; renaming a part's folder moves it between sections; export carries `"path"`; an invalid segment (`a//b`, `?`) is rejected inline.
