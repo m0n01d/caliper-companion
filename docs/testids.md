@@ -34,6 +34,10 @@ stable; add to this list before you rely on a new one.
 - `pending-points` — hidden readout of the pending/selected endpoints, `x1,y1;x2,y2` normalized to 4 dp
   (`x1,y1` with only p1 placed; empty when none)
 - `dimension-count` — readout of the number of saved dimensions on this face
+- `dimension-points` — hidden readout of every saved dimension's endpoints, `id:x1,y1;x2,y2|…`
+  normalized to 4 dp (ids contain a colon — split each entry at its last one). `aria-busy="true"`
+  while a drag's Store write is in flight (SPEC §8a A1: a drag on a saved handle or line body
+  persists on release; wait for `aria-busy="false"` before reloading)
 - `zoom` — readout of `scale / fitScale` to two decimals · `zoom-in` / `zoom-out` — ×1.5 about the
   canvas centre (Playwright can't pinch; pinch is Pointer Events on device)
 - `reading` — reading text input (`inputmode="decimal" enterkeyhint="next"`) · `reading-error` ·

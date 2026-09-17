@@ -186,3 +186,53 @@ describe("Viewport.distanceToSegment", () => {
     expect(Viewport.distanceToSegment(Viewport.pt(3.0, 4.0), ~a, ~b=a))->toBeCloseTo(5.0, 9)
   })
 })
+
+// SPEC §8a A1: a drag moves a stored point by the screen delta expressed in
+// normalized units, and a body drag moves both endpoints together.
+describe("Viewport drag math (SPEC §8a A1)", () => {
+  test("deltaToNormalized divides the screen delta by the on-screen image size", () => {
+    let t = fitT() // scale 0.325: the image is 390 × 520 px on screen
+    let d = Viewport.deltaToNormalized(t, ~imageW, ~imageH, ~dx=40.0, ~dy=25.0)
+    expect(d.x)->toBeCloseTo(40.0 /. 390.0, 9)
+    expect(d.y)->toBeCloseTo(25.0 /. 520.0, 9)
+    // The same screen drag means a smaller normalized move when zoomed in.
+    let t3 = Viewport.zoomAbout(t, ~factor=3.0, ~screenAnchor={x: 0.0, y: 0.0})
+    let d3 = Viewport.deltaToNormalized(t3, ~imageW, ~imageH, ~dx=40.0, ~dy=25.0)
+    expect(d3.x)->toBeCloseTo(d.x /. 3.0, 9)
+    expect(d3.y)->toBeCloseTo(d.y /. 3.0, 9)
+  })
+
+  test("a dragged handle lands where its screen point + delta reads back (round trip)", () => {
+    let t = fitT()
+    let p: Types.point = {x: 0.2, y: 0.5}
+    let d = Viewport.deltaToNormalized(t, ~imageW, ~imageH, ~dx=40.0, ~dy=25.0)
+    let moved = Viewport.translatePoint(p, d)
+    let s = Viewport.fromNormalized(t, ~imageW, ~imageH, p)
+    expectNorm(moved, Viewport.toNormalized(t, ~imageW, ~imageH, {x: s.x +. 40.0, y: s.y +. 25.0}))
+  })
+
+  test("translatePoint never leaves the image", () => {
+    expectNorm(Viewport.translatePoint({x: 0.95, y: 0.02}, {x: 0.2, y: -0.1}), {x: 1.0, y: 0.0})
+    expectNorm(Viewport.translatePoint({x: 0.5, y: 0.5}, {x: 0.0, y: 0.0}), {x: 0.5, y: 0.5})
+  })
+
+  test("translatePair moves both endpoints by the same delta", () => {
+    let (a, b) = Viewport.translatePair({x: 0.2, y: 0.5}, {x: 0.8, y: 0.5}, {x: 0.1, y: -0.2})
+    expectNorm(a, {x: 0.3, y: 0.3})
+    expectNorm(b, {x: 0.9, y: 0.3})
+  })
+
+  test("translatePair shortens the delta at the edge so the line keeps its length and angle", () => {
+    let a0: Types.point = {x: 0.2, y: 0.5}
+    let b0: Types.point = {x: 0.8, y: 0.7}
+    let (a, b) = Viewport.translatePair(a0, b0, {x: 0.5, y: 0.5})
+    // x can only move 0.2 (b hits 1.0), y only 0.3 (b hits 1.0).
+    expectNorm(a, {x: 0.4, y: 0.8})
+    expectNorm(b, {x: 1.0, y: 1.0})
+    let (a, b) = Viewport.translatePair(a0, b0, {x: -0.9, y: -0.9})
+    expectNorm(a, {x: 0.0, y: 0.0})
+    expectNorm(b, {x: 0.6, y: 0.2})
+    expect(b.x -. a.x)->toBeCloseTo(b0.x -. a0.x, 9)
+    expect(b.y -. a.y)->toBeCloseTo(b0.y -. a0.y, 9)
+  })
+})

@@ -21,25 +21,38 @@ type size = {w: float, h: float}
 
 type handle = P1 | P2
 
+// The endpoints being placed or edited. While a saved dimension is selected
+// these ARE its endpoints (see `select`), so the sheet's Update writes them.
+type pending = {p1: option<Types.point>, p2: option<Types.point>}
+
+// Whose endpoints a hit or a drag refers to (SPEC §8a A1): the pending pair,
+// or a saved dimension other than the selected one.
+type target = Pending | Existing(string)
+
 type hit =
   | HitNothing
-  | HitHandle(handle) // a pending endpoint (24 px radius)
-  | HitDimension(string) // an existing dimension's line (16 px)
+  | HitHandle(target, handle) // within handleHitRadius of an endpoint
+  | HitBody(target) // within lineHitRadius of the segment, off its handles
 
 type activePointer = {id: int, start: Viewport.pt, pos: Viewport.pt, hit: hit}
 
+type dragKind = Handle(handle) | Body
+
+// A drag in progress: what it moves, and the endpoints as they were before
+// it started — so a second finger (→ pinch) or a cancel reverts exactly, and
+// every move is `before + total pointer travel` (no drift, no grab jump).
+type drag = {target: target, kind: dragKind, before: pending}
+
 // What the pointers currently mean. Positions live in `pointers`; this is
 // the interpretation. One pointer is a press until it moves past the slop,
-// then a pan (or a handle drag if it went down on one); two are a pinch
-// and never a tap.
+// then a pan (or a drag if it went down on a handle or a line body); two
+// are a pinch and never a tap.
 type gesture =
   | NoGesture
   | Press(int)
   | Pan(int)
-  | DragHandle(int, handle)
+  | Drag(int, drag)
   | Pinch(int, int)
-
-type pending = {p1: option<Types.point>, p2: option<Types.point>}
 
 type loaded = {
   part: Types.part,
@@ -75,7 +88,8 @@ type model = {
   name: string,
   tolerance: string,
   kind: Types.dimensionKind,
-  busy: bool, // a Store write is in flight
+  busy: bool, // a Save/Delete Store write is in flight
+  moving: bool, // a drag's Store write is in flight (SPEC §8a A1)
   error: option<string>, // last Store failure, shown inline
 }
 
@@ -99,10 +113,11 @@ type msg =
   | Saved(result<(array<Types.dimension>, Store.settings), string>)
   | DeleteClicked
   | Deleted(result<array<Types.dimension>, string>)
+  | Moved(result<array<Types.dimension>, string>)
   | CancelClicked
 
 let tapSlop = 8.0
-let handleHitRadius = 24.0
+let handleHitRadius = 22.0 // a 44 px target (DESIGN.md §2) on a 22 px handle
 let lineHitRadius = 16.0
 let zoomStep = 1.5
 let maxZoomOverFit = 8.0
@@ -218,6 +233,20 @@ let deleteCmd = (~faceId: string, id: string): Tea.cmd<msg> =>
     e => Deleted(Error(exnMessage(e))),
   )
 
+// A drag on a saved dimension persists on release — same id, no Save tap
+// (SPEC §8a A1) — and the face's dimensions are reloaded so the model shows
+// what the store holds.
+let moveCmd = (~partId: string, ~faceId: string, dim: Types.dimension): Tea.cmd<msg> =>
+  Tea.fromPromise(
+    async () => {
+      let store = Store.shared()
+      let _ = await Store.putDimension(store, ~partId, dim)
+      await Store.dimensionsOfFace(store, ~faceId)
+    },
+    dims => Moved(Ok(dims)),
+    e => Moved(Error(exnMessage(e))),
+  )
+
 // ── Init ───────────────────────────────────────────────────────────────
 
 let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
@@ -239,6 +268,7 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     tolerance: "",
     kind: Length,
     busy: false,
+    moving: false,
     error: None,
   },
   loadCmd(~partId, ~faceId),
@@ -275,26 +305,45 @@ let toNormalized = (m: model, l: loaded, s: Viewport.pt): Types.point => {
   {x: clamp01(n.x), y: clamp01(n.y)}
 }
 
-let hitTest = (m: model, l: loaded, s: Viewport.pt): hit => {
-  let near = (n: option<Types.point>, r: float): bool =>
-    switch n {
-    | Some(p) => Viewport.distance(s, toScreen(m, l, p)) <= r
-    | None => false
+// Nearest of `xs` by `dist`, if any is within `r`.
+let nearestWithin = (xs: array<'a>, ~dist: 'a => float, ~r: float): option<'a> =>
+  xs
+  ->Array.reduce(None, (acc, x) => {
+    let d = dist(x)
+    switch acc {
+    | Some((_, best)) if best <= d => acc
+    | _ => d <= r ? Some((x, d)) : acc
     }
-  if near(m.pending.p1, handleHitRadius) {
-    HitHandle(P1)
-  } else if near(m.pending.p2, handleHitRadius) {
-    HitHandle(P2)
-  } else {
-    let nearest = l.dims->Array.reduce(None, (acc, d) => {
-      let dist = Viewport.distanceToSegment(s, ~a=toScreen(m, l, d.p1), ~b=toScreen(m, l, d.p2))
-      switch acc {
-      | Some((_, best)) if best <= dist => acc
-      | _ => dist <= lineHitRadius ? Some((d.id, dist)) : acc
-      }
-    })
-    switch nearest {
-    | Some((id, _)) => HitDimension(id)
+  })
+  ->Option.map(((x, _)) => x)
+
+// Hit priority handle > line body > nothing (a pan), nearest wins within a
+// class (SPEC §8a A1). Candidates are the pending pair — which, while a saved
+// dimension is selected, is that dimension's pair — and every other saved
+// dimension on the face.
+let hitTest = (m: model, l: loaded, s: Viewport.pt): hit => {
+  let saved = l.dims->Array.filter(d => m.selected != Some(d.id))
+  let pendingHandles =
+    [(P1, m.pending.p1), (P2, m.pending.p2)]->Array.filterMap(((h, p)) =>
+      p->Option.map(p => (Pending, h, toScreen(m, l, p)))
+    )
+  let savedHandles =
+    saved->Array.flatMap(d => [
+      (Existing(d.id), P1, toScreen(m, l, d.p1)),
+      (Existing(d.id), P2, toScreen(m, l, d.p2)),
+    ])
+  let handles = Array.concat(pendingHandles, savedHandles)
+  switch nearestWithin(handles, ~dist=((_, _, p)) => Viewport.distance(s, p), ~r=handleHitRadius) {
+  | Some((t, h, _)) => HitHandle(t, h)
+  | None =>
+    let pendingBody = switch (m.pending.p1, m.pending.p2) {
+    | (Some(a), Some(b)) => [(Pending, toScreen(m, l, a), toScreen(m, l, b))]
+    | _ => []
+    }
+    let savedBodies = saved->Array.map(d => (Existing(d.id), toScreen(m, l, d.p1), toScreen(m, l, d.p2)))
+    let bodies = Array.concat(pendingBody, savedBodies)
+    switch nearestWithin(bodies, ~dist=((_, a, b)) => Viewport.distanceToSegment(s, ~a, ~b), ~r=lineHitRadius) {
+    | Some((t, _, _)) => HitBody(t)
     | None => HitNothing
     }
   }
@@ -368,13 +417,15 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   let n = toNormalized(m, l, s)
   switch (m.pending.p1, m.pending.p2, hit) {
   // Second tap of a two-tap dimension: place p2 (wherever it lands, even on
-  // p1 — the handle stays draggable), hand focus to the reading.
+  // a handle — p2 stays draggable), hand focus to the reading.
   | (Some(_), None, _) => (
       {...m, pending: {...m.pending, p2: Some(n)}},
       focusTestId("reading", ~select=true),
     )
-  | (_, _, HitDimension(id)) => m.selected == Some(id) ? (m, Tea.none) : (select(m, l, id), Tea.none)
-  | (_, _, HitHandle(_)) => (m, Tea.none)
+  // A tap (no movement) on a saved dimension still selects it (SPEC §8a A1).
+  | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => (select(m, l, id), Tea.none)
+  // The pending pair is already the one being edited: a tap on it is a no-op.
+  | (_, _, HitHandle(Pending, _)) | (_, _, HitBody(Pending)) => (m, Tea.none)
   | (_, _, HitNothing) =>
     switch m.selected {
     | Some(_) => (clearEntry(m), Tea.none)
@@ -383,13 +434,53 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   }
 }
 
-let moveHandle = (m: model, l: loaded, h: handle, s: Viewport.pt): model => {
-  let n = toNormalized(m, l, s)
-  switch h {
-  | P1 => {...m, pending: {...m.pending, p1: Some(n)}}
-  | P2 => {...m, pending: {...m.pending, p2: Some(n)}}
+// The endpoints a drag starts from: the pending pair, or the saved
+// dimension's own.
+let beforeOf = (m: model, l: loaded, target: target): pending =>
+  switch target {
+  | Pending => m.pending
+  | Existing(id) =>
+    switch l.dims->Array.find(d => d.id == id) {
+    | Some(d) => {p1: Some(d.p1), p2: Some(d.p2)}
+    | None => noPending
+    }
+  }
+
+// Where a drag has taken its endpoints: the pre-drag pair moved by the
+// pointer's total travel — a handle drag moves that point, a body drag
+// moves both together (Viewport keeps them inside the image).
+let dragged = (m: model, l: loaded, d: drag, ~from: Viewport.pt, ~to: Viewport.pt): pending => {
+  let delta = Viewport.deltaToNormalized(
+    m.viewport,
+    ~imageW=l.imageW,
+    ~imageH=l.imageH,
+    ~dx=to.x -. from.x,
+    ~dy=to.y -. from.y,
+  )
+  switch d.kind {
+  | Handle(P1) => {...d.before, p1: d.before.p1->Option.map(p => Viewport.translatePoint(p, delta))}
+  | Handle(P2) => {...d.before, p2: d.before.p2->Option.map(p => Viewport.translatePoint(p, delta))}
+  | Body =>
+    switch (d.before.p1, d.before.p2) {
+    | (Some(a), Some(b)) =>
+      let (a, b) = Viewport.translatePair(a, b, delta)
+      {p1: Some(a), p2: Some(b)}
+    | _ => d.before
+    }
   }
 }
+
+// Put a drag's endpoints where they belong: the pending pair, or the saved
+// dimension in the loaded face (drawn live; persisted on release).
+let setPoints = (m: model, l: loaded, target: target, pts: pending): model =>
+  switch target {
+  | Pending => {...m, pending: pts}
+  | Existing(id) =>
+    let dims = l.dims->Array.map(d =>
+      d.id == id ? {...d, p1: pts.p1->Option.getOr(d.p1), p2: pts.p2->Option.getOr(d.p2)} : d
+    )
+    {...m, status: Ready({...l, dims})}
+  }
 
 let panBy = (m: model, l: loaded, ~from: Viewport.pt, ~to: Viewport.pt): model => {
   ...m,
@@ -414,12 +505,15 @@ let pointerById = (m: model, id: int): option<activePointer> => m.pointers->Arra
 let pointerDown = (m: model, l: loaded, id: int, s: Viewport.pt): model => {
   let hit = hitTest(m, l, s)
   let pointers = m.pointers->Array.filter(p => p.id != id)->Array.concat([{id, start: s, pos: s, hit}])
-  let gesture = switch m.gesture {
-  | NoGesture => Press(id)
-  | Press(other) | Pan(other) | DragHandle(other, _) if other != id => Pinch(other, id)
-  | g => g // a third finger is ignored; the pinch keeps its two
+  let m = {...m, pointers}
+  switch m.gesture {
+  | NoGesture => {...m, gesture: Press(id)}
+  | Press(other) | Pan(other) if other != id => {...m, gesture: Pinch(other, id)}
+  // A second finger during a drag cancels it: the points revert and the two
+  // fingers are a pinch (SPEC §8a A1).
+  | Drag(other, d) if other != id => {...setPoints(m, l, d.target, d.before), gesture: Pinch(other, id)}
+  | _ => m // a third finger is ignored; the pinch keeps its two
   }
-  {...m, pointers, gesture}
 }
 
 let pointerMove = (m: model, l: loaded, id: int, s: Viewport.pt): model =>
@@ -428,18 +522,23 @@ let pointerMove = (m: model, l: loaded, id: int, s: Viewport.pt): model =>
   | Some(before) =>
     let pointers = m.pointers->Array.map(p => p.id == id ? {...p, pos: s} : p)
     let m = {...m, pointers}
+    let drag = (d: drag): model => {
+      ...setPoints(m, l, d.target, dragged(m, l, d, ~from=before.start, ~to=s)),
+      gesture: Drag(id, d),
+    }
     switch m.gesture {
     | Press(pid) if pid == id =>
       if Viewport.distance(before.start, s) > tapSlop {
         switch before.hit {
-        | HitHandle(h) => {...moveHandle(m, l, h, s), gesture: DragHandle(id, h)}
-        | _ => {...panBy(m, l, ~from=before.pos, ~to=s), gesture: Pan(id)}
+        | HitHandle(target, h) => drag({target, kind: Handle(h), before: beforeOf(m, l, target)})
+        | HitBody(target) => drag({target, kind: Body, before: beforeOf(m, l, target)})
+        | HitNothing => {...panBy(m, l, ~from=before.pos, ~to=s), gesture: Pan(id)}
         }
       } else {
         m
       }
     | Pan(pid) if pid == id => panBy(m, l, ~from=before.pos, ~to=s)
-    | DragHandle(pid, h) if pid == id => moveHandle(m, l, h, s)
+    | Drag(pid, d) if pid == id => drag(d)
     | Pinch(a, b) if id == a || id == b =>
       switch (pointerById(m, a), pointerById(m, b)) {
       | (Some(pa), Some(pb)) =>
@@ -469,7 +568,20 @@ let pointerEnd = (m: model, l: loaded, id: int, ~cancelled: bool): (model, Tea.c
     | Press(pid) if pid == id =>
       let m = {...m, gesture: NoGesture}
       cancelled ? (m, Tea.none) : tap(m, l, p.pos, p.hit)
-    | Pan(pid) | DragHandle(pid, _) if pid == id => ({...m, gesture: NoGesture}, Tea.none)
+    | Pan(pid) if pid == id => ({...m, gesture: NoGesture}, Tea.none)
+    | Drag(pid, d) if pid == id =>
+      let m = {...m, gesture: NoGesture}
+      switch (cancelled, d.target) {
+      // The browser took the pointer away mid-drag: nothing half-moved stays.
+      | (true, _) => (setPoints(m, l, d.target, d.before), Tea.none)
+      | (false, Pending) => (m, Tea.none)
+      // Releasing a saved dimension's drag writes it at once (SPEC §8a A1).
+      | (false, Existing(sid)) =>
+        switch l.dims->Array.find(x => x.id == sid) {
+        | Some(dim) => ({...m, moving: true}, moveCmd(~partId=m.partId, ~faceId=m.faceId, dim))
+        | None => (m, Tea.none)
+        }
+      }
     | Pinch(a, b) if id == a || id == b =>
       // The finger left behind continues as a pan; never a tap.
       let rest = id == a ? b : a
@@ -542,6 +654,12 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     )
   | (Deleted(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
 
+  | (Moved(Ok(dims)), Ready(l)) => (
+      {...m, status: Ready({...l, dims}), moving: false, error: None},
+      Tea.none,
+    )
+  | (Moved(Error(why)), _) => ({...m, moving: false, error: Some(why)}, Tea.none)
+
   | (CancelClicked, _) => (clearEntry(m), focusTestId("annotate-canvas", ~select=false))
 
   // Messages that need a loaded face, arriving before/after one.
@@ -556,7 +674,8 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       | SaveClicked
       | Saved(Ok(_))
       | DeleteClicked
-      | Deleted(Ok(_)),
+      | Deleted(Ok(_))
+      | Moved(Ok(_)),
       _,
     ) => (m, Tea.none)
   }
@@ -743,6 +862,15 @@ let pendingPointsText = (p: pending): string =>
   | _ => ""
   }
 
+// Test hook (docs/testids.md): every saved dimension's endpoints,
+// `id:x1,y1;x2,y2|…` at 4 dp. Ids contain a colon, so split at the last one.
+let dimensionPointsText = (dims: array<Types.dimension>): string =>
+  dims
+  ->Array.map(d =>
+    d.id ++ ":" ++ fmt4(d.p1.x) ++ "," ++ fmt4(d.p1.y) ++ ";" ++ fmt4(d.p2.x) ++ "," ++ fmt4(d.p2.y)
+  )
+  ->Array.join("|")
+
 let kindButton = (m: model, ~dispatch, kind: Types.dimensionKind, text: string) =>
   <button
     type_="button"
@@ -925,6 +1053,9 @@ let view = (m: model, ~dispatch: msg => unit): React.element =>
           </button>
         </div>
         <span hidden=true dataTestId="pending-points"> {React.string(pendingPointsText(m.pending))} </span>
+        <span hidden=true dataTestId="dimension-points" ariaBusy=m.moving>
+          {React.string(dimensionPointsText(l.dims))}
+        </span>
       </div>
       {sheet(m, l, ~dispatch)}
     </div>
