@@ -530,3 +530,67 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
   18/18 at `/`.
 - Gotcha hit twice this session: a stale `vite preview` on :3000 makes any check run against the
   wrong build (Playwright's `reuseExistingServer` happily reuses it). Kill by PID, not by pattern.
+
+## v0.1 A1–A3 annotate (agent/a-annotate)
+
+- Files: `src/app/pages/Annotate.res`, `src/app/annotate/{Draw,Viewport}.res` +
+  `tests/ViewportTest.res` (+5 tests, 20 total), `src/bindings/Canvas.res` (`setLineDash`,
+  `setLineJoin`, `arcTo`), `e2e/specs/annotate.spec.js` (+2 specs, 7 total), `docs/testids.md`
+  (Annotate section). One commit per amendment.
+- **A1 — direct drags.** Hit test order is handle (22 px radius = the 44 px target, pending *or*
+  saved) > line body (16 px) > nothing, nearest wins within a class. `hit` is now
+  `HitHandle(target, P1|P2) | HitBody(target)` with `target = Pending | Existing(id)` (`Saved` is
+  already the msg). A press past the 8 px slop becomes `Drag(pointer, {target, kind, before})`;
+  every move is `before + total pointer travel` (`Viewport.deltaToNormalized`, `translatePoint`,
+  `translatePair`) so the grab offset never jumps and a revert is exact. Releasing a drag on a
+  saved dimension issues `moveCmd` → `Store.putDimension` (same id/createdAt/source) and reloads
+  the face's dimensions (`Moved`); the pending pair just keeps its points. A second finger during
+  a drag restores `before` and becomes a pinch; a `pointercancel` mid-drag also restores it
+  (nothing half-moved is kept). A tap (no movement) on a saved handle or body still selects.
+- **A1 judgment calls.** (1) The selected dimension's pair *is* the pending pair (as `select`
+  already made it), so dragging a selected dimension edits the entry and Update persists —
+  consistent with reading/name edits needing Update; unselected saved dimensions persist on
+  release. (2) A body drag at the image edge shortens the delta per axis so the line keeps its
+  length and angle instead of folding (`translatePair`). (3) A tap on the pending line body is a
+  no-op, like a tap on a pending handle (it used to start a new p1). (4) Live drags of a saved
+  dimension move the loaded copy in `status`, so the scene redraws from `dims` with no extra
+  state; `moving: bool` marks the in-flight write (Save/Delete keep their own `busy`).
+- **A1 test hook.** `dimension-points` (hidden span): `id:x1,y1;x2,y2|…` at 4 dp, `aria-busy`
+  while a drag's write is in flight. The write is faster than Playwright's first poll, so the
+  spec doesn't gate on `aria-busy="true"`; it polls PouchDB directly (`storedPoints`, same doc
+  shape as the seed helper) for the moved points, then reloads and asserts the readout within
+  0.005. The fit scale on the 390×844 viewport is height-limited (0.264), which the spec derives
+  from `data-transform` rather than assuming.
+- **A2 — keyboard on the second tap.** `focusTestId("reading")` no longer runs from `pointerup`.
+  `tap` records `focusIntent: Some(Reading)` when p2 lands; the canvas `onClick` dispatches
+  `CanvasClicked`, and `update` performs the intent as the existing focus cmd, synchronously
+  inside the click dispatch (iOS opens the keyboard from `click`, not `pointerup`).
+  `pointerDown` clears any intent a click never collected, so a stale one can't fire on a later
+  tap. Enter → name → Save focus moves are unchanged. **Unverifiable here**: no WebKit in the
+  sandbox; Chromium still asserts `reading` is focused after two taps (a tap produces a click).
+  Dwight verifies on the Pages deploy.
+- **A3 — halo strokes on the live canvas** (`Draw.res` rewritten). Every stroke is drawn twice:
+  halo `rgba(23,24,26,0.85)` at 2.5× width, then the colour. Pending: amber `#F2A33A` 2 px line,
+  1.5 px dashed 4/3 extension lines through each endpoint, 10×10 arrowheads, 22 px handles
+  (`#F4F2EC` disc, 3 px amber ring with halo, 6 px amber dot — no halo on the dot, it sits on the
+  disc), amber pill 28 px with `#2B1A02` mono 15 text and a 1 px `#17181A` border. Saved: teal
+  `#4FD1B1` at 60 % (halo included), pill `rgba(26,27,29,0.8)` with teal mono 12 `name value`,
+  no handles (DESIGN.md §5 shows handles on the selected one only — the endpoints stay
+  grabbable per A1). Selected: full-opacity teal with handles. Pill text is `formatLabel`:
+  `⌀ name value` for a diameter, `↓ name value` for a depth (was `↧`); the pending pill shows
+  the typed reading and/or name live. Pill placement: the normal is chosen to point up the
+  screen (right for a vertical line) and the offset is 8 px plus the pill's half-extent along
+  the normal (`|nx|·w/2 + |ny|·h/2`), so a wide pill clears a vertical or shallow line too.
+  Diameter keeps the line (no dashed circle — it would complicate hit-testing for no A1 gain).
+  Colours are literals with the `cc-` token named in a comment. Verified by screenshot at
+  390×844 on the built app: pending amber, dimmed teal, selected teal, all three kinds.
+- **Sandbox gotcha (new).** Port 3000 is shared with sibling agents' `vite preview` servers
+  (`/home/user/wt/a-export-capture` had one up during this track), and the sandbox reaps
+  background processes between tool calls. Playwright's `reuseExistingServer` then runs the
+  suite against a *sibling's* build and dies with `ERR_CONNECTION_REFUSED` when theirs goes away
+  — two full runs cascaded that way. Final runs used a scratchpad copy of the config on port
+  3017 (`workers: 1`, `reuseExistingServer: false`) and a one-call start/run/kill; nothing in the
+  repo's config changed. Any e2e claim from a shared sandbox should name its port.
+- Final: `npx rescript build` clean under `+a`, `npm test` 141/141 (ViewportTest 20/20),
+  `npm run build` clean, Playwright chromium 20/20 (18 existing + 2 A1). WebKit not run (no
+  system libs — see e2e/README.md).

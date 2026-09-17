@@ -122,3 +122,32 @@ let distanceToSegment = (s: pt, ~a: pt, ~b: pt): float => {
     distance(s, {x: a.x +. u *. vx, y: a.y +. u *. vy})
   }
 }
+
+// Stored points never leave the oriented image (SPEC §6: 0..1).
+let clamp01 = (v: float): float => Math.min(Math.max(v, 0.0), 1.0)
+
+// What a drag of (dx, dy) screen pixels means for a stored point under `t`:
+// the same movement in normalized units (SPEC §8a A1 — "moved by the
+// matching normalized delta").
+let deltaToNormalized = (t: t, ~imageW: float, ~imageH: float, ~dx: float, ~dy: float): Types.point => {
+  x: dx /. (imageW *. t.scale),
+  y: dy /. (imageH *. t.scale),
+}
+
+// A handle drag: move one endpoint by a normalized delta, kept inside the
+// image.
+let translatePoint = (n: Types.point, d: Types.point): Types.point => {
+  x: clamp01(n.x +. d.x),
+  y: clamp01(n.y +. d.y),
+}
+
+// A body drag: move both endpoints by the same delta. The delta is
+// shortened, per axis, so that neither endpoint leaves the image — the line
+// keeps its length and angle instead of folding at the edge.
+let translatePair = (a: Types.point, b: Types.point, d: Types.point): (Types.point, Types.point) => {
+  let clampDelta = (d: float, p: float, q: float): float =>
+    Math.min(Math.max(d, -.Math.min(p, q)), 1.0 -. Math.max(p, q))
+  let dx = clampDelta(d.x, a.x, b.x)
+  let dy = clampDelta(d.y, a.y, b.y)
+  ({x: a.x +. dx, y: a.y +. dy}, {x: b.x +. dx, y: b.y +. dy})
+}

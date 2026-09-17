@@ -152,6 +152,63 @@ async function saveDimension(page, a, b, reading, name) {
   await page.keyboard.press('Enter')
 }
 
+// Saved dimensions' endpoints, from the `dimension-points` readout:
+// `id:x1,y1;x2,y2|…` at 4 dp. Ids contain a colon, so split at the last one.
+async function dimensionPoints(page) {
+  const text = await page.getByTestId('dimension-points').textContent()
+  return text.split('|').filter(Boolean).map(entry => {
+    const i = entry.lastIndexOf(':')
+    const [p1, p2] = entry.slice(i + 1).split(';').map(pair => pair.split(',').map(Number))
+    return {id: entry.slice(0, i), p1, p2}
+  })
+}
+
+// Press at a screen point and drag by (dx, dy) in a few steps — the first
+// step alone is past the 8 px slop, so the drag arms on it.
+async function dragFrom(page, p, dx, dy) {
+  await page.mouse.move(p.x, p.y)
+  await page.mouse.down()
+  await page.mouse.move(p.x + dx, p.y + dy, {steps: 5})
+  await page.mouse.up()
+  await expect(page.getByTestId('dimension-points')).toHaveAttribute('aria-busy', 'false')
+}
+
+// A dimension's endpoints straight from PouchDB (the DB the app uses), so a
+// test can wait for the write a saved-dimension drag issues on release
+// before it reloads — the write is too quick to catch via `aria-busy`.
+async function storedPoints(page, id) {
+  if (!(await page.evaluate(() => Boolean(window.PouchDB)))) {
+    await page.addScriptTag({path: repoRoot + 'node_modules/pouchdb/dist/pouchdb.js'})
+  }
+  return page.evaluate(async id => {
+    const db = new window.PouchDB('caliper-companion')
+    try {
+      const doc = await db.get(id)
+      return {p1: [doc.p1.x, doc.p1.y], p2: [doc.p2.x, doc.p2.y]}
+    } finally {
+      await db.close()
+    }
+  }, id)
+}
+
+function near(actual, expected) {
+  return Math.abs(actual[0] - expected.x) < TOL && Math.abs(actual[1] - expected.y) < TOL
+}
+
+async function waitForStored(page, id, p1, p2) {
+  await expect
+    .poll(async () => {
+      const s = await storedPoints(page, id)
+      return near(s.p1, p1) && near(s.p2, p2)
+    }, {timeout: 5000})
+    .toBe(true)
+}
+
+// The normalized delta a drag of (dx, dy) screen px means under transform t.
+function normalizedDelta(t, dx, dy) {
+  return {x: dx / (t.w * t.s), y: dy / (t.h * t.s)}
+}
+
 // ── tests ──────────────────────────────────────────────────────────────
 
 test.describe('annotate', () => {
@@ -306,5 +363,69 @@ test.describe('annotate', () => {
 
     await page.reload()
     await expect(page.getByTestId('dimension-count')).toHaveText('0')
+  })
+
+  test('A1: dragging a saved handle moves that point, persists at once, and survives a reload (§8a A1)', async ({page}) => {
+    await openFace(page)
+    await saveDimension(page, {x: 0.2, y: 0.5}, {x: 0.8, y: 0.5}, '42.18', 'overall_l')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    let dims = await dimensionPoints(page)
+    expect(dims).toHaveLength(1)
+    const id = dims[0].id
+    expectNear(dims[0].p1, {x: 0.2, y: 0.5})
+    expectNear(dims[0].p2, {x: 0.8, y: 0.5})
+
+    // Grab p1 exactly (no selection first) and drag by a known screen delta.
+    const t = await readTransform(page)
+    const p1 = screenOf(t, {x: 0.2, y: 0.5})
+    expect(insideBox(t, p1)).toBe(true)
+    await dragFrom(page, p1, 40, 25)
+    const d = normalizedDelta(t, 40, 25)
+    const moved = {x: 0.2 + d.x, y: 0.5 + d.y}
+    await waitForStored(page, id, moved, {x: 0.8, y: 0.5})
+
+    // Nothing was selected by the drag and no Save was needed.
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+    await expect(page.getByTestId('pending-points')).toHaveText('')
+
+    await page.reload()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    dims = await dimensionPoints(page)
+    expect(dims).toHaveLength(1)
+    expect(dims[0].id).toBe(id)
+    expectNear(dims[0].p1, moved)
+    expectNear(dims[0].p2, {x: 0.8, y: 0.5})
+  })
+
+  test('A1: dragging a saved line body moves both points by the delta; a tap on it still selects (§8a A1)', async ({page}) => {
+    await openFace(page)
+    await saveDimension(page, {x: 0.2, y: 0.5}, {x: 0.8, y: 0.5}, '42.18', 'overall_l')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    const id = (await dimensionPoints(page))[0].id
+
+    // Grab the middle of the line — 22 px handle radius is far from x=0.5.
+    const t = await readTransform(page)
+    const mid = screenOf(t, {x: 0.5, y: 0.5})
+    expect(insideBox(t, mid)).toBe(true)
+    await dragFrom(page, mid, -30, 20)
+    const d = normalizedDelta(t, -30, 20)
+    await expect(page.getByTestId('delete')).toHaveCount(0)
+    await waitForStored(page, id, {x: 0.2 + d.x, y: 0.5 + d.y}, {x: 0.8 + d.x, y: 0.5 + d.y})
+
+    await page.reload()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    const dims = await dimensionPoints(page)
+    expect(dims).toHaveLength(1)
+    expectNear(dims[0].p1, {x: 0.2 + d.x, y: 0.5 + d.y})
+    expectNear(dims[0].p2, {x: 0.8 + d.x, y: 0.5 + d.y})
+    // Both moved together: same length and angle.
+    expect(dims[0].p2[0] - dims[0].p1[0]).toBeCloseTo(0.6, 3)
+    expect(dims[0].p2[1] - dims[0].p1[1]).toBeCloseTo(0, 3)
+
+    // A tap (no movement) on the moved body selects it for edit, as before.
+    await tapNormalized(page, {x: 0.5 + d.x, y: 0.5 + d.y})
+    await expect(page.getByTestId('delete')).toBeVisible()
+    await expect(page.getByTestId('reading')).toHaveValue('42.18')
+    await expect(page.getByTestId('name')).toHaveValue('overall_l')
   })
 })
