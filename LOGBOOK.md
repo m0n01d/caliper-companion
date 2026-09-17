@@ -135,3 +135,70 @@ Running log of decisions, judgment calls, and hand-off state. Newest entry last.
   `npm run build` (`dist/sw.js` stamped with a real `CACHE` version and `PRECACHE_URLS`),
   `npm test` (existing `SmokeTest` still green — nothing in `src/core` touched), `npm run e2e`
   (3/3 passing on chromium, 3/3 failing to *launch* — not fail assertions — on webkit).
+
+## 2026-09-17 — M5 export (agent/m5-export)
+
+- New: `src/bindings/Fflate.res`, `Canvas2d.res`, `Share.res`; `src/app/export/Render.res`,
+  `Bundle.res`, `tests/RenderTest.res`; `e2e/specs/export.spec.js`. `Export.res`'s body replaced
+  (via `resq set decl … run`, keeping `type error`/`type outcome` byte-identical to the stub other
+  pages already build against).
+- **`Fflate.res` — tuple entries, not a plain `Dict.t<Uint8Array.t>`.** Read fflate's own source
+  (`node_modules/fflate/esm/browser.js`, `fltn`) before binding it: `zipSync`'s per-entry
+  `[data, opts]` tuple form has its `opts` merged *over* the call's top-level options, so it's the
+  only way to give `features.json` and the JPEG/PNG entries different compression levels in one
+  call. A ReScript 2-tuple `(Uint8Array.t, zipOptions)` compiles to exactly that JS `[data, opts]`
+  pair, so `entries = Dict.t<(Uint8Array.t, zipOptions)>` is a fully-typed binding of the real
+  shape — no raw object literals, no branching on which entries happen to carry options. Every
+  entry gets explicit options (`{level: 6}`/fflate's own default for JSON, `{level: 0}`/stored for
+  the already-compressed images) rather than leaning on an implicit default.
+- **`Canvas2d.blob = PouchDb.blob`**, a plain alias, not a cast. A `Store.getFaceImage` result and
+  a canvas-rendered PNG are both real `Blob`s; aliasing means `Render`/`Bundle` can feed either
+  straight into `createImageBitmap` or `PouchDb.blobArrayBuffer` with no `Obj.magic`-shaped escape
+  hatch — the type system already knows they're the same thing.
+- **OffscreenCanvas feature-detected the WebApi.res way**: read `window.OffscreenCanvas` as
+  `Nullable.t<_>` and never call it to find out, same pattern as
+  `WebApi.ServiceWorker.container`/`Platform.standaloneNavigator`. Falls back to a detached
+  `<canvas>` + callback-based `toBlob` wrapped in `Promise.make`. Same pattern reused for
+  `navigator.share`/`canShare` in `Share.res`.
+- **Render re-decodes the face image at export time** (`createImageBitmap(…, {imageOrientation:
+  "from-image"})`) rather than trusting the face doc's stored `pixelWidth`/`pixelHeight`, and
+  `Export.run` overwrites those two fields on the `Types.face` it hands to `FeaturesDocument.make`
+  with whatever the fresh decode actually measured. Judgment call: this guarantees `features.json`
+  can never disagree with the PNG shipped next to it in the same export, at the cost of trusting
+  the decode over M3's capture-time numbers if the two ever drifted (they shouldn't — SPEC's own
+  EXIF rule applies at both points identically).
+- **Render's geometry is pure, split from its drawing.** `targetSize`/`strokeWidthPx`/`fontSizePx`/
+  `absLineOf`/`pillFor`/`labelText` take no `Canvas2d.ctx` and are exercised by
+  `tests/RenderTest.res`; `drawDimension`/`renderFace` are the thin DOM-touching replay. Necessary
+  split, not just tidiness — `vitest.config.js` runs in `node`, which has no canvas at all, so
+  anything touching `Canvas2d.ctx` can only be verified by the e2e suite.
+- **Reconcile is checked twice, deliberately.** Once directly in `Export.run` before any rendering
+  (SPEC: "return Error(KindConflict(name)) before rendering anything"), and again implicitly inside
+  `FeaturesDocument.make`'s own call to `Reconcile.reconcile`. The second `Error(KindConflict(_))`
+  arm is unreachable in practice (same `dimensions`, nothing mutates it in between) but kept for
+  exhaustiveness rather than an unchecked `Ok`-only assumption.
+- **`run` is wrapped in one top-level `try`/`catch`** that maps any escaping exception (a
+  `createImageBitmap` decode failure, a missing 2D context, …) to `Error(Failed(msg))`. Without it,
+  an unanticipated DOM exception would reject the returned promise instead of resolving to this
+  module's own `result` contract, which the Part page isn't expected to guard against separately.
+- **Judgment call — missing face attachment.** SPEC doesn't say what happens if `Store.getFaceImage`
+  returns `None` for a face `Store.facesOf` just listed (attachment write raced/failed). Treated as
+  `Error(Failed("Missing image for face <kind>"))` rather than skipping the face silently.
+- **Judgment call — zip only**, no multi-file `navigator.share` fallback, per SPEC §13 leaving this
+  open and the M5 brief's explicit "ship zip only and note it."
+- **`e2e/specs/export.spec.js` is written but could not be run to a pass.** `src/app/pages/
+  PartsList.res`, `Capture.res`, and `Annotate.res` are still SPEC-M6 stubs (a different, parallel
+  track) — none of the testids this spec drives (`new-part`, `capture-file-top`, `annotate-canvas`,
+  `reading`, `name`, `kind-*`, …) exist yet. Ran it anyway to confirm exactly where it stops:
+  both tests time out identically, in `createPart()`, waiting on `new-part`
+  (`npx playwright test --config=e2e/playwright.config.js --project=chromium
+  e2e/specs/export.spec.js`). The spec's header comment flags two guesses that whoever lands
+  Annotate/Parts should double check against what they actually build: (1) `annotate-canvas`'s
+  `data-transform="scale,tx,ty"` attribute semantics — `docs/testids.md` documents the canvas but
+  not that attribute, so the click-coordinate mapping in `clickNormalizedPoint` is read directly off
+  the M5 brief's wording, not a verified contract; (2) that creating a part navigates straight to
+  `#/parts/:id` rather than staying on the list.
+- Verified: `npx rescript build` clean from scratch (0 warnings under `+a`, 51 modules), `npm test` —
+  121/121 passing across 9 files (107 pre-existing + 14 new in `RenderTest.res`), `npm run build`
+  clean. `npm run e2e` / the export spec: could not be run to a pass, see above; `shell.spec.js`
+  wasn't rerun since nothing in this track touches app-shell files.
