@@ -50,7 +50,7 @@ let run = async (store: Store.t, ~partId: string, ~appVersion: string): result<o
           ): result<(Types.face, float, Bundle.faceBundle), error> =>
             switch await Store.getFaceImage(store, face.id) {
             | None =>
-              Error(Failed("Missing image for face " ++ Enums.faceKindToString(face.kind)))
+              Error(Failed("Missing image for face " ++ face.label))
             | Some(image) =>
               let originalBuf = await PouchDb.blobArrayBuffer(image)
               let original = Uint8Array.fromBuffer(originalBuf)
@@ -76,7 +76,7 @@ let run = async (store: Store.t, ~partId: string, ~appVersion: string): result<o
                 pixelWidth: renderWidth,
                 pixelHeight: renderHeight,
               }
-              Ok((renderedFace, renderScale, ({kind: face.kind, original, dimensioned}: Bundle.faceBundle)))
+              Ok((renderedFace, renderScale, ({label: face.label, original, dimensioned}: Bundle.faceBundle)))
             }
 
           // SPEC M5 bullet 5: faces are exported "in Store order" — `faces`

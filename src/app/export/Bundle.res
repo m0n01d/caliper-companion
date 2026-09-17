@@ -9,25 +9,26 @@
 // `Export.res` maps these onto its own contract types instead.
 
 type faceBundle = {
-  kind: Types.faceKind,
+  // The face's label (SPEC §8a A7) — names both zip entries. Default faces
+  // have `label == kind` ("top"), so their entries are the pre-A7 paths.
+  label: string,
   // The original attachment's bytes, verbatim, whatever its real content
-  // type — always zipped as `faces/<kind>.jpg` per the frozen §7 contract
+  // type — always zipped as `faces/<label>.jpg` per the frozen §7 contract
   // (SPEC M5 bullet 6 note: "name stays .jpg per the contract").
   original: Uint8Array.t,
   dimensioned: Uint8Array.t, // Render.renderFace's PNG output
 }
 
-let zipEntryPath = (kind: Types.faceKind, ~suffix: string): string =>
-  "faces/" ++ Enums.faceKindToString(kind) ++ suffix
+let zipEntryPath = (label: string, ~suffix: string): string => "faces/" ++ label ++ suffix
 
 let buildZipBytes = (~featuresJson: string, ~faces: array<faceBundle>): Uint8Array.t => {
   let entries: Fflate.entries = Dict.make()
   Dict.set(entries, "features.json", (Fflate.encodeUtf8(featuresJson), Fflate.defaultLevel))
   faces->Array.forEach(fb => {
-    Dict.set(entries, zipEntryPath(fb.kind, ~suffix=".jpg"), (fb.original, Fflate.storedLevel))
+    Dict.set(entries, zipEntryPath(fb.label, ~suffix=".jpg"), (fb.original, Fflate.storedLevel))
     Dict.set(
       entries,
-      zipEntryPath(fb.kind, ~suffix="_dimensioned.png"),
+      zipEntryPath(fb.label, ~suffix="_dimensioned.png"),
       (fb.dimensioned, Fflate.storedLevel),
     )
   })
