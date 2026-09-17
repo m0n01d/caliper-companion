@@ -289,3 +289,15 @@ one amendment → green tests → commit.
 - [ ] The cap is a single constant (`Capture.maxLongEdge`) so a later tier can raise it.
 - [ ] Re-encoded images carry no EXIF: orientation is baked in, so downstream decodes are unaffected.
 - [ ] Playwright: a synthetic 4000×3000 JPEG (generated in-page via canvas, passed to `setInputFiles` as a buffer) stores as 2048×1536; the stored attachment is smaller than the input.
+
+### A5 — Edge snap (was P1 in §4; now v0.1, toggleable)
+
+The tap is still a sketch mark, never a measurement; snapping only makes the drawn arrow land on
+the visible edge. It must be cheap, contrast-agnostic, and easy to turn off per part.
+
+- [ ] Pure module `EdgeSnap` (no DOM): input a grayscale patch (`width`, `height`, `Uint8Array` luma), output snapped positions in patch pixels. `snapPoint(patch, ~at, ~radius)` moves `at` to the strongest gradient-magnitude pixel within `radius`; `snapPair(patch, ~p1, ~p2, ~radius)` searches **along the p1→p2 segment** and moves each end to the strongest brightness crossing within `radius` of it, so two rough taps either side of a part land on its two edges. Returns `None` for an end when the best gradient is below a threshold (≥ 3× the patch's median gradient magnitude, and an absolute floor), leaving that tap where it was.
+- [ ] Bounded cost: at decode the annotate page keeps a downscaled grayscale copy of the oriented image (long edge 1024 px, built once from the bitmap via a canvas `getImageData`); snapping runs in that space and converts back to normalized coordinates. Never touches the full-resolution bitmap.
+- [ ] Toggle: a "Snap" pill in the annotate toolbar (`data-testid="snap-toggle"`, `aria-pressed`), one thumb-tap, persisted in Settings (`settings.snap: bool`, default **on**).
+- [ ] Feedback and override: a snapped point draws a 150 ms ring (respecting reduced motion); `pending-points` reflects the snapped values; dragging a handle disables snap for that point (a drag never re-snaps). Applies to p1 on the first tap and to both ends on the second tap (via `snapPair`).
+- [ ] Unit tests on synthetic patches: a vertical step edge snaps within 1 px from up to `radius` away on either side; a flat or noise-only patch leaves the point alone; a bar (two edges) with taps just inside and just outside each edge → `snapPair` lands on both edges; an oblique segment snaps along its own direction, not the image axes.
+- [ ] Playwright on `top.jpg` (bar spans x 0.17–0.81, y 0.35–0.55): p1 tapped 12 px inside the left edge → stored x within 0.004 of 0.17; taps at (0.15, 0.45) and (0.83, 0.45) → (0.17, 0.45) and (0.81, 0.45) within 0.004; with the toggle off the stored points equal the taps; the toggle state survives reload.
