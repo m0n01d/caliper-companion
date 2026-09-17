@@ -70,38 +70,47 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
 let title = (_model: model): string => "Settings"
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
+// DESIGN.md §11.2: inset grouped rows, a real Ui.Toggle (wedge-toggle stays
+// the checkbox's id), and a second read-only group for the default
+// tolerances (hig-brief §2 Settings: "switch style only inside a list row,
+// no separate label needed — row content supplies context").
 let view = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="page settings-page">
+  <div className="stack-lg">
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
     }}
-    <label className="toggle-row">
-      <span> {React.string("Readings come from a wedge dongle")} </span>
-      <input
-        type_="checkbox"
-        dataTestId="wedge-toggle"
-        checked={model.wedge}
-        disabled={!model.loaded}
-        onChange={_ => dispatch(ToggleWedge)}
-      />
-    </label>
-    <p className="help-text">
-      {React.string(
-        "A keyboard-wedge dongle types readings; saved dimensions are tagged `wedge`.",
-      )}
-    </p>
-    <div className="tolerance-readonly">
-      <p>
-        {React.string(
-          "Default tolerance (mm): ±" ++ NumberParse.format(model.lastToleranceMm, Types.Mm),
-        )}
-      </p>
-      <p>
-        {React.string(
-          "Default tolerance (in): ±" ++
-          NumberParse.format(model.lastToleranceIn, Types.Inch),
-        )}
-      </p>
-    </div>
+    <Ui.ListGroup footer="A keyboard-wedge dongle types readings; saved dimensions are tagged `wedge`.">
+      <div className="list-row wedge-row">
+        <span className="list-row-body">
+          <span className="t-body"> {React.string("Readings come from a wedge dongle")} </span>
+        </span>
+        <Ui.Toggle
+          checked={model.wedge}
+          disabled={!model.loaded}
+          id="wedge-toggle-input"
+          testId="wedge-toggle"
+          ariaLabel="Readings come from a wedge dongle"
+          onChange={_ => dispatch(ToggleWedge)}
+        />
+      </div>
+    </Ui.ListGroup>
+    <Ui.ListGroup header="Default tolerances">
+      <div className="list-row">
+        <span className="list-row-body">
+          <span className="list-row-title"> {React.string("Millimetres")} </span>
+        </span>
+        <span className="list-row-trailing mono">
+          {React.string("± " ++ NumberParse.format(model.lastToleranceMm, Types.Mm))}
+        </span>
+      </div>
+      <div className="list-row">
+        <span className="list-row-body">
+          <span className="list-row-title"> {React.string("Inches")} </span>
+        </span>
+        <span className="list-row-trailing mono">
+          {React.string("± " ++ NumberParse.format(model.lastToleranceIn, Types.Inch))}
+        </span>
+      </div>
+    </Ui.ListGroup>
   </div>

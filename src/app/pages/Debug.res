@@ -88,46 +88,46 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
 let title = (_model: model): string => "Debug"
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
+// DESIGN.md §11.2: an inset grouped list of timers — part name Body,
+// start/stop Footnote, hands-on mono trailing — plus a secondary capsule
+// for the CSV export. `timer-row` stays on each row for parts.spec.js.
+let renderRow = (row: timerRow): React.element => {
+  let hands =
+    Store.handsOnSeconds(row.timer)->Option.map(n => Int.toString(n) ++ "s")->Option.getOr("—")
+  <div key={row.timer.partId} className="list-row" dataTestId="timer-row">
+    <span className="list-row-body">
+      <span className="list-row-title"> {React.string(row.partLabel)} </span>
+      <span className="list-row-meta">
+        {React.string(
+          "Started " ++
+          row.timer.startedAt->Option.getOr("—") ++
+          " · stopped " ++
+          row.timer.stoppedAt->Option.getOr("—"),
+        )}
+      </span>
+    </span>
+    <span className="list-row-trailing mono"> {React.string(hands)} </span>
+  </div>
+}
+
 let view = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="page debug-page">
-    <h2> {React.string("Timers")} </h2>
+  <div className="stack-lg">
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
     }}
-    {if !model.loaded {
-      <p> {React.string("Loading timers…")} </p>
-    } else if Array.length(model.rows) == 0 {
-      <p className="muted"> {React.string("No timers recorded yet.")} </p>
-    } else {
-      <table className="timers-table">
-        <thead>
-          <tr>
-            <th> {React.string("Part")} </th>
-            <th> {React.string("Started")} </th>
-            <th> {React.string("Stopped")} </th>
-            <th> {React.string("Hands-on (s)")} </th>
-          </tr>
-        </thead>
-        <tbody>
-          {model.rows
-          ->Array.map(row =>
-            <tr key={row.timer.partId} className="timer-row" dataTestId="timer-row">
-              <td> {React.string(row.partLabel)} </td>
-              <td> {React.string(row.timer.startedAt->Option.getOr("—"))} </td>
-              <td> {React.string(row.timer.stoppedAt->Option.getOr("—"))} </td>
-              <td>
-                {React.string(
-                  Store.handsOnSeconds(row.timer)->Option.map(n => Int.toString(n))->Option.getOr("—"),
-                )}
-              </td>
-            </tr>
-          )
-          ->React.array}
-        </tbody>
-      </table>
-    }}
-    <button type_="button" dataTestId="export-csv" onClick={_ => dispatch(ExportCsvClicked)}>
+    <Ui.ListGroup header="Timers">
+      {if !model.loaded {
+        <div className="list-row"> <p className="t-footnote muted"> {React.string("Loading timers…")} </p> </div>
+      } else if Array.length(model.rows) == 0 {
+        <div className="list-row">
+          <p className="t-footnote muted"> {React.string("No timers recorded yet.")} </p>
+        </div>
+      } else {
+        model.rows->Array.map(renderRow)->React.array
+      }}
+    </Ui.ListGroup>
+    <Ui.Button variant=Ui.Button.Secondary testId="export-csv" onClick={_ => dispatch(ExportCsvClicked)}>
       {React.string("Export CSV")}
-    </button>
+    </Ui.Button>
   </div>

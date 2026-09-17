@@ -160,100 +160,125 @@ let uniqueSorted = (names: array<string>): array<string> =>
   ->Array.reduce([], (acc, n) => Array.includes(acc, n) ? acc : Array.concat(acc, [n]))
   ->Array.toSorted(String.compare)
 
+// DESIGN.md §11.2: 56 px .slot tiles in a horizontal scroll row (reusing
+// global.css's .chip-row scroller — it already hides the scrollbar and
+// scrolls horizontally, so this page doesn't need its own). The size text
+// stays a descendant of the face-<kind> element (capture.spec.js reads it
+// off the tile itself, not a Part-page-specific location).
 let renderFaces = (model: model): React.element =>
-  <div className="faces-row">
+  <div className="chip-row faces-row">
     {Enums.allFaceKinds
     ->Array.filterMap(kind => model.faces->Array.find(f => f.kind == kind))
     ->Array.map(face => {
       let kindLabel = Enums.faceKindToString(face.kind)
       <a
         key={face.id}
-        className="face-tile"
+        className="face-slot"
         dataTestId={"face-" ++ kindLabel}
         href={Route.href(Route.Annotate(model.partId, face.id))}>
-        {switch Dict.get(model.faceImages, face.id) {
-        | Some(url) => <img src={url} alt={kindLabel} className="face-thumb" />
-        | None => <div className="face-thumb face-thumb-placeholder" />
-        }}
-        <span className="face-tile-label"> {React.string(kindLabel)} </span>
-        <span className="face-tile-size">
+        <span className="slot slot-captured">
+          {switch Dict.get(model.faceImages, face.id) {
+          | Some(url) => <img src={url} alt={kindLabel} />
+          | None => React.null
+          }}
+        </span>
+        <span className="face-slot-label t-caption-1"> {React.string(kindLabel)} </span>
+        <span className="face-slot-size t-caption-2 muted">
           {React.string(Int.toString(face.pixelWidth) ++ " × " ++ Int.toString(face.pixelHeight))}
         </span>
       </a>
     })
     ->React.array}
     <a
-      className="face-tile capture-tile"
+      className="face-slot"
       dataTestId="capture-face"
       href={Route.href(Route.Capture(model.partId))}>
-      <span> {React.string("+ Capture face")} </span>
+      <span className="slot slot-empty"> <Icon name=Camera size=20 /> </span>
+      <span className="face-slot-label t-caption-1"> {React.string("Capture")} </span>
     </a>
   </div>
 
+// DESIGN.md §11.2: inset grouped table; teal/error warning rows are split by
+// cause (a kind conflict blocks export and is a different severity than a
+// spread flag) rather than one merged "Check: …" line.
 let renderFeatures = (model: model, ~part: Types.part): React.element => {
   let (features, conflicts) = reconcileForDisplay(model.dimensions)
   let faceKindById = model.faces->Array.reduce(Dict.make(), (acc, f) => {
     Dict.set(acc, f.id, f.kind)
     acc
   })
-  let flaggedNames = features->Array.filter(f => f.flagged)->Array.map(f => f.name)
-  let warnNames = uniqueSorted(Array.concat(flaggedNames, conflicts))
+  let flaggedNames = uniqueSorted(features->Array.filter(f => f.flagged)->Array.map(f => f.name))
+  let conflictNames = uniqueSorted(conflicts)
 
-  <div className="features-section">
-    <h2> {React.string("Features")} </h2>
+  <div className="stack">
     {if Array.length(features) == 0 && Array.length(conflicts) == 0 {
-      <p className="muted"> {React.string("No dimensions captured yet.")} </p>
+      <p className="t-footnote muted"> {React.string("No dimensions captured yet.")} </p>
     } else {
-      <table className="features-table">
-        <thead>
-          <tr>
-            <th> {React.string("Name")} </th>
-            <th> {React.string("Value")} </th>
-            <th> {React.string("Tolerance")} </th>
-            <th> {React.string("Faces")} </th>
-          </tr>
-        </thead>
-        <tbody>
-          {features
-          ->Array.map(feature => {
-            let facesLabel =
-              feature.faceIds
-              ->Array.map(id =>
-                switch Dict.get(faceKindById, id) {
-                | Some(k) => Enums.faceKindToString(k)
-                | None => "?"
-                }
-              )
-              ->Array.join(", ")
-            <tr
-              key={feature.name}
-              className={feature.flagged ? "feature-row flagged" : "feature-row"}
-              dataTestId="feature-row">
-              <td>
-                {React.string(feature.name)}
-                {feature.flagged
-                  ? <span className="flag-marker" ariaLabel="flagged"> {React.string(" ⚠")} </span>
-                  : React.null}
-              </td>
-              <td>
-                {React.string(
-                  NumberParse.format(feature.value, part.units) ++
-                  " " ++
-                  NumberParse.unitsLabel(part.units),
-                )}
-              </td>
-              <td> {React.string("± " ++ NumberParse.format(feature.tolerance, part.units))} </td>
-              <td> {React.string(facesLabel)} </td>
+      <Ui.ListGroup header="Features">
+        <table className="features-table">
+          <thead>
+            <tr>
+              <th> {React.string("Name")} </th>
+              <th className="num"> {React.string("Value")} </th>
+              <th className="num"> {React.string("Tol")} </th>
+              <th className="num"> {React.string("Faces")} </th>
             </tr>
-          })
-          ->React.array}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {features
+            ->Array.map(feature => {
+              let facesLabel =
+                feature.faceIds
+                ->Array.map(id =>
+                  switch Dict.get(faceKindById, id) {
+                  | Some(k) => Enums.faceKindToString(k)
+                  | None => "?"
+                  }
+                )
+                ->Array.join(", ")
+              let facesOnMultiple = Array.length(feature.faceIds) > 1
+              <tr key={feature.name} dataTestId="feature-row">
+                <td className="mono">
+                  {React.string(feature.name)}
+                  {feature.flagged
+                    ? <span className="flag-marker" ariaLabel="flagged">
+                        <Icon name=TriangleAlert size=14 />
+                        {React.string(" flagged")}
+                      </span>
+                    : React.null}
+                </td>
+                <td className="num mono">
+                  {React.string(NumberParse.format(feature.value, part.units))}
+                  <span className="unit t-subhead muted">
+                    {React.string(" " ++ NumberParse.unitsLabel(part.units))}
+                  </span>
+                </td>
+                <td className="num mono muted">
+                  {React.string("± " ++ NumberParse.format(feature.tolerance, part.units))}
+                </td>
+                <td className={facesOnMultiple ? "num mono text-teal" : "num mono muted"}>
+                  {React.string(facesLabel)}
+                </td>
+              </tr>
+            })
+            ->React.array}
+          </tbody>
+        </table>
+      </Ui.ListGroup>
     }}
-    {if Array.length(warnNames) > 0 {
-      <div className="warning-row" dataTestId="warning-row">
-        {React.string("Check: " ++ Array.join(warnNames, ", "))}
-      </div>
+    {if Array.length(conflictNames) > 0 {
+      <Ui.WarningRow tone=Ui.WarningRow.Error testId="warning-row">
+        {React.string(
+          "Kind conflict: " ++ Array.join(conflictNames, ", ") ++ " — measured as different kinds; blocks export.",
+        )}
+      </Ui.WarningRow>
+    } else {
+      React.null
+    }}
+    {if Array.length(flaggedNames) > 0 {
+      <Ui.WarningRow tone=Ui.WarningRow.Teal testId="warning-row">
+        {React.string("Flagged: " ++ Array.join(flaggedNames, ", ") ++ " — spread exceeds tolerance.")}
+      </Ui.WarningRow>
     } else {
       React.null
     }}
@@ -261,17 +286,18 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
 }
 
 let renderExport = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="export-section">
-    <button
-      type_="button"
-      dataTestId="export"
+  <div className="stack">
+    <Ui.Button
+      variant=Ui.Button.Primary
+      block=true
+      testId="export"
       disabled={model.exportState == Running}
       onClick={_ => dispatch(ExportClicked)}>
       {React.string(model.exportState == Running ? "Exporting…" : "Export")}
-    </button>
+    </Ui.Button>
     {switch model.exportState {
-    | Done(msg) => <p className="export-result"> {React.string(msg)} </p>
-    | Failed(msg) => <p dataTestId="export-error"> {React.string(msg)} </p>
+    | Done(msg) => <p className="t-footnote text-teal"> {React.string(msg)} </p>
+    | Failed(msg) => <p className="t-footnote text-error" dataTestId="export-error"> {React.string(msg)} </p>
     | Idle | Running => React.null
     }}
   </div>
@@ -288,21 +314,23 @@ let renderTimer = (model: model): React.element => {
     }
   | Some(_) | None => "Timer starts at first capture"
   }
-  <p className="timer" dataTestId="timer"> {React.string(text)} </p>
+  <p className="t-footnote mono muted" dataTestId="timer"> {React.string(text)} </p>
 }
 
 let view = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="page part-page">
+  <div className="stack-lg">
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
     }}
     {switch model.partStatus {
-    | Pending => <p> {React.string("Loading part…")} </p>
+    | Pending => <p className="t-footnote muted"> {React.string("Loading part…")} </p>
     | Missing =>
-      <div className="empty-state">
-        <p> {React.string("Part not found.")} </p>
-        <a href={Route.href(Route.Parts)}> {React.string("Back to parts")} </a>
+      <div className="stack">
+        <p className="t-footnote muted"> {React.string("Part not found.")} </p>
+        <a className="btn btn-secondary" href={Route.href(Route.Parts)}>
+          {React.string("Back to parts")}
+        </a>
       </div>
     | Found(part) =>
       <>
