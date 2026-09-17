@@ -14,6 +14,13 @@
 // p2 placed → `reading` focused; Enter in `reading` → `name`; Enter in
 // `name` → Save → canvas. A dongle typing `42.18⏎` lands a reading and
 // advances with zero app code.
+//
+// Auto-fit (SPEC §8a A6): when p2 lands the view animates to fit the pair
+// (with the keyboard up the stage is half its height, so a fresh dimension
+// can sit under it), re-fits when the stage resizes, and animates back on
+// Save/Clear — unless the user moved the view in between. The animation is
+// a `Tea.effect` ticking `ViewportTick`; `update` only maps progress to a
+// transform, so every frame is still a pure function of the model.
 
 // ── Model ──────────────────────────────────────────────────────────────
 
@@ -61,6 +68,17 @@ type gesture =
 // or pinch — performs it.
 type focusIntent = Reading
 
+// SPEC §8a A6: the view is fitted to the pending pair once p2 lands. This
+// remembers the view to come back to and whether the user has moved the
+// view since (pinch, pan, zoom button) — which stops the re-fit on stage
+// resize and the restore on Save/Clear.
+type autoFit = {before: Viewport.t, touched: bool}
+
+// A viewport animation in flight (A6: 160 ms, `--cc-ease`). `gen` ties the
+// frames an effect dispatches to the tween that started them, so a stale
+// frame loop can never move a view the user has since taken over.
+type tween = {gen: int, from: Viewport.t, to: Viewport.t}
+
 type loaded = {
   part: Types.part,
   face: Types.face,
@@ -92,6 +110,10 @@ type model = {
   pending: pending,
   selected: option<string>, // dimension id being edited
   focusIntent: option<focusIntent>, // performed by the next canvas click
+  autoFit: option<autoFit>, // SPEC §8a A6
+  tween: option<tween>, // the viewport animation in flight, if any
+  tweenGen: int, // last tween generation minted
+  announcement: string, // the `aria-live` line after a save (DESIGN.md §9)
   reading: string,
   name: string,
   tolerance: string,
@@ -109,6 +131,7 @@ type msg =
   | PointerUp(int)
   | PointerCancel(int)
   | CanvasClicked
+  | ViewportTick(int, float) // (tween generation, progress 0..1)
   | ZoomIn
   | ZoomOut
   | ReadingChanged(string)
@@ -119,7 +142,7 @@ type msg =
   | KindChosen(Types.dimensionKind)
   | ToleranceChanged(string)
   | SaveClicked
-  | Saved(result<(array<Types.dimension>, Store.settings), string>)
+  | Saved(result<(array<Types.dimension>, Store.settings, Types.dimension), string>)
   | DeleteClicked
   | Deleted(result<array<Types.dimension>, string>)
   | Moved(result<array<Types.dimension>, string>)
@@ -130,6 +153,7 @@ let handleHitRadius = 22.0 // a 44 px target (DESIGN.md §2) on a 22 px handle
 let lineHitRadius = 16.0
 let zoomStep = 1.5
 let maxZoomOverFit = 8.0
+let tweenMs = 160.0 // DESIGN.md §11.1 "Interaction feel": 150–200 ms
 
 let noPending = {p1: None, p2: None}
 
@@ -150,6 +174,35 @@ let focusTestId = (id: string, ~select: bool): Tea.cmd<msg> =>
         el->Canvas.select
       }
     | None => ()
+    }
+  )
+
+// Drive a viewport tween: one `ViewportTick(gen, progress)` per animation
+// frame until progress reaches 1 — or a single tick at 1 when the person
+// prefers reduced motion (SPEC §8a A6: instant). Timing stays in this
+// effect; `update` only maps progress to a transform. The loop always runs
+// to completion; frames of a superseded tween carry an old `gen` and are
+// ignored.
+let tweenCmd = (gen: int): Tea.cmd<msg> =>
+  Tea.effect(dispatch =>
+    if Canvas.prefersReducedMotion() {
+      dispatch(ViewportTick(gen, 1.0))
+    } else {
+      let startedAt = ref(None)
+      let rec frame = (now: float) => {
+        let t0 = switch startedAt.contents {
+        | Some(t0) => t0
+        | None =>
+          startedAt := Some(now)
+          now
+        }
+        let progress = Math.min((now -. t0) /. tweenMs, 1.0)
+        dispatch(ViewportTick(gen, progress))
+        if progress < 1.0 {
+          Canvas.requestAnimationFrame(frame)->ignore
+        }
+      }
+      Canvas.requestAnimationFrame(frame)->ignore
     }
   )
 
@@ -225,7 +278,7 @@ let saveCmd = (
       }
       await Store.putSettings(store, next)
       let dims = await Store.dimensionsOfFace(store, ~faceId)
-      (dims, next)
+      (dims, next, dim)
     },
     r => Saved(Ok(r)),
     e => Saved(Error(exnMessage(e))),
@@ -273,6 +326,10 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     pending: noPending,
     selected: None,
     focusIntent: None,
+    autoFit: None,
+    tween: None,
+    tweenGen: 0,
+    announcement: "",
     reading: "",
     name: "",
     tolerance: "",
@@ -304,6 +361,84 @@ let refit = (m: model, l: loaded): model => {
   let m = {...m, fitScale: fitted.scale}
   {...m, viewport: m.touched ? clampViewport(m, l, m.viewport) : fitted}
 }
+
+// ── SPEC §8a A6: auto-fit and the viewport tween ───────────────────────
+
+let segmentFit = (m: model, l: loaded, a: Types.point, b: Types.point): Viewport.t =>
+  Viewport.fitToSegment(
+    ~p1=a,
+    ~p2=b,
+    ~imageW=l.imageW,
+    ~imageH=l.imageH,
+    ~viewW=m.view.w,
+    ~viewH=m.view.h,
+    ~fitScale=m.fitScale,
+    ~maxScale=maxZoomOverFit *. m.fitScale,
+  )
+
+// Start animating the viewport to `target` (nothing to do when it is
+// already there). A tween in flight is superseded: its frames carry the
+// old generation and `update` drops them.
+let animateTo = (m: model, target: Viewport.t): (model, Tea.cmd<msg>) =>
+  if target == m.viewport {
+    ({...m, tween: None}, Tea.none)
+  } else {
+    let gen = m.tweenGen + 1
+    ({...m, tweenGen: gen, tween: Some({gen, from: m.viewport, to: target})}, tweenCmd(gen))
+  }
+
+// A tween in flight jumps to its end: a press, a zoom button or a stage
+// resize acts on the settled view, never on a frame of the animation (and
+// a tap computed from the published `data-transform` lands where it says).
+let settle = (m: model): model =>
+  switch m.tween {
+  | Some(tw) => {...m, viewport: tw.to, tween: None}
+  | None => m
+  }
+
+// The user took the view over (pinch, pan, zoom button): an active auto-fit
+// stops following — no re-fit on resize, no restore on Save (A6).
+let userMoved = (m: model): model => {
+  ...m,
+  touched: true,
+  tween: None,
+  autoFit: m.autoFit->Option.map(a => {...a, touched: true}),
+}
+
+// p2 landed: remember the view to come back to — the one from before an
+// earlier, still-untouched fit when the user re-tapped without saving —
+// and animate to the pair.
+let fitToPending = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
+  switch (m.pending.p1, m.pending.p2) {
+  | (Some(a), Some(b)) =>
+    let before = switch m.autoFit {
+    | Some({before, touched: false}) => before
+    | _ => m.viewport
+    }
+    animateTo({...m, autoFit: Some({before, touched: false})}, segmentFit(m, l, a, b))
+  | _ => (m, Tea.none)
+  }
+
+// Save, Clear or Delete ends the auto-fit: back to the remembered view —
+// clamped, since the stage may have changed size meanwhile — unless the
+// user moved the view in between, in which case it stays where they put it.
+let endAutoFit = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
+  switch m.autoFit {
+  | Some({before, touched: false}) => animateTo({...m, autoFit: None}, clampViewport(m, l, before))
+  | Some(_) => ({...m, autoFit: None}, Tea.none)
+  | None => (m, Tea.none)
+  }
+
+// Test hook (docs/testids.md): `fitting` while the view animates (the fit
+// after p2 or the restore after Save/Clear), then `fitted`, `touched` once
+// the user moved it, `none` outside an auto-fit.
+let autoFitState = (m: model): string =>
+  switch (m.tween, m.autoFit) {
+  | (Some(_), _) => "fitting"
+  | (None, Some({touched: true})) => "touched"
+  | (None, Some(_)) => "fitted"
+  | (None, None) => "none"
+  }
 
 let toScreen = (m: model, l: loaded, n: Types.point): Viewport.pt =>
   Viewport.fromNormalized(m.viewport, ~imageW=l.imageW, ~imageH=l.imageH, n)
@@ -429,18 +564,16 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   // Second tap of a two-tap dimension: place p2 (wherever it lands, even on
   // a handle — p2 stays draggable). The reading gets focus from the click
   // that follows this tap (SPEC §8a A2), not from here.
-  | (Some(_), None, _) => (
-      {...m, pending: {...m.pending, p2: Some(n)}, focusIntent: Some(Reading)},
-      Tea.none,
-    )
+  | (Some(_), None, _) =>
+    fitToPending({...m, pending: {...m.pending, p2: Some(n)}, focusIntent: Some(Reading)}, l)
   // A tap (no movement) on a saved dimension still selects it (SPEC §8a A1).
   | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => (select(m, l, id), Tea.none)
   // The pending pair is already the one being edited: a tap on it is a no-op.
   | (_, _, HitHandle(Pending, _)) | (_, _, HitBody(Pending)) => (m, Tea.none)
   | (_, _, HitNothing) =>
     switch m.selected {
-    | Some(_) => (clearEntry(m), Tea.none)
-    | None => ({...m, pending: {p1: Some(n), p2: None}}, Tea.none)
+    | Some(_) => endAutoFit(clearEntry(m), l)
+    | None => ({...m, pending: {p1: Some(n), p2: None}, announcement: ""}, Tea.none)
     }
   }
 }
@@ -494,19 +627,20 @@ let setPoints = (m: model, l: loaded, target: target, pts: pending): model =>
   }
 
 let panBy = (m: model, l: loaded, ~from: Viewport.pt, ~to: Viewport.pt): model => {
-  ...m,
-  touched: true,
+  ...userMoved(m),
   viewport: clampViewport(m, l, Viewport.pan(m.viewport, ~dx=to.x -. from.x, ~dy=to.y -. from.y)),
 }
 
 let zoomBy = (m: model, l: loaded, factor: float): model => {
-  ...m,
-  touched: true,
-  viewport: clampViewport(
-    m,
-    l,
-    Viewport.zoomAbout(m.viewport, ~factor, ~screenAnchor={x: m.view.w /. 2.0, y: m.view.h /. 2.0}),
-  ),
+  let m = settle(m)
+  {
+    ...userMoved(m),
+    viewport: clampViewport(
+      m,
+      l,
+      Viewport.zoomAbout(m.viewport, ~factor, ~screenAnchor={x: m.view.w /. 2.0, y: m.view.h /. 2.0}),
+    ),
+  }
 }
 
 let pointerById = (m: model, id: int): option<activePointer> => m.pointers->Array.find(p => p.id == id)
@@ -514,6 +648,8 @@ let pointerById = (m: model, id: int): option<activePointer> => m.pointers->Arra
 // ── Update ─────────────────────────────────────────────────────────────
 
 let pointerDown = (m: model, l: loaded, id: int, s: Viewport.pt): model => {
+  // A press during an animation lands on its end state (see `settle`).
+  let m = settle(m)
   let hit = hitTest(m, l, s)
   let pointers = m.pointers->Array.filter(p => p.id != id)->Array.concat([{id, start: s, pos: s, hit}])
   // An intent the last tap's click never collected (a pointer type that
@@ -558,8 +694,7 @@ let pointerMove = (m: model, l: loaded, id: int, s: Viewport.pt): model =>
         let prevA = a == id ? before.pos : pa.pos
         let prevB = b == id ? before.pos : pb.pos
         {
-          ...m,
-          touched: true,
+          ...userMoved(m),
           viewport: clampViewport(
             m,
             l,
@@ -603,11 +738,21 @@ let pointerEnd = (m: model, l: loaded, id: int, ~cancelled: bool): (model, Tea.c
     }
   }
 
+// The view goes back (A6) as the save is *initiated*, not when the write
+// lands: the Enter or tap that saves is the user's own action, and it is a
+// React event, so the published `data-transform` is the restored view
+// before the next thing anyone does — a spec reading it straight after the
+// Enter would otherwise still see the fitted view of the pair just saved.
 let trySave = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
   switch buildDimension(m, l) {
-  | Some(dim) => (
-      {...m, busy: true, error: None},
-      saveCmd(~partId=m.partId, ~faceId=m.faceId, ~units=l.part.units, ~settings=l.settings, dim),
+  | Some(dim) =>
+    let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
+    (
+      m,
+      Tea.batch([
+        restore,
+        saveCmd(~partId=m.partId, ~faceId=m.faceId, ~units=l.part.units, ~settings=l.settings, dim),
+      ]),
     )
   | None => (m, Tea.none)
   }
@@ -625,7 +770,15 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     } else {
       let m = {...m, view, dpr}
       switch status {
-      | Ready(l) => (refit(m, l), Tea.none)
+      | Ready(l) =>
+        // A resize mid-animation ends it at its target, then re-fits the
+        // target for the new size. While the fitted pair is untouched the
+        // stage follows it (A6: the keyboard changed `--vv-height`).
+        let m = refit(settle(m), l)
+        switch (m.autoFit, m.pending.p1, m.pending.p2) {
+        | (Some({touched: false}), Some(a), Some(b)) => ({...m, viewport: segmentFit(m, l, a, b)}, Tea.none)
+        | _ => (m, Tea.none)
+        }
       | _ => (m, Tea.none)
       }
     }
@@ -640,6 +793,19 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     switch m.focusIntent {
     | Some(Reading) => ({...m, focusIntent: None}, focusTestId("reading", ~select=true))
     | None => (m, Tea.none)
+    }
+
+  // One frame of the viewport tween (A6). Frames of a superseded or
+  // cancelled tween carry a stale generation and change nothing.
+  | (ViewportTick(gen, progress), _) =>
+    switch m.tween {
+    | Some(tw) if tw.gen == gen =>
+      if progress >= 1.0 {
+        ({...m, viewport: tw.to, tween: None}, Tea.none)
+      } else {
+        ({...m, viewport: Viewport.lerp(tw.from, tw.to, Viewport.ease(progress))}, Tea.none)
+      }
+    | _ => (m, Tea.none)
     }
 
   | (ZoomIn, Ready(l)) => (zoomBy(m, l, zoomStep), Tea.none)
@@ -657,21 +823,33 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
   | (SaveClicked, Ready(l)) => trySave(m, l)
   // Save clears reading + name + points, keeps kind and tolerance, and
   // returns focus to the canvas for the next tap (M4 bullet 7).
-  | (Saved(Ok((dims, settings))), Ready(l)) => (
-      {...clearEntry(m), status: Ready({...l, dims, settings}), busy: false},
-      focusTestId("annotate-canvas", ~select=false),
+  | (Saved(Ok((dims, settings, dim))), Ready(l)) =>
+    let announcement =
+      "Dimension saved: " ++
+      dim.name ++
+      " " ++
+      NumberParse.format(dim.value, l.part.units) ++
+      " " ++
+      NumberParse.unitsLabel(l.part.units)
+    // `trySave` already restored the view; this covers a pair placed while
+    // the write was in flight.
+    let (m, restore) = endAutoFit(
+      {...clearEntry(m), status: Ready({...l, dims, settings}), busy: false, announcement},
+      l,
     )
+    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
   | (Saved(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
 
-  | (DeleteClicked, Ready(_)) =>
+  | (DeleteClicked, Ready(l)) =>
     switch m.selected {
-    | Some(id) if !m.busy => ({...m, busy: true, error: None}, deleteCmd(~faceId=m.faceId, id))
+    | Some(id) if !m.busy =>
+      let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
+      (m, Tea.batch([restore, deleteCmd(~faceId=m.faceId, id)]))
     | _ => (m, Tea.none)
     }
-  | (Deleted(Ok(dims)), Ready(l)) => (
-      {...clearEntry(m), status: Ready({...l, dims}), busy: false},
-      focusTestId("annotate-canvas", ~select=false),
-    )
+  | (Deleted(Ok(dims)), Ready(l)) =>
+    let (m, restore) = endAutoFit({...clearEntry(m), status: Ready({...l, dims}), busy: false}, l)
+    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
   | (Deleted(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
 
   | (Moved(Ok(dims)), Ready(l)) => (
@@ -680,6 +858,9 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     )
   | (Moved(Error(why)), _) => ({...m, moving: false, error: Some(why)}, Tea.none)
 
+  | (CancelClicked, Ready(l)) =>
+    let (m, restore) = endAutoFit(clearEntry(m), l)
+    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
   | (CancelClicked, _) => (clearEntry(m), focusTestId("annotate-canvas", ~select=false))
 
   // Messages that need a loaded face, arriving before/after one.
@@ -727,6 +908,8 @@ type scene = {
   pendingLabel: option<string>,
   view: size,
   dpr: float,
+  reported: Viewport.t, // `data-transform`: the settled view (a tween's target while it runs)
+  autofit: string, // `data-autofit`
 }
 
 // Pill text (DESIGN.md §5): `name value`, prefixed ⌀ for a diameter and ↓
@@ -794,12 +977,13 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
   // oriented image size, so a spec can compute where a normalized point is.
   el->Canvas.setAttribute(
     "data-transform",
-    Float.toString(scene.viewport.scale) ++
+    Float.toString(scene.reported.scale) ++
     "," ++
-    Float.toString(scene.viewport.tx) ++
+    Float.toString(scene.reported.tx) ++
     "," ++
-    Float.toString(scene.viewport.ty),
+    Float.toString(scene.reported.ty),
   )
+  el->Canvas.setAttribute("data-autofit", scene.autofit)
   el->Canvas.setAttribute(
     "data-image-size",
     Float.toString(scene.imageW) ++ "x" ++ Float.toString(scene.imageH),
@@ -820,7 +1004,7 @@ module CanvasView = {
     let canvasRef = React.useRef(Nullable.null)
 
     // Size reporting: once on mount and whenever the stage resizes (the
-    // sheet growing for an error message shrinks the canvas).
+    // keyboard changing `--vv-height`, the panel growing for an error).
     React.useEffect(() =>
       switch canvasRef.current->Nullable.toOption {
       | Some(el) =>
@@ -837,8 +1021,13 @@ module CanvasView = {
     , [])
 
     // Redraw as a pure function of the scene. Deps are the scene's fields
-    // (record identity is stable across unrelated model updates).
-    React.useEffect(() => {
+    // (record identity is stable across unrelated model updates). A layout
+    // effect, not a plain one: the test hooks `data-transform`/`data-autofit`
+    // are set here, and they must land in the same task as the render that
+    // changed the viewport — a Save restores the view (A6), and a spec that
+    // reads the attribute a frame later would otherwise compute its next
+    // tap from a transform the model has already left.
+    React.useLayoutEffect(() => {
       switch canvasRef.current->Nullable.toOption {
       | Some(el) => drawScene(el, scene)
       | None => ()
@@ -853,6 +1042,8 @@ module CanvasView = {
       scene.pendingLabel,
       scene.view,
       scene.dpr,
+      scene.reported,
+      scene.autofit,
     ))
 
     <canvas
@@ -904,23 +1095,87 @@ let dimensionPointsText = (dims: array<Types.dimension>): string =>
   )
   ->Array.join("|")
 
-let kindButton = (m: model, ~dispatch, kind: Types.dimensionKind, text: string) =>
-  <button
-    type_="button"
-    className={m.kind == kind ? "annotate-seg is-on" : "annotate-seg"}
-    dataTestId={"kind-" ++ Enums.dimensionKindToString(kind)}
-    ariaPressed={m.kind == kind ? #"true" : #"false"}
-    onClick={_ => dispatch(KindChosen(kind))}>
-    {React.string(text)}
-  </button>
-
 let errorLine = (testId: string, text: option<string>) =>
   switch text {
-  | Some(t) => <p className="annotate-error" dataTestId=testId> {React.string(t)} </p>
+  | Some(t) => <p className="field-error" dataTestId=testId> {React.string(t)} </p>
   | None => React.null
   }
 
-let sheet = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
+// DESIGN.md §5 placement hint, plus the name while a saved dimension is
+// being edited (its points are the pending pair, so "Read the caliper"
+// would mislead).
+let hintText = (m: model, l: loaded): string =>
+  switch (m.selected, m.pending.p1, m.pending.p2) {
+  | (Some(id), _, _) =>
+    switch l.dims->Array.find(d => d.id == id) {
+    | Some(d) => "Editing " ++ d.name
+    | None => "Read the caliper"
+    }
+  | (None, None, _) => "Tap the first edge"
+  | (None, Some(_), None) => "Tap the second edge"
+  | (None, Some(_), Some(_)) => "Read the caliper"
+  }
+
+let kindOptions: array<(string, string)> = [("length", "Length"), ("diameter", "Diameter"), ("depth", "Depth")]
+
+// The stage (DESIGN.md §11.2): the canvas on the photo mat, the flat scrim
+// toolbar top-right (count, zoom out, zoom readout, zoom in), the placement
+// hint top-left, and the hidden test readouts. The canvas wrapper is the
+// `role="img"` group of §9's focus order; the toolbar sits outside it so
+// its buttons stay real controls.
+let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
+  let scene = {
+    bitmap: Some(l.bitmap),
+    imageW: l.imageW,
+    imageH: l.imageH,
+    viewport: m.viewport,
+    dims: l.dims,
+    selected: m.selected,
+    pending: m.pending,
+    pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
+    view: m.view,
+    dpr: m.dpr,
+    reported: switch m.tween {
+    | Some(tw) => tw.to
+    | None => m.viewport
+    },
+    autofit: autoFitState(m),
+  }
+  let count = Array.length(l.dims)
+  let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
+  let groupLabel =
+    faceKindLabel(l.face.kind) ++
+    " face, " ++
+    Int.toString(count) ++ (count == 1 ? " dimension" : " dimensions")
+  <div className="annotate-stage">
+    <div className="annotate-photo" role="img" ariaLabel=groupLabel>
+      <CanvasView scene dispatch />
+    </div>
+    <div className="annotate-overlay">
+      <div className="annotate-tools">
+        <Ui.Pill testId="dimension-count"> {React.string(Int.toString(count))} </Ui.Pill>
+        <Ui.Button
+          variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
+          <Icon name=ZoomOut />
+        </Ui.Button>
+        <Ui.Pill mono=true testId="zoom"> {React.string(Float.toFixed(zoom, ~digits=2))} </Ui.Pill>
+        <Ui.Button
+          variant=Ui.Button.Icon testId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
+          <Icon name=ZoomIn />
+        </Ui.Button>
+      </div>
+      <div className="annotate-hint"> <Ui.Pill> {React.string(hintText(m, l))} </Ui.Pill> </div>
+    </div>
+    <span hidden=true dataTestId="pending-points"> {React.string(pendingPointsText(m.pending))} </span>
+    <span hidden=true dataTestId="dimension-points" ariaBusy=m.moving>
+      {React.string(dimensionPointsText(l.dims))}
+    </span>
+  </div>
+}
+
+// The control area (DESIGN.md §11.1 "Sheets", §11.2): an opaque, in-flow
+// `.panel` — reading, name + chips, kind + tolerance, Save, Clear/Delete.
+let panel = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   let units = NumberParse.unitsLabel(l.part.units)
   let readingError = switch (m.reading, readingResult(m, l)) {
   | ("", _) | (_, Ok(_)) => None
@@ -935,161 +1190,148 @@ let sheet = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
   | (_, Error(e)) => Some(NumberParse.errorMessage(e))
   }
   let editing = m.selected->Option.isSome
+  let nothingToClear = !editing && m.pending.p1->Option.isNone && m.reading == "" && m.name == ""
 
-  <div className="sheet annotate-sheet">
-    <div className="annotate-row">
-      <label className="annotate-label" htmlFor="annotate-reading"> {React.string("Reading")} </label>
-      <div className="annotate-field">
+  <div className="panel annotate-panel">
+    <Ui.Field label="Reading" htmlFor="annotate-reading" mono=true error=?readingError errorTestId="reading-error">
+      <div className="annotate-reading">
         {Canvas.Input.make({
           dataTestId: "reading",
           id: "annotate-reading",
           type_: "text",
-          className: "annotate-input",
           inputMode: "decimal",
           enterKeyHint: "next",
           autoComplete: "off",
+          placeholder: switch l.part.units {
+          | Mm => "0.00"
+          | Inch => "0.000"
+          },
           ariaInvalid: readingError->Option.isSome,
           value: m.reading,
           onChange: e => dispatch(ReadingChanged(inputValue(e))),
           onKeyDown: e => onEnter(e, () => dispatch(ReadingEnter)),
         })}
-        <span className="annotate-units" dataTestId="reading-units"> {React.string(units)} </span>
+        <span className="annotate-unit" dataTestId="reading-units"> {React.string(units)} </span>
       </div>
-      {errorLine("reading-error", readingError)}
-    </div>
-    <div className="annotate-row">
-      <label className="annotate-label" htmlFor="annotate-name"> {React.string("Name")} </label>
-      {Canvas.Input.make({
-        dataTestId: "name",
-        id: "annotate-name",
-        type_: "text",
-        className: "annotate-input annotate-name",
-        autoCapitalize: "none",
-        autoCorrect: "off",
-        autoComplete: "off",
-        spellCheck: false,
-        enterKeyHint: "done",
-        ariaInvalid: nameError->Option.isSome,
-        value: m.name,
-        onChange: e => dispatch(NameChanged(inputValue(e))),
-        onKeyDown: e => onEnter(e, () => dispatch(NameEnter)),
-      })}
-      {errorLine("name-error", nameError)}
-      <div className="annotate-chips">
+    </Ui.Field>
+    <div className="annotate-name">
+      <Ui.Field label="Name" htmlFor="annotate-name" mono=true error=?nameError errorTestId="name-error">
+        {Canvas.Input.make({
+          dataTestId: "name",
+          id: "annotate-name",
+          type_: "text",
+          autoCapitalize: "none",
+          autoCorrect: "off",
+          autoComplete: "off",
+          spellCheck: false,
+          enterKeyHint: "done",
+          placeholder: "feature_name",
+          ariaInvalid: nameError->Option.isSome,
+          value: m.name,
+          onChange: e => dispatch(NameChanged(inputValue(e))),
+          onKeyDown: e => onEnter(e, () => dispatch(NameEnter)),
+        })}
+      </Ui.Field>
+      <Ui.ChipRow>
         {l.suggestions
         ->Array.map(s =>
-          <button
-            key=s
-            type_="button"
-            className={m.name == s ? "annotate-chip is-on" : "annotate-chip"}
-            dataTestId="name-chip"
-            onClick={_ => dispatch(ChipTapped(s))}>
+          <Ui.Chip key=s selected={m.name == s} testId="name-chip" onClick={_ => dispatch(ChipTapped(s))}>
             {React.string(s)}
-          </button>
+          </Ui.Chip>
         )
         ->React.array}
-      </div>
+      </Ui.ChipRow>
     </div>
-    <div className="annotate-row annotate-row-inline">
-      <div className="annotate-segmented" role="group" ariaLabel="Kind">
-        {kindButton(m, ~dispatch, Length, "Length")}
-        {kindButton(m, ~dispatch, Diameter, "Diameter")}
-        {kindButton(m, ~dispatch, Depth, "Depth")}
+    <div className="annotate-kind-row">
+      <div className="field annotate-kind">
+        <span className="field-label" ariaHidden=true> {React.string("Kind")} </span>
+        <Ui.Segmented
+          options=kindOptions
+          selected={Enums.dimensionKindToString(m.kind)}
+          onSelect={key =>
+            switch Enums.dimensionKindFromString(key) {
+            | Some(kind) => dispatch(KindChosen(kind))
+            | None => ()
+            }}
+          testIdPrefix="kind-"
+          ariaLabel="Kind"
+        />
       </div>
-      <div className="annotate-field annotate-tolerance">
-        <span className="annotate-units"> {React.string("±")} </span>
-        {Canvas.Input.make({
-          dataTestId: "tolerance",
-          type_: "text",
-          className: "annotate-input",
-          inputMode: "decimal",
-          autoComplete: "off",
-          ariaLabel: "Tolerance",
-          ariaInvalid: toleranceError->Option.isSome,
-          value: m.tolerance,
-          onChange: e => dispatch(ToleranceChanged(inputValue(e))),
-        })}
-        <span className="annotate-units"> {React.string(units)} </span>
-      </div>
+      <Ui.Field label="Tolerance" htmlFor="annotate-tolerance" mono=true>
+        <div className="annotate-tolerance">
+          <span className="annotate-unit" ariaHidden=true> {React.string("±")} </span>
+          {Canvas.Input.make({
+            dataTestId: "tolerance",
+            id: "annotate-tolerance",
+            type_: "text",
+            inputMode: "decimal",
+            autoComplete: "off",
+            ariaLabel: "Tolerance, ± " ++ units,
+            ariaInvalid: toleranceError->Option.isSome,
+            value: m.tolerance,
+            onChange: e => dispatch(ToleranceChanged(inputValue(e))),
+          })}
+          <span className="annotate-unit"> {React.string(units)} </span>
+        </div>
+      </Ui.Field>
     </div>
+    // The tolerance message sits under the whole row: its column is too
+    // narrow for a sentence.
     {errorLine("tolerance-error", toleranceError)}
     {errorLine("annotate-error", m.error)}
     <div className="annotate-actions">
-      <button
-        type_="button"
-        className="annotate-secondary"
-        dataTestId="cancel"
-        disabled={!editing && m.pending.p1->Option.isNone && m.reading == "" && m.name == ""}
-        onClick={_ => dispatch(CancelClicked)}>
-        {React.string("Clear")}
-      </button>
-      {editing
-        ? <button
-            type_="button"
-            className="annotate-danger"
-            dataTestId="delete"
-            disabled=m.busy
-            onClick={_ => dispatch(DeleteClicked)}>
-            {React.string("Delete")}
-          </button>
-        : React.null}
-      <button
-        type_="button"
-        className="annotate-primary"
-        dataTestId="save"
+      <Ui.Button
+        variant=Ui.Button.Primary
+        block=true
+        testId="save"
         disabled={!canSave(m, l)}
         onClick={_ => dispatch(SaveClicked)}>
-        {React.string(editing ? "Update" : "Save")}
-      </button>
+        {React.string(editing ? "Update" : "Save dimension")}
+      </Ui.Button>
+      <div className="annotate-actions-row">
+        <Ui.Button
+          variant=Ui.Button.Small
+          testId="cancel"
+          disabled=nothingToClear
+          onClick={_ => dispatch(CancelClicked)}>
+          {React.string("Clear")}
+        </Ui.Button>
+        {editing
+          ? <Ui.Button
+              variant=Ui.Button.Danger testId="delete" disabled=m.busy onClick={_ => dispatch(DeleteClicked)}>
+              {React.string("Delete")}
+            </Ui.Button>
+          : React.null}
+      </div>
     </div>
+    // DESIGN.md §9: "Dimension saved: name value" after a save. Always in
+    // the tree so assistive tech is already listening when the text lands.
+    <p className="visually-hidden" ariaLive=#polite dataTestId="annotate-live">
+      {React.string(m.announcement)}
+    </p>
   </div>
 }
 
 let view = (m: model, ~dispatch: msg => unit): React.element =>
   switch m.status {
+  // DESIGN.md §7: the only real load is the image decode — the photo mat
+  // with a centred pill, no spinner.
   | Loading =>
-    <div className="page"> <p className="annotate-status"> {React.string("Loading face…")} </p> </div>
+    <div className="annotate">
+      <div className="annotate-stage annotate-stage-empty">
+        <Ui.Pill> {React.string("Decoding…")} </Ui.Pill>
+      </div>
+    </div>
   | NotFound(why) =>
-    <div className="page">
-      <p className="annotate-status" dataTestId="annotate-missing"> {React.string(why)} </p>
-      <a href={Route.href(Route.Part(m.partId))}> {React.string("Back to part")} </a>
+    <div className="stack annotate-missing">
+      <p className="help-text" dataTestId="annotate-missing"> {React.string(why)} </p>
+      <a className="btn btn-secondary" href={Route.href(Route.Part(m.partId))}>
+        {React.string("Back to part")}
+      </a>
     </div>
   | Ready(l) =>
-    let scene = {
-      bitmap: Some(l.bitmap),
-      imageW: l.imageW,
-      imageH: l.imageH,
-      viewport: m.viewport,
-      dims: l.dims,
-      selected: m.selected,
-      pending: m.pending,
-      pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
-      view: m.view,
-      dpr: m.dpr,
-    }
-    let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0
     <div className="annotate">
-      <div className="annotate-stage">
-        <CanvasView scene dispatch />
-        <div className="annotate-toolbar">
-          <span className="annotate-count" dataTestId="dimension-count">
-            {React.string(Int.toString(Array.length(l.dims)))}
-          </span>
-          <button type_="button" className="annotate-zoom" dataTestId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
-            {React.string("−")}
-          </button>
-          <span className="annotate-zoom-readout" dataTestId="zoom">
-            {React.string(Float.toFixed(zoom, ~digits=2))}
-          </span>
-          <button type_="button" className="annotate-zoom" dataTestId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
-            {React.string("+")}
-          </button>
-        </div>
-        <span hidden=true dataTestId="pending-points"> {React.string(pendingPointsText(m.pending))} </span>
-        <span hidden=true dataTestId="dimension-points" ariaBusy=m.moving>
-          {React.string(dimensionPointsText(l.dims))}
-        </span>
-      </div>
-      {sheet(m, l, ~dispatch)}
+      {stage(m, l, ~dispatch)}
+      {panel(m, l, ~dispatch)}
     </div>
   }

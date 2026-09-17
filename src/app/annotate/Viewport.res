@@ -151,3 +151,89 @@ let translatePair = (a: Types.point, b: Types.point, d: Types.point): (Types.poi
   let dy = clampDelta(d.y, a.y, b.y)
   ({x: a.x +. dx, y: a.y +. dy}, {x: b.x +. dx, y: b.y +. dy})
 }
+
+// ── SPEC §8a A6: fit the view to a segment ──────────────────────────────
+
+// The transform that shows the segment p1–p2 (normalized) as large as the
+// view allows. Its bounding box in image px — never thinner than `minBox`
+// of the image on either axis, so two nearly coincident taps still zoom to
+// something sensible — is grown by `padding` of its own size on each side
+// and fitted to the view; the scale is clamped to [fitScale, maxScale] (a
+// dimension across the whole part just re-centres at the fit scale); the
+// result is centred on the segment's midpoint and clamped with the same
+// pan rules as every gesture. Degenerate sizes fall back to `fit`.
+let fitToSegment = (
+  ~p1: Types.point,
+  ~p2: Types.point,
+  ~imageW: float,
+  ~imageH: float,
+  ~viewW: float,
+  ~viewH: float,
+  ~padding: float=0.15,
+  ~minBox: float=0.1,
+  ~fitScale: float,
+  ~maxScale: float,
+): t =>
+  if imageW <= 0.0 || imageH <= 0.0 || viewW <= 0.0 || viewH <= 0.0 || fitScale <= 0.0 {
+    fit(~imageW, ~imageH, ~viewW, ~viewH)
+  } else {
+    let ax = p1.x *. imageW
+    let ay = p1.y *. imageH
+    let bx = p2.x *. imageW
+    let by = p2.y *. imageH
+    let boxW = Math.max(Math.abs(bx -. ax), minBox *. imageW) *. (1.0 +. 2.0 *. padding)
+    let boxH = Math.max(Math.abs(by -. ay), minBox *. imageH) *. (1.0 +. 2.0 *. padding)
+    let scale = Math.min(viewW /. boxW, viewH /. boxH)
+    let scale = Math.min(Math.max(scale, fitScale), maxScale)
+    let mx = (ax +. bx) /. 2.0
+    let my = (ay +. by) /. 2.0
+    clamp(
+      {scale, tx: viewW /. 2.0 -. mx *. scale, ty: viewH /. 2.0 -. my *. scale},
+      ~minScale=fitScale,
+      ~maxScale,
+      ~imageW,
+      ~imageH,
+      ~viewW,
+      ~viewH,
+    )
+  }
+
+// One frame of a viewport animation: `k` = 0 is `a`, 1 is `b`. Scale and
+// offsets interpolate linearly; over 160 ms the difference from a true
+// zoom-about-a-point is invisible, and the endpoints are exact.
+let lerp = (a: t, b: t, k: float): t => {
+  scale: a.scale +. (b.scale -. a.scale) *. k,
+  tx: a.tx +. (b.tx -. a.tx) *. k,
+  ty: a.ty +. (b.ty -. a.ty) *. k,
+}
+
+// y of the CSS `cubic-bezier(x1, y1, x2, y2)` timing curve at time
+// fraction `x`: the x-polynomial is inverted by bisection (it is monotonic
+// for CSS-legal control points), then y is read off at that parameter.
+let cubicBezier = (~x1: float, ~y1: float, ~x2: float, ~y2: float, x: float): float => {
+  let at = (c1: float, c2: float, t: float): float => {
+    let u = 1.0 -. t
+    3.0 *. u *. u *. t *. c1 +. 3.0 *. u *. t *. t *. c2 +. t *. t *. t
+  }
+  if x <= 0.0 {
+    0.0
+  } else if x >= 1.0 {
+    1.0
+  } else {
+    let lo = ref(0.0)
+    let hi = ref(1.0)
+    for _ in 1 to 24 {
+      let mid = (lo.contents +. hi.contents) /. 2.0
+      if at(x1, x2, mid) < x {
+        lo := mid
+      } else {
+        hi := mid
+      }
+    }
+    at(y1, y2, (lo.contents +. hi.contents) /. 2.0)
+  }
+}
+
+// `--cc-ease` from theme.css (DESIGN.md §11.1 "Interaction feel"), so the
+// viewport tween and the CSS transitions share one feel.
+let ease = (progress: float): float => cubicBezier(~x1=0.2, ~y1=0.8, ~x2=0.2, ~y2=1.0, progress)

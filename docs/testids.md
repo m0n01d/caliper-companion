@@ -31,10 +31,18 @@ stable; add to this list before you rely on a new one.
   orientation sensor has reported a sample and permission wasn't denied (design wave 2)
 
 ## Annotate (`#/parts/:id/faces/:faceId`)
-- `annotate-canvas` — the `<canvas>`. Carries two live attributes for tests: `data-transform="scale,tx,ty"`
+- `annotate-canvas` — the `<canvas>`. Carries live attributes for tests: `data-transform="scale,tx,ty"`
   (oriented-image px → canvas CSS px: `screen = img * scale + t`) and `data-image-size="WxH"` (the
   oriented bitmap, e.g. `1200x1600` for the EXIF-rotated `end.jpg`). Screen point of a normalized
   `(nx, ny)` = `canvasBox.xy + (nx*W, ny*H) * scale + (tx, ty)`.
+  `data-autofit` (SPEC §8a A6) is `fitting` while the view animates (the fit after p2, or the
+  restore after Save/Clear/Delete), `fitted` once the pair is fitted, `touched` after the user
+  zoomed/panned during the fitted state, `none` otherwise. While `fitting`, `data-transform`
+  reports the animation's **end state**, and a `pointerdown` completes the animation before the
+  tap is interpreted — so a tap computed from the attribute lands where it says. Wait for
+  `data-autofit` to leave `fitting` before reading geometry you will compare later (`zoom` and the
+  pixels lag until then). `page.emulateMedia({reducedMotion: 'reduce'})` makes the animation
+  instant.
 - `pending-points` — hidden readout of the pending/selected endpoints, `x1,y1;x2,y2` normalized to 4 dp
   (`x1,y1` with only p1 placed; empty when none)
 - `dimension-count` — readout of the number of saved dimensions on this face
@@ -54,6 +62,8 @@ stable; add to this list before you rely on a new one.
   `delete` — present only while an existing dimension is selected · `cancel` — clears the entry in
   progress (points, reading, name; keeps kind and tolerance) and deselects
 - `annotate-error` — inline Store failure message · `annotate-missing` — the not-found message
+- `annotate-live` — visually hidden `aria-live="polite"` line, "Dimension saved: name value unit" after a
+  save (DESIGN.md §9); empty until then and cleared when a new p1 is placed
 - Focus order (the keyboard-wedge seam): p2 placed → `reading` (performed by the canvas `click` that
   follows the tap, so iOS opens the keyboard — SPEC §8a A2); Enter in `reading` → `name`; Enter in
   `name` → Save → `annotate-canvas`.
