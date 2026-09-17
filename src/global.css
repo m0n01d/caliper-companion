@@ -16,7 +16,16 @@
    Sections: 1 reset · 2 frame + shell + glass bar · 3 type utilities ·
    4 buttons · 5 inset grouped lists · 6 fields · 7 chips · 8 segmented ·
    9 toggle · 10 warning rows · 11 pills + slots + panel · 12 utilities +
-   reduced motion · 13 A2HS hint.
+   reduced motion · 13 A2HS hint · 14 face card.
+
+   Vertical rhythm (DESIGN.md §11.1 "Vertical rhythm", added design wave
+   P1/agent/p1-darksky per docs/design/review-2026-09-17.md §2): sections
+   are 24 px apart (`--cc-space-6`, `.stack-lg`'s gap below); a group
+   header sits 8 px above its group (`--cc-space-2`, `.list-group-section`'s
+   gap); siblings inside one section are 12 px apart (`--cc-space-3`,
+   `.stack`'s gap). 14 px survives nowhere in the vertical rhythm — the one
+   place it's still correct is a text input's own side padding (§6 below),
+   which is horizontal, not part of this scale.
 
    Design wave 3a (agent/w3-foundation) deleted the wave-1→2 compatibility
    block that used to sit here (`--color-*` legacy token aliases + the
@@ -1031,13 +1040,19 @@ button.warning-row {
    flex column at all — every page's outermost `view` wrapper is
    `className="stack-lg"` alone (not `"stack stack-lg"`), so this silently
    collapsed the whole page's vertical rhythm to margin-collapsed block flow
-   instead of the intended `cc-space-5` gaps between sections (most visible
-   under Part's "Edit faces" list, per the report). Restated standalone
-   rather than requiring callers to also add `.stack`. */
+   instead of the intended section gap (most visible under Part's
+   "Edit faces" list, per the report). Restated standalone rather than
+   requiring callers to also add `.stack`.
+
+   Gap bumped `cc-space-5` (20) -> `cc-space-6` (24), design wave P1
+   (docs/design/review-2026-09-17.md §2): 20 read barely larger than the
+   12 px in-section gap, so the page read as one column instead of
+   separated sections; `cc-space-6` had never been used as a vertical-
+   rhythm step before (see the file header's "Vertical rhythm" note). */
 .stack-lg {
   display: flex;
   flex-direction: column;
-  gap: var(--cc-space-5);
+  gap: var(--cc-space-6);
 }
 
 /* ── 12. Utilities, reduced motion ───────────────────────────────────── */
@@ -1104,4 +1119,152 @@ button.warning-row {
 
 .a2hs-hint-dismiss {
   flex: 0 0 auto;
+}
+
+/* ── 14. Face card (Ui.FaceCard; DESIGN.md §4 "Face card",
+   docs/design/review-2026-09-17.md §3 layout A / docs/design/mockups/part-a.html) ─
+   A square photo card: the Part page's face gallery and the Capture kind
+   picker share this one component (P2 wires it into both pages — nothing
+   here yet references it). `.face-grid`/`.face-grid-dense` are the grids
+   that hold them; the card itself never sets its own width, so it sizes
+   off the grid's column track (171 px at 390 in a 2-up grid, 109 px 3-up). */
+.face-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cc-space-4);
+  width: 100%;
+}
+
+/* ≥ 5 faces (review §3 "A. Gallery-first"): 3-up, tighter gap so three
+   columns still clear a comfortable tap target at 390 px. */
+.face-grid-dense {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--cc-space-3);
+}
+
+.face-card {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: var(--cc-radius-card);
+  background: var(--cc-surface-2);
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.face-card:active {
+  opacity: 0.6;
+}
+
+.face-card:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -2px;
+}
+
+.face-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Captured/Selected rings sit just inside the edge (`inset: 0` on a
+   `border`, not outset) so they don't get clipped by the grid gutter and
+   don't shift the card's own box size. Colour is never the only signal
+   here either (DESIGN.md §9): captured also carries the check badge, and
+   selected is the one state Capture's picker is ever tappable into "kind
+   already chosen" from — the ring is reinforcement, not the sole cue. */
+.face-card-captured::after,
+.face-card-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.face-card-captured::after {
+  border: 2px solid var(--cc-live);
+}
+
+.face-card-selected::after {
+  border: 2px solid var(--cc-accent);
+}
+
+/* Bottom scrim: cc-ground/cc-scrim's rgb (Dark Sky: 21-30 range) at a
+   stronger 94% (cc-scrim itself is 80%, tuned for a small pill, not a
+   full-width label) fading to transparent over 44 px, so the label and
+   caption sit on solid-enough ground over any photo. Literal, not the
+   `--cc-scrim` token — CSS can't override just a custom property's alpha
+   channel, and this file already states colours by rgba literal next to a
+   token name in comments elsewhere (see Draw.res for the same pattern in
+   canvas code). */
+.face-card-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 36px var(--cc-space-3) 10px;
+  background: linear-gradient(to top, rgba(23, 26, 30, 0.94) 0 44px, rgba(23, 26, 30, 0));
+}
+
+.face-card-label {
+  font: var(--cc-text-headline);
+  color: var(--cc-text);
+  text-transform: capitalize;
+}
+
+.face-card-caption {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Caller slot (Ui.FaceCard's `badge` prop): the captured check on Part,
+   an EXIF marker elsewhere. This wrapper only positions it; content and
+   colour are the caller's. */
+.face-card-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* The conventional badge content for the captured state — a caller passes
+   `<span className="face-card-check"><Icon name=Check /></span>` (or
+   equivalent) as `~badge`. */
+.face-card-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cc-live);
+  color: var(--cc-ground);
+}
+
+.face-card-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+
+.face-card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-space-2);
+  background: transparent;
+  border: 2px dashed var(--cc-border);
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
 }
