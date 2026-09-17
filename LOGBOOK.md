@@ -755,3 +755,10 @@ under `src/app/pages/` was edited; wave 2 restyles them onto these classes.
 - Not done / for wave 2: pages still use their own classes (this section's §13 maps them); no
   scroll-edge shadow modulation (no reliable CSS for it in Safari); the 96 px face tiles on Part
   still overflow horizontally at 4 tiles (pre-existing; §11.2 wants 56 px slots).
+
+## 2026-09-17 — App icon
+
+- Ternpike's placeholder icons replaced. One hand-written SVG (`scripts/make-icons.mjs`): the
+  app's own dimension mark — amber caliper jaws + dimension line, teal reading bar — on `cc-ground`.
+  `favicon.svg` is rounded for browser tabs; the PNGs (192, 512, apple-touch 180) are full-bleed
+  squares because iOS and the manifest mask corners themselves. Re-run the script after any change.
