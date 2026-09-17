@@ -150,7 +150,7 @@ test.describe('export (M5)', () => {
     const first = await exportAndUnzip(page, dir, 'first')
 
     expect(Object.keys(first.entries).sort()).toEqual(
-      ['features.json', 'faces/top.jpg', 'faces/top_dimensioned.png'].sort(),
+      ['features.json', 'parameters.csv', 'faces/top.jpg', 'faces/top_dimensioned.png'].sort(),
     )
 
     const featuresText = Buffer.from(first.entries['features.json']).toString('utf8')
@@ -175,6 +175,22 @@ test.describe('export (M5)', () => {
     expect(byName.overall_l.value).toBe(42.18)
     expect(byName.pin_dia.value).toBe(6.51)
     expect(byName.head_h.value).toBe(4.2)
+
+    // SPEC §8a A11: parameters.csv rides next to features.json — no
+    // header, one line per feature in the same order, 4 comma-separated
+    // fields, expression == "<value> <unit>".
+    const csvText = Buffer.from(first.entries['parameters.csv']).toString('utf8')
+    expect(csvText.endsWith('\n')).toBe(true)
+    expect(csvText.endsWith('\n\n')).toBe(false)
+    const csvLines = csvText.split('\n').filter(line => line !== '')
+    expect(csvLines).toHaveLength(doc.features.length)
+    expect(csvLines.map(line => line.split(',')[0])).toEqual(names)
+    csvLines.forEach((line, i) => {
+      const fields = line.split(',')
+      expect(fields).toHaveLength(4)
+      expect(fields[1]).toBe(doc.part.units)
+      expect(fields[2]).toBe(`${doc.features[i].value} ${doc.part.units}`)
+    })
 
     const expectClose = (actual, expected) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.01)
     const assertMeasurement = (feature, expectedP1, expectedP2) => {

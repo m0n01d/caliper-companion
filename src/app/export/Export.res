@@ -109,13 +109,27 @@ let run = async (store: Store.t, ~partId: string, ~appVersion: string): result<o
             // Reconcile check above already proved this Ok.
             | Error(Reconcile.KindConflict(name)) => Error(KindConflict(name))
             | Ok(json) =>
-              let zipBytes = Bundle.buildZipBytes(~featuresJson=json, ~faces=bundleFaces)
-              let fileName = Bundle.fileNameFor(~slug=part.slug)
-              switch await Bundle.deliver(~zipBytes, ~fileName, ~shareTitle=part.name) {
-              | Ok(Bundle.Shared) => Ok(Shared)
-              | Ok(Bundle.Downloaded(downloadedName)) => Ok(Downloaded(downloadedName))
-              | Error(Bundle.ShareCancelled) => Error(Failed("Share cancelled"))
-              | Error(Bundle.Failed(msg)) => Error(Failed(msg))
+              // SPEC §8a A11: parameters.csv rides in the same bundle,
+              // built from the same `dimensions` the Reconcile check above
+              // already cleared — so this can't KindConflict either; kept
+              // as a real switch (not Result.getExn) only to stay defensive
+              // in lockstep with FeaturesDocument.make just above.
+              let renderedFaces = Array.map(items, ((face, _, _)) => face)
+              switch ParametersCsv.make(~part, ~faces=renderedFaces, ~dimensions) {
+              | Error(Reconcile.KindConflict(name)) => Error(KindConflict(name))
+              | Ok(parametersCsv) =>
+                let zipBytes = Bundle.buildZipBytes(
+                  ~featuresJson=json,
+                  ~parametersCsv,
+                  ~faces=bundleFaces,
+                )
+                let fileName = Bundle.fileNameFor(~slug=part.slug)
+                switch await Bundle.deliver(~zipBytes, ~fileName, ~shareTitle=part.name) {
+                | Ok(Bundle.Shared) => Ok(Shared)
+                | Ok(Bundle.Downloaded(downloadedName)) => Ok(Downloaded(downloadedName))
+                | Error(Bundle.ShareCancelled) => Error(Failed("Share cancelled"))
+                | Error(Bundle.Failed(msg)) => Error(Failed(msg))
+                }
               }
             }
           }

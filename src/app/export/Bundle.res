@@ -21,9 +21,19 @@ type faceBundle = {
 
 let zipEntryPath = (label: string, ~suffix: string): string => "faces/" ++ label ++ suffix
 
-let buildZipBytes = (~featuresJson: string, ~faces: array<faceBundle>): Uint8Array.t => {
+// SPEC §8a A11: `parameters.csv` sits next to `features.json` — a Claude-
+// free Fusion import path via Autodesk's ParameterIO add-in
+// (Utilities → ParameterIO → Import). Plain text like features.json, so
+// it gets the same default (level 6) compression, not `storedLevel`
+// (that's reserved for the already-compressed JPEG/PNG face entries).
+let buildZipBytes = (
+  ~featuresJson: string,
+  ~parametersCsv: string,
+  ~faces: array<faceBundle>,
+): Uint8Array.t => {
   let entries: Fflate.entries = Dict.make()
   Dict.set(entries, "features.json", (Fflate.encodeUtf8(featuresJson), Fflate.defaultLevel))
+  Dict.set(entries, "parameters.csv", (Fflate.encodeUtf8(parametersCsv), Fflate.defaultLevel))
   faces->Array.forEach(fb => {
     Dict.set(entries, zipEntryPath(fb.label, ~suffix=".jpg"), (fb.original, Fflate.storedLevel))
     Dict.set(
