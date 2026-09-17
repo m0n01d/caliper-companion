@@ -24,13 +24,13 @@ export default defineConfig({
   reporter: [['list']],
   timeout: 30_000,
   webServer: {
-    command: 'npx vite preview --port 3000 --strictPort',
+    command: `npx vite preview --port ${port} --strictPort`,
     cwd: repoRoot,
-    url: 'http://localhost:3000',
+    url: `http://localhost:${port}`,
     reuseExistingServer: true,
   },
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: `http://localhost:${port}`,
     trace: 'retain-on-failure',
   },
   projects: [
