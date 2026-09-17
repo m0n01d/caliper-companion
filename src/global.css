@@ -16,7 +16,16 @@
    Sections: 1 reset · 2 frame + shell + glass bar · 3 type utilities ·
    4 buttons · 5 inset grouped lists · 6 fields · 7 chips · 8 segmented ·
    9 toggle · 10 warning rows · 11 pills + slots + panel · 12 utilities +
-   reduced motion · 13 A2HS hint.
+   reduced motion · 13 A2HS hint · 14 face card.
+
+   Vertical rhythm (DESIGN.md §11.1 "Vertical rhythm", added design wave
+   P1/agent/p1-darksky per docs/design/review-2026-09-17.md §2): sections
+   are 24 px apart (`--cc-space-6`, `.stack-lg`'s gap below); a group
+   header sits 8 px above its group (`--cc-space-2`, `.list-group-section`'s
+   gap); siblings inside one section are 12 px apart (`--cc-space-3`,
+   `.stack`'s gap). 14 px survives nowhere in the vertical rhythm — the one
+   place it's still correct is a text input's own side padding (§6 below),
+   which is horizontal, not part of this scale.
 
    Design wave 3a (agent/w3-foundation) deleted the wave-1→2 compatibility
    block that used to sit here (`--color-*` legacy token aliases + the
@@ -85,7 +94,7 @@ h3 {
 }
 
 a {
-  color: var(--cc-amber);
+  color: var(--cc-accent);
   text-decoration: none;
 }
 
@@ -95,7 +104,7 @@ a {
    so this doesn't fight it); this rule is for the ones that aren't, chiefly
    `Ui.ListRow`'s `~href` anchor and `Part.res`'s face-slot tiles. */
 a:focus-visible {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
 
@@ -279,8 +288,8 @@ a:focus-visible {
   color: var(--cc-text-2);
 }
 
-.text-teal {
-  color: var(--cc-teal);
+.text-live {
+  color: var(--cc-live);
 }
 
 .text-error {
@@ -328,7 +337,7 @@ button:active,
 button:focus-visible,
 .btn:focus-visible,
 .btn:focus-within:has(input:focus-visible) {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
 
@@ -358,21 +367,21 @@ button[aria-disabled="true"]:active,
 }
 
 .btn-primary {
-  background: var(--cc-amber);
-  border-color: var(--cc-amber);
-  color: var(--cc-amber-ink);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  color: var(--cc-accent-ink);
 }
 
 .btn-primary:active {
-  background: var(--cc-amber-pressed);
-  border-color: var(--cc-amber-pressed);
+  background: var(--cc-accent-pressed);
+  border-color: var(--cc-accent-pressed);
   opacity: 1;
 }
 
 .btn-primary:disabled:active,
 .btn-primary[aria-disabled="true"]:active {
-  background: var(--cc-amber);
-  border-color: var(--cc-amber);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
   opacity: 0.4;
 }
 
@@ -440,7 +449,7 @@ button[aria-disabled="true"]:active,
 .shell-topbar .btn-icon {
   background: transparent;
   border-color: transparent;
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .btn-row {
@@ -562,7 +571,7 @@ button.list-row:focus-visible {
    clips overflow, so an outward ring on a row at the top/bottom edge would
    get cut off by the card's own rounded corners. */
 .list-row-link:focus-visible {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: -2px;
 }
 
@@ -581,7 +590,7 @@ button.list-row:focus-visible {
 }
 
 .list-row-meta-live {
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .list-row-chevron {
@@ -665,7 +674,7 @@ input:focus,
 select:focus,
 textarea:focus,
 .field-input:focus {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 0;
 }
 
@@ -759,9 +768,9 @@ textarea:disabled {
 
 .chip-selected,
 .chip[aria-pressed="true"] {
-  background: var(--cc-amber);
-  border-color: var(--cc-amber);
-  color: var(--cc-amber-ink);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  color: var(--cc-accent-ink);
 }
 
 /* ── 8. Segmented control (capsule, concentric selection) ────────────── */
@@ -786,7 +795,7 @@ textarea:disabled {
   flex: 0 0 auto;
 }
 
-/* 12 px side padding + the container's 4 px gap so the selected amber
+/* 12 px side padding + the container's 4 px gap so the selected accent
    capsule never touches the next label (the annotate kind row used to show
    "Length" touching "Diameter"). `white-space: nowrap` is needed for
    `text-overflow: ellipsis` to actually trigger instead of the option
@@ -808,8 +817,8 @@ textarea:disabled {
 }
 
 .segmented-option[aria-pressed="true"] {
-  background: var(--cc-amber);
-  color: var(--cc-amber-ink);
+  background: var(--cc-accent);
+  color: var(--cc-accent-ink);
 }
 
 .segmented-option:focus-visible {
@@ -877,7 +886,7 @@ textarea:disabled {
 }
 
 .toggle input:checked + .toggle-track {
-  background: var(--cc-amber);
+  background: var(--cc-accent);
 }
 
 .toggle input:checked + .toggle-track .toggle-knob {
@@ -885,7 +894,7 @@ textarea:disabled {
 }
 
 .toggle input:focus-visible + .toggle-track {
-  outline: 2px solid var(--cc-amber);
+  outline: 2px solid var(--cc-accent);
   outline-offset: 2px;
 }
 
@@ -900,10 +909,10 @@ textarea:disabled {
   gap: var(--cc-space-3);
   width: 100%;
   padding: 10px 14px;
-  border: 1px solid var(--cc-teal-border);
+  border: 1px solid var(--cc-live-border);
   border-radius: var(--cc-radius);
-  background: var(--cc-teal-wash);
-  color: var(--cc-teal-ink);
+  background: var(--cc-live-wash);
+  color: var(--cc-live-ink);
   font: var(--cc-text-footnote);
   text-align: left;
   white-space: normal;
@@ -913,7 +922,7 @@ textarea:disabled {
   display: flex;
   flex: 0 0 auto;
   margin-top: -1px;
-  color: var(--cc-teal);
+  color: var(--cc-live);
 }
 
 .warning-row-text {
@@ -953,7 +962,7 @@ button.warning-row {
 .pill-mono {
   font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--cc-teal);
+  color: var(--cc-live);
 }
 
 .slot {
@@ -971,7 +980,7 @@ button.warning-row {
 
 .slot-captured {
   background: var(--cc-surface-2);
-  border: 2px solid var(--cc-teal);
+  border: 2px solid var(--cc-live);
   overflow: hidden;
 }
 
@@ -986,7 +995,7 @@ button.warning-row {
   border-radius: calc(var(--cc-radius-sm) - 2px);
 }
 
-/* DESIGN.md §9 "Color is never the only signal": the teal ring already
+/* DESIGN.md §9 "Color is never the only signal": the live ring already
    differs from the empty slot's dashed border by *shape*, not just hue, but
    a small check badge makes "captured" unambiguous even before its thumbnail
    image has loaded (there's a gap between the face record resolving and its
@@ -1004,7 +1013,7 @@ button.warning-row {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--cc-teal);
+  background: var(--cc-live);
   color: var(--cc-ground);
   border: 2px solid var(--cc-ground);
 }
@@ -1031,13 +1040,19 @@ button.warning-row {
    flex column at all — every page's outermost `view` wrapper is
    `className="stack-lg"` alone (not `"stack stack-lg"`), so this silently
    collapsed the whole page's vertical rhythm to margin-collapsed block flow
-   instead of the intended `cc-space-5` gaps between sections (most visible
-   under Part's "Edit faces" list, per the report). Restated standalone
-   rather than requiring callers to also add `.stack`. */
+   instead of the intended section gap (most visible under Part's
+   "Edit faces" list, per the report). Restated standalone rather than
+   requiring callers to also add `.stack`.
+
+   Gap bumped `cc-space-5` (20) -> `cc-space-6` (24), design wave P1
+   (docs/design/review-2026-09-17.md §2): 20 read barely larger than the
+   12 px in-section gap, so the page read as one column instead of
+   separated sections; `cc-space-6` had never been used as a vertical-
+   rhythm step before (see the file header's "Vertical rhythm" note). */
 .stack-lg {
   display: flex;
   flex-direction: column;
-  gap: var(--cc-space-5);
+  gap: var(--cc-space-6);
 }
 
 /* ── 12. Utilities, reduced motion ───────────────────────────────────── */
@@ -1092,7 +1107,7 @@ button.warning-row {
 .a2hs-hint-icon {
   display: flex;
   flex: 0 0 auto;
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .a2hs-hint-text {
@@ -1104,4 +1119,152 @@ button.warning-row {
 
 .a2hs-hint-dismiss {
   flex: 0 0 auto;
+}
+
+/* ── 14. Face card (Ui.FaceCard; DESIGN.md §4 "Face card",
+   docs/design/review-2026-09-17.md §3 layout A / docs/design/mockups/part-a.html) ─
+   A square photo card: the Part page's face gallery and the Capture kind
+   picker share this one component (P2 wires it into both pages — nothing
+   here yet references it). `.face-grid`/`.face-grid-dense` are the grids
+   that hold them; the card itself never sets its own width, so it sizes
+   off the grid's column track (171 px at 390 in a 2-up grid, 109 px 3-up). */
+.face-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cc-space-4);
+  width: 100%;
+}
+
+/* ≥ 5 faces (review §3 "A. Gallery-first"): 3-up, tighter gap so three
+   columns still clear a comfortable tap target at 390 px. */
+.face-grid-dense {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--cc-space-3);
+}
+
+.face-card {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: var(--cc-radius-card);
+  background: var(--cc-surface-2);
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.face-card:active {
+  opacity: 0.6;
+}
+
+.face-card:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -2px;
+}
+
+.face-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Captured/Selected rings sit just inside the edge (`inset: 0` on a
+   `border`, not outset) so they don't get clipped by the grid gutter and
+   don't shift the card's own box size. Colour is never the only signal
+   here either (DESIGN.md §9): captured also carries the check badge, and
+   selected is the one state Capture's picker is ever tappable into "kind
+   already chosen" from — the ring is reinforcement, not the sole cue. */
+.face-card-captured::after,
+.face-card-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.face-card-captured::after {
+  border: 2px solid var(--cc-live);
+}
+
+.face-card-selected::after {
+  border: 2px solid var(--cc-accent);
+}
+
+/* Bottom scrim: cc-ground/cc-scrim's rgb (Dark Sky: 21-30 range) at a
+   stronger 94% (cc-scrim itself is 80%, tuned for a small pill, not a
+   full-width label) fading to transparent over 44 px, so the label and
+   caption sit on solid-enough ground over any photo. Literal, not the
+   `--cc-scrim` token — CSS can't override just a custom property's alpha
+   channel, and this file already states colours by rgba literal next to a
+   token name in comments elsewhere (see Draw.res for the same pattern in
+   canvas code). */
+.face-card-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 36px var(--cc-space-3) 10px;
+  background: linear-gradient(to top, rgba(23, 26, 30, 0.94) 0 44px, rgba(23, 26, 30, 0));
+}
+
+.face-card-label {
+  font: var(--cc-text-headline);
+  color: var(--cc-text);
+  text-transform: capitalize;
+}
+
+.face-card-caption {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Caller slot (Ui.FaceCard's `badge` prop): the captured check on Part,
+   an EXIF marker elsewhere. This wrapper only positions it; content and
+   colour are the caller's. */
+.face-card-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* The conventional badge content for the captured state — a caller passes
+   `<span className="face-card-check"><Icon name=Check /></span>` (or
+   equivalent) as `~badge`. */
+.face-card-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cc-live);
+  color: var(--cc-ground);
+}
+
+.face-card-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+
+.face-card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-space-2);
+  background: transparent;
+  border: 2px dashed var(--cc-border);
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
 }

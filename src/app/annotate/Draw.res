@@ -9,7 +9,7 @@
 //
 // Legibility on any photo (SPEC §8a A3): every stroke is drawn twice — a
 // near-black halo at 2.5× the width underneath, then the colour on top —
-// so amber reads on a bright part and teal on a dark one. The exported PNG
+// so accent reads on a bright part and live on a dark one. The exported PNG
 // (export/) uses the same rule at image resolution; this is the live copy.
 //
 // Colours are DESIGN.md §2 tokens by value: a canvas can't read CSS custom
@@ -21,13 +21,13 @@ type style =
   | Selected // the saved dimension being edited
   | Pending // the dimension being placed
 
-let amber = "#F2A33A" // cc-amber — the active dimension
-let amberInk = "#2B1A02" // cc-amber-ink — text on the amber pill
-let teal = "#4FD1B1" // cc-teal — saved dimensions
-let handleFill = "#F4F2EC" // cc-text — handle disc
-let halo = "rgba(23,24,26,0.85)" // cc-ground at 85 % (SPEC §8a A3)
-let scrim = "rgba(26,27,29,0.8)" // cc-scrim — saved pill
-let ground = "#17181A" // cc-ground — the active pill's border
+let accent = "#FF7F2A" // cc-accent — the active dimension
+let accentInk = "#2A1200" // cc-accent-ink — text on the accent pill
+let live = "#5AC1F2" // cc-live — saved dimensions
+let handleFill = "#EEF1F5" // cc-text — handle disc
+let halo = "rgba(21,24,29,0.85)" // cc-ground at 85 % (SPEC §8a A3)
+let scrim = "rgba(23,26,30,0.8)" // cc-scrim — saved pill
+let ground = "#15181D" // cc-ground — the active pill's border
 
 let lineWidth = 2.0
 let extensionWidth = 1.5
@@ -58,8 +58,8 @@ let image = (
 
 let colourFor = (style: style): string =>
   switch style {
-  | Dimmed | Selected => teal
-  | Pending => amber
+  | Dimmed | Selected => live
+  | Pending => accent
   }
 
 // Saved, unselected dimensions sit back at 60 % (halo included).
@@ -140,7 +140,7 @@ let handle = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~style: style): unit => {
 // second circle growing from the handle's edge to `ringGrowth` × its radius
 // while it fades out. `progress` is 0..1; Annotate.res drives it from the
 // same frame machinery as the A6 viewport tween (and skips it under reduced
-// motion). Amber over the halo, like every pending stroke.
+// motion). Accent over the halo, like every pending stroke.
 let ringGrowth = 1.6
 
 let snapRing = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~progress: float): unit => {
@@ -149,7 +149,7 @@ let snapRing = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~progress: float): unit => {
   ctx->Canvas.Ctx.save
   ctx->Canvas.Ctx.setGlobalAlpha(1.0 -. k)
   ctx->Canvas.Ctx.setLineCap("round")
-  stroked(ctx, ~width=lineWidth, ~colour=amber, ~dash=[], () => circle(ctx, p, r))
+  stroked(ctx, ~width=lineWidth, ~colour=accent, ~dash=[], () => circle(ctx, p, r))
   ctx->Canvas.Ctx.restore
 }
 
@@ -192,12 +192,12 @@ let pillSize = (ctx: Canvas.Ctx.t, text: string, ~style: style): (float, float) 
   )
 }
 
-// The value pill, centred on `at`. Active: amber, 28 px, cc-amber-ink mono
-// 15 with a 1 px near-black border. Saved: cc-scrim with teal mono 12.
+// The value pill, centred on `at`. Active: accent, 28 px, cc-accent-ink mono
+// 15 with a 1 px near-black border. Saved: cc-scrim with live mono 12.
 let pill = (ctx: Canvas.Ctx.t, text: string, ~at: Viewport.pt, ~style: style): unit => {
   let (fill, ink) = switch style {
-  | Pending => (amber, amberInk)
-  | Selected | Dimmed => (scrim, teal)
+  | Pending => (accent, accentInk)
+  | Selected | Dimmed => (scrim, live)
   }
   let (w, h) = pillSize(ctx, text, ~style)
   ctx->Canvas.Ctx.setTextAlign("center")

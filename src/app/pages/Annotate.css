@@ -61,8 +61,8 @@
   outline: none;
 }
 
-/* Focus lands here after every save. A quiet ring: amber over the photo
-   reads as an error state next to the amber overlays. */
+/* Focus lands here after every save. A quiet ring: accent over the photo
+   reads as an error state next to the accent overlays. */
 .annotate-canvas:focus-visible {
   outline: 2px solid var(--cc-text-3);
   outline-offset: -2px;
@@ -129,7 +129,7 @@
 
 /* SPEC §8a A5: the Snap toggle is a pill that is a real button, inside the
    same scrim capsule as the zoom controls. It keeps the 44 px tap height
-   (DESIGN.md §2) but reads as a pill, not a capsule button: on = amber text
+   (DESIGN.md §2) but reads as a pill, not a capsule button: on = accent text
    (the active-dimension colour), off = cc-text-2. */
 .annotate-tools .annotate-snap {
   min-height: var(--cc-tap-min);
@@ -142,7 +142,7 @@
 }
 
 .annotate-tools .annotate-snap[aria-pressed="true"] {
-  color: var(--cc-amber);
+  color: var(--cc-accent);
 }
 
 .annotate-tools .annotate-snap svg {
@@ -314,15 +314,15 @@
   color: var(--cc-text-2);
 }
 
-/* The selected row is never colour alone (DESIGN.md §9): the teal wash,
-   a 3 px teal rule on the left, and `aria-selected`. The rule is an inset
+/* The selected row is never colour alone (DESIGN.md §9): the live wash,
+   a 3 px live rule on the left, and `aria-selected`. The rule is an inset
    shadow so it costs no layout and stays inside the clipped container.
    Wins over `button.list-row:active` (0,2,1) by specificity so a press on
    the selected row doesn't flash back to surface-2. */
 .annotate-dimensions .list-row[aria-selected="true"],
 .annotate-dimensions button.list-row[aria-selected="true"]:active {
-  background: var(--cc-teal-wash);
-  box-shadow: inset 3px 0 0 var(--cc-teal);
+  background: var(--cc-live-wash);
+  box-shadow: inset 3px 0 0 var(--cc-live);
 }
 
 /* ── 360 px phones (DESIGN.md §8) ──────────────────────────────────── */

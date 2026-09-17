@@ -328,7 +328,7 @@ module Toggle = {
     </label>
 }
 
-// Flat scrim pill over the photo (§4): hints, or `mono` for the teal
+// Flat scrim pill over the photo (§4): hints, or `mono` for the live
 // readout. Never glass — it sits on the live canvas.
 module Pill = {
   @react.component
@@ -348,21 +348,21 @@ module Pill = {
   }
 }
 
-// Warning row (§4): Teal = reconciliation note (check icon), Error = kind
+// Warning row (§4): Live = reconciliation note (check icon), Error = kind
 // conflict (alert icon). With `onClick` it is a button (§6: tap scrolls the
 // table to the flagged rows).
 module WarningRow = {
-  type tone = Teal | Error
+  type tone = Live | Error
 
   @react.component
   let make = (
-    ~tone: tone=Teal,
+    ~tone: tone=Live,
     ~onClick: option<JsxEvent.Mouse.t => unit>=?,
     ~testId: option<string>=?,
     ~children: React.element,
   ) => {
     let (className, icon) = switch tone {
-    | Teal => ("warning-row", <Icon name=CircleCheck size=20 />)
+    | Live => ("warning-row", <Icon name=CircleCheck size=20 />)
     | Error => ("warning-row warning-row-error", <Icon name=TriangleAlert size=20 />)
     }
     let body =
@@ -392,4 +392,71 @@ module Live = {
     <p className="visually-hidden" role="status" ariaLive=#polite dataTestId=?testId>
       {React.string(text)}
     </p>
+}
+
+// Square photo card (design wave P1, DESIGN.md §4 "Face card"): the Part
+// page's face gallery and the Capture screen's kind picker share this one
+// component — see global.css §14 for `.face-card*`/`.face-grid*`. Not wired
+// into any page yet; P2 does that. `~image=None` always renders the `Empty`
+// look regardless of `~state` (there's nothing to show a ring or scrim
+// around), so callers don't have to keep the two in sync by hand — but
+// `~state` still drives which visual (ring vs dashed) an `Empty` card with
+// no clear state gets, i.e. pass `~state=Empty` for a real empty slot.
+// `~href` renders an `<a>` (Part's navigable cards); `~onClick` a `<button>`
+// (Capture's kind picker, "+ Custom"); neither renders a plain, inert `<div>`.
+module FaceCard = {
+  type state = Captured | Selected | Empty
+
+  @react.component
+  let make = (
+    ~label: string,
+    ~caption: option<string>=?,
+    ~image: option<string>,
+    ~state: state,
+    ~href: option<string>=?,
+    ~onClick: option<JsxEvent.Mouse.t => unit>=?,
+    ~badge: option<React.element>=?,
+    ~testId: option<string>=?,
+    ~ariaLabel: option<string>=?,
+  ) => {
+    let stateClass = switch (image, state) {
+    | (Some(_), Captured) => " face-card-captured"
+    | (Some(_), Selected) => " face-card-selected"
+    | (Some(_), Empty) | (None, _) => " face-card-empty"
+    }
+    let className = "face-card" ++ stateClass
+    let content = switch image {
+    | Some(url) =>
+      <>
+        <img src=url alt=label />
+        {switch badge {
+        | Some(el) => <span className="face-card-badge"> el </span>
+        | None => React.null
+        }}
+        <span className="face-card-scrim">
+          <span className="face-card-label"> {React.string(label)} </span>
+          {switch caption {
+          | Some(text) => <span className="face-card-caption"> {React.string(text)} </span>
+          | None => React.null
+          }}
+        </span>
+      </>
+    | None =>
+      <>
+        <Icon name=Camera size=24 />
+        <span> {React.string(label)} </span>
+      </>
+    }
+    switch href {
+    | Some(url) => <a className href=url dataTestId=?testId ariaLabel=?ariaLabel> content </a>
+    | None =>
+      switch onClick {
+      | Some(handler) =>
+        <button type_="button" className onClick=handler dataTestId=?testId ariaLabel=?ariaLabel>
+          content
+        </button>
+      | None => <div className dataTestId=?testId ariaLabel=?ariaLabel> content </div>
+      }
+    }
+  }
 }

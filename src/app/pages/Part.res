@@ -359,7 +359,7 @@ let renderFacesSection = (model: model, ~dispatch: msg => unit): React.element =
       : React.null}
   </div>
 
-// DESIGN.md §11.2: inset grouped table; teal/error warning rows are split by
+// DESIGN.md §11.2: inset grouped table; live/error warning rows are split by
 // cause (a kind conflict blocks export and is a different severity than a
 // spread flag) rather than one merged "Check: …" line.
 let renderFeatures = (model: model, ~part: Types.part): React.element => {
@@ -430,7 +430,7 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
                 <td role="cell" className="num mono muted">
                   {React.string("± " ++ NumberParse.format(feature.tolerance, part.units))}
                 </td>
-                <td role="cell" className={facesOnMultiple ? "num mono text-teal" : "num mono muted"}>
+                <td role="cell" className={facesOnMultiple ? "num mono text-live" : "num mono muted"}>
                   {React.string(facesLabel)}
                 </td>
               </tr>
@@ -450,7 +450,7 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
       React.null
     }}
     {if Array.length(flaggedNames) > 0 {
-      <Ui.WarningRow tone=Ui.WarningRow.Teal testId="warning-row">
+      <Ui.WarningRow tone=Ui.WarningRow.Live testId="warning-row">
         {React.string("Flagged: " ++ Array.join(flaggedNames, ", ") ++ " — spread exceeds tolerance.")}
       </Ui.WarningRow>
     } else {
@@ -470,7 +470,7 @@ let renderExport = (model: model, ~dispatch: msg => unit): React.element =>
       {React.string(model.exportState == Running ? "Exporting…" : "Export")}
     </Ui.Button>
     {switch model.exportState {
-    | Done(msg) => <p className="t-footnote text-teal"> {React.string(msg)} </p>
+    | Done(msg) => <p className="t-footnote text-live"> {React.string(msg)} </p>
     | Failed(msg) => <p className="t-footnote text-error" dataTestId="export-error"> {React.string(msg)} </p>
     | Idle | Running => React.null
     }}
