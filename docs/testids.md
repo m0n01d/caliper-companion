@@ -4,9 +4,16 @@ Playwright specs written by one page's author drive other pages through these id
 stable; add to this list before you rely on a new one.
 
 ## Parts list (`#/`)
-- `new-part` — button that opens the create form
+- `new-part` — creates a part. Exactly one of these exists at a time: the empty state's body
+  capsule (list empty) or the bar's trailing 44 px icon button, `aria-label="New part"` (list
+  non-empty) — never both (P2a, review-2026-09-17.md P3)
+- `parts-edit` — the bar's trailing "Edit" / "Done" text action; present once the list is
+  non-empty. Out of edit mode a row is purely navigational (chevron only); in edit mode each row
+  also shows `part-rename` (icon button, `aria-label="Rename"`) and `part-delete` (P2a,
+  review-2026-09-17.md P1 — these used to be permanent per-row icon buttons)
 - `part-name` — text input · `part-units` — `<select>` with `mm` / `in` · `part-create` — submit
-- `part-row` — one per part in the list (contains the name); `part-rename`, `part-delete` inside a row
+- `part-row` — one per part in the list (contains the name and a 72 px first-face thumbnail);
+  `part-rename`, `part-delete` inside a row, only in edit mode (see `parts-edit`)
 - `part-rename-input`, `part-rename-save`, `part-rename-cancel` — inline rename form (shown in place
   of a row's normal contents after `part-rename`)
 - `part-delete-confirm`, `part-delete-cancel` — inline confirm strip (shown after `part-delete`)
@@ -15,15 +22,22 @@ stable; add to this list before you rely on a new one.
   created" / "Part deleted"; empty otherwise
 
 ## Part (`#/parts/:id`)
-- `face-<label>` — one per captured face, links to annotate. `<label>` is the face's label (SPEC §8a
-  A7): `top|side|end|detail` for the four defaults (so `face-top` etc. are unchanged), the custom
-  slug otherwise (`face-left_side`). Contains the label and the `W × H` size text
-- `capture-face` — link/button to the capture page
-- `faces-edit` — small "Edit faces" / "Done" toggle (present once the part has a face). In edit
-  mode the slot row becomes a list (`faces-edit-list`) whose rows keep the `face-<label>` id and each
-  hold a `face-remove` button; tapping it shows the inline confirm `face-delete-confirm` /
-  `face-delete-cancel` (deleting a face removes its dimensions)
-- `feature-row` — one per reconciled feature (name, value, tolerance, faces)
+- `face-<label>` — one per captured face (P2a: a 171 px `Ui.FaceCard`, 2-column grid, links to
+  annotate). `<label>` is the face's label (SPEC §8a A7): `top|side|end|detail` for the four
+  defaults (so `face-top` etc. are unchanged), the custom slug otherwise (`face-left_side`).
+  Contains the label and the `W × H · n dim(s)` caption text
+- `capture-face` — the empty "Capture" card, links to the capture page
+- `faces-edit` — the bar's trailing "Edit" / "Done" text action (P2a — this used to be a lone
+  in-body "Edit faces" capsule); present once the part has a face. In edit mode the grid becomes a
+  list (`faces-edit-list`) whose rows keep the `face-<label>` id and each hold a `face-remove`
+  button; tapping it shows the inline confirm `face-delete-confirm` / `face-delete-cancel`
+  (deleting a face removes its dimensions)
+- `features-list` — the `role="list"` container of `feature-row`s (P2a — this used to be a
+  `role="table"`)
+- `feature-row` — one per reconciled feature, `role="listitem"`, accessible name
+  `"<name>, <value> <unit>, ± <tol>, faces <labels>"` (P2a — this used to be a `<tr>` with 4
+  `role="columnheader"` siblings; there is no column header row any more, the features group
+  header carries the unit instead)
 - `warning-row` — present only when a feature is flagged or a kind conflict exists
 - `export` — the export button · `export-error` — inline message when export is blocked
 - `timer` — hands-on timer readout

@@ -1854,3 +1854,88 @@ and navigation are all untouched — this track only touches `Capture.res`'s vie
   custom card open, the recapture card, 360×740) taken via a throwaway Playwright script against
   `vite preview --port 3821` (written and deleted within this session, never committed) — paths in
   the handoff report, not this repo.
+## 2026-09-17 — P2a — layout A: Part + Parts (agent/p2-lists)
+
+Layout A ("Gallery-first", `docs/design/review-2026-09-17.md` §3/§4) wired into the two pages it
+touches, plus the matching Parts-list changes (P1-P5). `Ui.FaceCard`/`.face-grid*` (from P1) were
+already built and unused; this track is what wires them in.
+
+- **Part page.** Faces are now a 2-column `Ui.FaceCard` grid (`.face-grid`, `.face-grid-dense` at
+  ≥ 5 faces), each card `state=Captured`, caption `"<w> × <h> · <n> dim(s)"`, `href` to Annotate,
+  `testId="face-<label>"` — replacing the old 56 px `.face-slot` row. A trailing `Ui.FaceCard`
+  card (`state=Empty`, `testId="capture-face"`) replaces the dashed slot. The old in-body
+  "Edit faces" button is gone; `Edit`/`Done` (`faces-edit`) is now the bar's trailing text action
+  (`Ui.Button ~variant=Plain`, a new `.bar-action` class in Part.css for the accent colour Plain
+  alone doesn't carry). Edit mode itself (`renderFacesEdit`: the removable list, inline
+  delete-confirm, `face-remove`/`face-delete-confirm`/`face-delete-cancel`) is untouched — same
+  msgs, same Store calls, same testids; only its entry point moved.
+  The features table became a role=list of role=listitem "Feature rows" (`Part.css`'s
+  `.feature-row`, a 3-col grid: name+faces / value+unit / ±tol), no column header row, no
+  `role="table"`/`columnheader` ARIA. Each row's own `aria-label` is
+  `"<name>, <value> <unit>, ± <tol>, faces <labels>"`. A dimension's kind now prefixes its name as
+  a glyph (⌀ diameter, ↓ depth, nothing for length) since there's no longer a column to show kind
+  in — a deliberate departure from `part-a.html`'s mockup, which puts the glyph on the *value*
+  column instead; the written brief for this track puts it on the name, and that's what's built
+  (flagged here as a mockup/brief mismatch, not resolved unilaterally in the mockup's favour).
+  The group header itself carries the old bar-subtitle stats line: "Features · n faces · n
+  features · unit" — see the subtitle note below.
+- **Shell subtitle vs. layout A's stats line (B2).** `docs/design/a10-folders-review.md` §1 B2
+  (blocker) reserves the Part page's one `Shell` subtitle slot for A10's future folder path and
+  tells layout A's "n faces · n features · unit" line to move into the features group header
+  instead. `DESIGN.md` §11.2 still literally says "bar subtitle 'n faces · n features · unit'" —
+  that line predates B2's resolution and wasn't updated; this build follows B2 (the more specific,
+  later-dated decision) over the stale DESIGN.md sentence. `Part.subtitle` stays `None`. Flagging
+  for whoever lands A10 to fix DESIGN.md's wording to match.
+- **Parts list.** Rows: `Ui.ListThumb` now loads the part's first captured face (`Store.facesOf`
+  then `Store.getFaceImage`, one cmd per part, fired once off the `PartsLoaded` that follows
+  `init`'s `Store.listParts` — never re-triggered by a later render). `Ui.ListThumb` has no size
+  prop and is 52 px in `global.css`, also used by Part.res's own face-edit list at that size; since
+  CSS here is unscoped app-wide (index.html links every page stylesheet unconditionally, no CSS
+  Modules), the 72 px override is scoped to a `.parts-page` wrapper class on this page's own
+  `view` root rather than touching `.list-thumb` directly — noted as a `Ui.ListThumb` gap (no
+  `~size` prop) rather than editing `Ui.res`, which is out of this track's file ownership.
+  Rename/Delete (`part-rename`/`part-delete`) moved behind a new `editing: bool` + `EditToggled`
+  msg, toggled by the bar's `parts-edit` text action (same `.bar-action` class as Part's
+  `faces-edit` — defined once in Part.css, reused here since the CSS is unscoped anyway). Out of
+  edit mode a row is purely navigational (`Ui.ListRow ~trailing=?None`). The "+" (`new-part`) now
+  lives in the bar as a 44 px icon button once the list is non-empty; the body capsule
+  (`renderEmptyCapsule`, ex-`renderNewPartButton`) only renders in the empty state — never both,
+  so `getByTestId('new-part')` stays a single-element match either way.
+- **Focus-management fix forced by the "+"/capsule split.** `DeleteDone`'s `focusTestId("new-part")`
+  relied on `new-part` being one continuously-mounted DOM node regardless of list emptiness (see
+  the pre-P2a code's own comment) — true before this track, no longer true once the last part's
+  delete swaps the bar icon for the empty-state capsule (two different DOM nodes). The existing
+  single-microtask `focusTestId` (still correct for every click-triggered call site, since React
+  flushes synchronously by the end of a discrete event) raced the async, promise-driven
+  `DeleteDone` dispatch: verified with a throwaway MutationObserver+focus-event script (written and
+  deleted within this session, not committed) that it was focusing the *old*, about-to-be-removed
+  bar icon a frame before React swapped it for the capsule, losing focus to `<body>` with nothing
+  to refocus it. Fixed by having `focusWhenReady` keep refocusing on every attempt (never stop at
+  the first match) across up to 6 `requestAnimationFrame` ticks — the id-string match is the same,
+  it's the identity of the underlying node that can change mid-flight, so the last attempt after
+  the DOM has actually settled is the one that has to win. `e2e/specs/a11y.spec.js`'s existing
+  "deleting a part sends focus to New part" assertion is the regression guard.
+- **Specs.** `parts.spec.js`'s rename/delete tests and `a11y.spec.js`'s rename-focus/delete-focus
+  test now click `parts-edit` first (the only interaction change; everything else in both files is
+  unmodified). `a11y.spec.js`'s part-page test swapped its `.features-table`/`columnheader`
+  assertions for `features-list`'s `role="list"` + `feature-row`'s `role="listitem"`/`aria-label`,
+  matching the new structure — same test intent (real semantic roles survive the CSS-grid
+  layout), new shape.
+- **Not done / flagged, not fixed:** DESIGN.md's stale subtitle sentence (B2, above); Export's
+  `disabled` state doesn't gate on "has a face yet" (`review-2026-09-17.md` F8/DESIGN.md §11.2 say
+  it should) — omitted because the written brief for this track's `renderExport` spec doesn't
+  mention it and no test depends on it either way; left as-is rather than adding scope unasked.
+- **Verified:** `npx rescript build` clean under `+a` (`rescript clean` + full rebuild, 67 modules,
+  zero warnings); `npm test` (`rescript build && vitest run`) — 217/217; `npm run build` (vite
+  production build) clean; `E2E_PORT=3810 npx playwright test --config=e2e/playwright.config.js
+  --project=chromium` — **44/44 green**, no stale preview processes (checked port 3810 was free
+  before the run; killed the scratch preview servers used for screenshots/debugging by PID
+  afterward). Screenshots (390×844 @2x unless noted; via a throwaway script, written and deleted
+  within this session, driving the real UI per `docs/testids.md` — not committed) covered `#/`
+  empty and with one row (72 px thumb, bar Edit + "+"), the Part page with 3 faces (top/side/end,
+  end EXIF-rotated portrait) and 3 features (one flagged/multi-face, two diameters), the same page
+  in faces-Edit mode, and a 360×740 render of the faces+features page — all matched the mockup
+  within the tokens; the one odd-looking detail (a sliver of "(EXIF 6)" watermark text peeking out
+  top-right of the End card) turned out to be the real `fixtures/hinge_pin/end.jpg` fixture's own
+  printed content after EXIF rotation + `cover` crop, not a rendering bug — confirmed by reading
+  the raw fixture image directly.
