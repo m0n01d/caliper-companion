@@ -102,13 +102,14 @@ Kind conflicts cannot reach the skill (the app blocks export); if one appears an
   document's units; each face sketch exists on its plane with its photo canvas; re-running updates
   in place with no duplicates.
 
-## 7. Open questions for review
+## 7. Decisions (owner, 2026-09-17)
 
-1. **Canvas scale**: nominal 100 mm width (recommended, honest) vs. scaling the canvas so one chosen
-   feature's measured pixel distance equals its value (tempting, but it implies a precision the photo
-   doesn't have and breaks on perspective; SPEC §1 says no).
-2. **Re-import policy**: replace sketches/canvases by name (recommended) vs. version them
-   (`top_photo_2`). Replacing keeps the model clean; versioning keeps history.
-3. **Where the zip lands on the Mac**: AirDrop to `~/Downloads` is the assumed path; the skill takes
-   any path.
-4. **v1**: pull `features.json` from CouchDB over HTTP instead of a file (SPEC §7) — same planner.
+1. **Canvas scale**: nominal **100 mm** width at the plane origin, height from the aspect, 60 %
+   opacity, stated in the run report. No scale is ever derived from dimensions (SPEC §1).
+2. **Re-import**: **replace** sketches and canvases by name; parameters upsert by name. A re-export
+   refreshes Fusion in place, never duplicates.
+3. Zip location on the Mac: any path; `~/Downloads` is merely the assumed default.
+4. v1: pull `features.json` from CouchDB over HTTP (SPEC §7) and save the design into the Fusion
+   project folder named by `part.path` (SPEC §8a A10) — same planner, extra executor step.
+
+Status: reviewed by a second agent before build (see `IMPORT-SKILL-REVIEW.md`).
