@@ -50,8 +50,9 @@ stable; add to this list before you rely on a new one.
   `delete` — present only while an existing dimension is selected · `cancel` — clears the entry in
   progress (points, reading, name; keeps kind and tolerance) and deselects
 - `annotate-error` — inline Store failure message · `annotate-missing` — the not-found message
-- Focus order (the keyboard-wedge seam): p2 placed → `reading`; Enter in `reading` → `name`; Enter
-  in `name` → Save → `annotate-canvas`.
+- Focus order (the keyboard-wedge seam): p2 placed → `reading` (performed by the canvas `click` that
+  follows the tap, so iOS opens the keyboard — SPEC §8a A2); Enter in `reading` → `name`; Enter in
+  `name` → Save → `annotate-canvas`.
 
 ## Settings (`#/settings`)
 - `wedge-toggle` — "Readings come from a wedge dongle" checkbox

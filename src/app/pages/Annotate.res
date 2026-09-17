@@ -54,6 +54,13 @@ type gesture =
   | Drag(int, drag)
   | Pinch(int, int)
 
+// A focus the page owes the reading field but must not perform yet (SPEC
+// §8a A2): iOS Safari opens the keyboard for `focus()` only inside a `click`
+// (or `touchend`) handler, never from `pointerup`. So the p2 tap records the
+// intent and the canvas's click — which follows every tap and never a drag
+// or pinch — performs it.
+type focusIntent = Reading
+
 type loaded = {
   part: Types.part,
   face: Types.face,
@@ -84,6 +91,7 @@ type model = {
   gesture: gesture,
   pending: pending,
   selected: option<string>, // dimension id being edited
+  focusIntent: option<focusIntent>, // performed by the next canvas click
   reading: string,
   name: string,
   tolerance: string,
@@ -100,6 +108,7 @@ type msg =
   | PointerMove(int, Viewport.pt)
   | PointerUp(int)
   | PointerCancel(int)
+  | CanvasClicked
   | ZoomIn
   | ZoomOut
   | ReadingChanged(string)
@@ -263,6 +272,7 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     gesture: NoGesture,
     pending: noPending,
     selected: None,
+    focusIntent: None,
     reading: "",
     name: "",
     tolerance: "",
@@ -417,10 +427,11 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   let n = toNormalized(m, l, s)
   switch (m.pending.p1, m.pending.p2, hit) {
   // Second tap of a two-tap dimension: place p2 (wherever it lands, even on
-  // a handle — p2 stays draggable), hand focus to the reading.
+  // a handle — p2 stays draggable). The reading gets focus from the click
+  // that follows this tap (SPEC §8a A2), not from here.
   | (Some(_), None, _) => (
-      {...m, pending: {...m.pending, p2: Some(n)}},
-      focusTestId("reading", ~select=true),
+      {...m, pending: {...m.pending, p2: Some(n)}, focusIntent: Some(Reading)},
+      Tea.none,
     )
   // A tap (no movement) on a saved dimension still selects it (SPEC §8a A1).
   | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => (select(m, l, id), Tea.none)
@@ -505,7 +516,9 @@ let pointerById = (m: model, id: int): option<activePointer> => m.pointers->Arra
 let pointerDown = (m: model, l: loaded, id: int, s: Viewport.pt): model => {
   let hit = hitTest(m, l, s)
   let pointers = m.pointers->Array.filter(p => p.id != id)->Array.concat([{id, start: s, pos: s, hit}])
-  let m = {...m, pointers}
+  // An intent the last tap's click never collected (a pointer type that
+  // produced none) must not fire on a later, unrelated click.
+  let m = {...m, pointers, focusIntent: None}
   switch m.gesture {
   | NoGesture => {...m, gesture: Press(id)}
   | Press(other) | Pan(other) if other != id => {...m, gesture: Pinch(other, id)}
@@ -621,6 +634,13 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
   | (PointerMove(id, s), Ready(l)) => (pointerMove(m, l, id, s), Tea.none)
   | (PointerUp(id), Ready(l)) => pointerEnd(m, l, id, ~cancelled=false)
   | (PointerCancel(id), Ready(l)) => pointerEnd(m, l, id, ~cancelled=true)
+  // The wedge seam's first hop (M4 bullet 6): p2 placed → `reading`. Runs
+  // inside the click dispatch so iOS opens the keyboard (SPEC §8a A2).
+  | (CanvasClicked, _) =>
+    switch m.focusIntent {
+    | Some(Reading) => ({...m, focusIntent: None}, focusTestId("reading", ~select=true))
+    | None => (m, Tea.none)
+    }
 
   | (ZoomIn, Ready(l)) => (zoomBy(m, l, zoomStep), Tea.none)
   | (ZoomOut, Ready(l)) => (zoomBy(m, l, 1.0 /. zoomStep), Tea.none)
@@ -839,6 +859,7 @@ module CanvasView = {
       onPointerMove={e => dispatch(PointerMove(Canvas.Pointer.pointerId(e), localPoint(e)))}
       onPointerUp={e => dispatch(PointerUp(Canvas.Pointer.pointerId(e)))}
       onPointerCancel={e => dispatch(PointerCancel(Canvas.Pointer.pointerId(e)))}
+      onClick={_ => dispatch(CanvasClicked)}
     />
   }
 }
