@@ -176,3 +176,10 @@ module Input = {
 // prefers reduced motion. Same `matchMedia` binding the A2HS hint uses.
 let prefersReducedMotion = (): bool =>
   WebApi.Platform.matchMedia("(prefers-reduced-motion: reduce)")->WebApi.Platform.matches
+
+// ── scrollIntoView — the A9 dimension list follows the selection ──────
+// SPEC §8a A9 bullet 3: `{block: "nearest"}` scrolls only when the row is
+// off screen; `behavior` is "instant" under reduced motion, "smooth"
+// otherwise.
+type scrollIntoViewOptions = {block: string, behavior: string}
+@send external scrollIntoView: (Dom.element, scrollIntoViewOptions) => unit = "scrollIntoView"

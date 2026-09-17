@@ -252,6 +252,79 @@
   font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
 }
 
+/* ── Dimension list (SPEC §8a A9) ──────────────────────────────────── */
+/* The face's saved dimensions, the last section of the panel: after Save
+   in the DOM (DESIGN.md §9 "… → Save → saved dims list"), on the sheet's
+   own surface so the sheet still runs to the bottom of the screen, and in
+   the page scroll — never fixed. The inset grouped container therefore
+   sits one step up (`cc-surface-2`) at the 12 px inner radius (§11.1
+   concentric shapes: inside a 16 px-padded surface) instead of the card's
+   16 px on the ground; the header keeps its 16 px inset so it lines up
+   with the row text, as on the Parts list. */
+.annotate-dimensions {
+  margin-top: var(--cc-space-2);
+}
+
+.annotate-dimensions .list-group {
+  background: var(--cc-surface-2);
+  border-radius: var(--cc-radius);
+}
+
+.annotate-dim-empty {
+  margin: 0;
+  padding: var(--cc-space-3) var(--cc-space-4);
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+/* A row: kind glyph · name · value unit · ± tol. Composed from global.css's
+   `.list-row` classes in Annotate.res (Ui.ListRow has no `data-id` or
+   `aria-selected`). Gap tightened from the 12 px of a thumbnail row: the
+   glyph is a character, not a 52 px image. */
+.annotate-dim-row {
+  gap: var(--cc-space-2);
+}
+
+/* A fixed slot whether or not there is a glyph (a length has none), so the
+   names line up down the list. */
+.annotate-dim-glyph {
+  flex: 0 0 auto;
+  width: 1.1em;
+  font: 500 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-mono);
+  color: var(--cc-text-2);
+  text-align: center;
+}
+
+.annotate-dim-name {
+  font-family: var(--cc-font-mono);
+}
+
+.annotate-dim-figures {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.annotate-dim-value {
+  color: var(--cc-text);
+}
+
+.annotate-dim-tol {
+  font-size: var(--cc-size-footnote);
+  color: var(--cc-text-2);
+}
+
+/* The selected row is never colour alone (DESIGN.md §9): the teal wash,
+   a 3 px teal rule on the left, and `aria-selected`. The rule is an inset
+   shadow so it costs no layout and stays inside the clipped container.
+   Wins over `button.list-row:active` (0,2,1) by specificity so a press on
+   the selected row doesn't flash back to surface-2. */
+.annotate-dimensions .list-row[aria-selected="true"],
+.annotate-dimensions button.list-row[aria-selected="true"]:active {
+  background: var(--cc-teal-wash);
+  box-shadow: inset 3px 0 0 var(--cc-teal);
+}
+
 /* ── 360 px phones (DESIGN.md §8) ──────────────────────────────────── */
 /* The reading value drops to 32 px, and the kind row wraps so the
    segmented control keeps its full labels with the tolerance below it. */
