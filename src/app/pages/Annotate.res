@@ -99,6 +99,16 @@ type snapMarks = {p1Mark: snapMark, p2Mark: snapMark}
 // `gen` ties frames to the ring that started them, as `tween.gen` does.
 type ring = {gen: int, at: array<Types.point>, progress: float}
 
+// The entry a Save or Delete clears the moment it starts, kept until the
+// write lands so a failed write can put it back (see `trySave`).
+type entry = {
+  entryPending: pending,
+  entrySelected: option<string>,
+  entryReading: string,
+  entryName: string,
+  entryMarks: snapMarks,
+}
+
 type loaded = {
   part: Types.part,
   face: Types.face,
@@ -138,6 +148,7 @@ type model = {
   tweenGen: int, // last tween generation minted
   ring: option<ring>, // the snap ring in flight, if any (A5)
   ringGen: int,
+  inFlight: option<entry>, // the entry a Save/Delete cleared, until its write lands
   announcement: string, // the `aria-live` line after a save (DESIGN.md §9)
   reading: string,
   name: string,
@@ -393,6 +404,7 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     tweenGen: 0,
     ring: None,
     ringGen: 0,
+    inFlight: None,
     announcement: "",
     reading: "",
     name: "",
@@ -950,19 +962,65 @@ let pointerEnd = (m: model, l: loaded, id: int, ~cancelled: bool): (model, Tea.c
     }
   }
 
-// The view goes back (A6) as the save is *initiated*, not when the write
-// lands: the Enter or tap that saves is the user's own action, and it is a
-// React event, so the published `data-transform` is the restored view
-// before the next thing anyone does — a spec reading it straight after the
-// Enter would otherwise still see the fitted view of the pair just saved.
+// ── Save / Delete: clear at initiation, restore on failure ─────────────
+
+let entryOf = (m: model): entry => {
+  entryPending: m.pending,
+  entrySelected: m.selected,
+  entryReading: m.reading,
+  entryName: m.name,
+  entryMarks: m.marks,
+}
+
+let restoreEntry = (m: model, e: entry): model => {
+  ...m,
+  pending: e.entryPending,
+  selected: e.entrySelected,
+  reading: e.entryReading,
+  name: e.entryName,
+  marks: e.entryMarks,
+}
+
+// Nothing new has been started since the entry was cleared.
+let entryUntouched = (m: model): bool =>
+  m.pending.p1 == None && m.selected == None && m.reading == "" && m.name == ""
+
+// The entry is cleared and the view goes back (A6) as the save is
+// *initiated*, not when the write lands. Two reasons. The Enter or tap that
+// saves is the user's own action and a React event, so the published
+// `data-transform` is the restored view before the next thing anyone does
+// (a spec reading it straight after the Enter would otherwise still see the
+// fitted view of the pair just saved). And a tap that lands while the
+// write is in flight starts the next dimension instead of being wiped when
+// `Saved` arrives — the write is fast, but a caliper-and-thumb rhythm is
+// faster. The cleared entry is kept in `inFlight` so a failed write can
+// put it back with the error beside it.
+let begin = (m: model, l: loaded): (model, Tea.cmd<msg>) => {
+  let saved = entryOf(m)
+  let (m, restore) = endAutoFit({...clearEntry(m), busy: true, inFlight: Some(saved)}, l)
+  (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
+}
+
+// A failed write: the error shows inline, and the entry comes back — with
+// its fit — unless the user has already started the next one, in which
+// case theirs stands and the failed one is only the error line.
+let failed = (m: model, l: loaded, why: string): (model, Tea.cmd<msg>) => {
+  let cleared = m.inFlight
+  let m = {...m, busy: false, inFlight: None, error: Some(why)}
+  switch cleared {
+  | Some(e) if entryUntouched(m) => fitToPending(restoreEntry(m, e), l)
+  | _ => (m, Tea.none)
+  }
+}
+
 let trySave = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
   switch buildDimension(m, l) {
   | Some(dim) =>
-    let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
+    let (m, started) = begin(m, l)
     (
       m,
       Tea.batch([
-        restore,
+        started,
         saveCmd(~partId=m.partId, ~faceId=m.faceId, ~units=l.part.units, ~settings=l.settings, dim),
       ]),
     )
@@ -1051,10 +1109,11 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
   | (ToleranceChanged(text), _) => ({...m, tolerance: text}, Tea.none)
 
   | (SaveClicked, Ready(l)) => trySave(m, l)
-  // Save clears reading + name + points, keeps kind and tolerance, and
-  // returns focus to the canvas for the next tap (M4 bullet 7). `snap` is
-  // kept from the live settings: the pill may have been flipped while the
-  // write was in flight.
+  // The entry was cleared, the view restored and focus returned to the
+  // canvas when the save started (`begin`, M4 bullet 7); the write landing
+  // only reloads the face's dimensions and announces. Whatever the user
+  // placed meanwhile stays. `snap` is kept from the live settings: the
+  // pill may have been flipped while the write was in flight.
   | (Saved(Ok((dims, settings, dim))), Ready(l)) =>
     let announcement =
       "Dimension saved: " ++
@@ -1063,31 +1122,30 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       NumberParse.format(dim.value, l.part.units) ++
       " " ++
       NumberParse.unitsLabel(l.part.units)
-    // `trySave` already restored the view; this covers a pair placed while
-    // the write was in flight.
-    let (m, restore) = endAutoFit(
+    (
       {
-        ...clearEntry(m),
+        ...m,
         status: Ready({...l, dims, settings: {...settings, snap: l.settings.snap}}),
         busy: false,
+        inFlight: None,
         announcement,
       },
-      l,
+      Tea.none,
     )
-    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
-  | (Saved(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
+  | (Saved(Error(why)), Ready(l)) => failed(m, l, why)
 
   | (DeleteClicked, Ready(l)) =>
     switch m.selected {
     | Some(id) if !m.busy =>
-      let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
-      (m, Tea.batch([restore, deleteCmd(~faceId=m.faceId, id)]))
+      let (m, started) = begin(m, l)
+      (m, Tea.batch([started, deleteCmd(~faceId=m.faceId, id)]))
     | _ => (m, Tea.none)
     }
-  | (Deleted(Ok(dims)), Ready(l)) =>
-    let (m, restore) = endAutoFit({...clearEntry(m), status: Ready({...l, dims}), busy: false}, l)
-    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
-  | (Deleted(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
+  | (Deleted(Ok(dims)), Ready(l)) => (
+      {...m, status: Ready({...l, dims}), busy: false, inFlight: None},
+      Tea.none,
+    )
+  | (Deleted(Error(why)), Ready(l)) => failed(m, l, why)
 
   | (Moved(Ok(dims)), Ready(l)) => (
       {...m, status: Ready({...l, dims}), moving: false, error: None},
@@ -1110,9 +1168,9 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       | ZoomOut
       | NameEnter
       | SaveClicked
-      | Saved(Ok(_))
+      | Saved(_)
       | DeleteClicked
-      | Deleted(Ok(_))
+      | Deleted(_)
       | Moved(Ok(_))
       | SnapToggled
       | SnapSaved(Error(_)),
