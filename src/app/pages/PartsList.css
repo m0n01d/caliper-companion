@@ -63,3 +63,54 @@
   color: var(--cc-text);
   font: var(--cc-text-footnote);
 }
+
+/* SPEC §8a A10 — search field above the list. global.css strips every
+   input's native chrome (`-webkit-appearance: none` on `input[type="search"]`
+   too), which in WebKit also drops the built-in cancel button — so the page
+   supplies its own (`parts-search-clear`, a 44 px icon button overlaid in
+   the field's trailing padding, only while the query is non-empty) rather
+   than shipping a search field with no way to clear it on a phone. The
+   field itself is the shared 17 px Body input; only the right padding
+   changes, to keep typed text from running under the button. */
+.parts-search {
+  position: relative;
+}
+
+.parts-search input[type="search"] {
+  padding-right: 48px;
+}
+
+.parts-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+}
+
+/* A10: one folder section per distinct path. The inset grouped sections
+   already sit 24 px apart via the page's `.stack-lg`; inside the list block
+   they're siblings of the search field in a `.stack` (12 px), which is the
+   HIG grouped-table rhythm for header → group → header. Nothing to add for
+   the root section: it's a plain headerless group, exactly the pre-A10
+   list. */
+.parts-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-6);
+}
+
+/* A10: the Folder field's suggestion chips sit under the input (S5). The
+   chip row scrolls horizontally on its own; a small top gap separates it
+   from the input's 44 px box without reading as a new field. */
+.part-path-chips {
+  margin-top: var(--cc-space-2);
+}
+
+/* Chromium keeps its own `::-webkit-search-cancel-button` even with
+   `-webkit-appearance: none` on the input (WebKit drops it), so it is
+   removed explicitly here — one clear affordance per field, ours. */
+.parts-search input[type="search"]::-webkit-search-cancel-button,
+.parts-search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}

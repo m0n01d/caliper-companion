@@ -192,13 +192,17 @@ let title = (model: model): string =>
   }
 let back = (_model: model): option<Route.t> => Some(Route.Parts)
 
-// Shell slots (DESIGN.md §11.1). Layout A's own bar note ("subtitle 'n faces
-// · n features · unit'") is superseded by docs/design/a10-folders-review.md
-// §1 B2 (blocker, resolved in the spec's favour): the subtitle slot is
-// reserved for A10's future folder path, so it stays unused here — the
-// faces/features/unit stats line moves into the features group header
-// instead (see `featuresHeader` below).
-let subtitle = (_model: model): option<string> => None
+// Shell slots (DESIGN.md §11.1). The one subtitle slot carries the part's
+// folder path (SPEC §8a A10, review B2: "Miata / Interior / Dashboard";
+// nothing at the root) — `.shell-subtitle` is one ellipsised Footnote line,
+// so a deep path truncates rather than wraps. Layout A's faces/features/
+// unit stats line lives in the features group header instead (see
+// `featuresHeader` below).
+let subtitle = (model: model): option<string> =>
+  switch model.partStatus {
+  | Found(p) if p.path != "" => Some(Folder.display(p.path))
+  | Found(_) | Pending | Missing => None
+  }
 
 // Trailing bar text action (DESIGN.md §11.2 "trailing Edit/Done text
 // action"; review-2026-09-17.md F3 — this used to be a lone in-body
