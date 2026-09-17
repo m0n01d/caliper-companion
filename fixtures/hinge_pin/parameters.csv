@@ -1,0 +1,9 @@
+chamfer,mm,0.8 mm,±0.05 mm · faces side · ccpart:norcold_freezer_hinge_pin
+groove_depth,mm,1.1 mm,±0.05 mm · faces end · ccpart:norcold_freezer_hinge_pin
+groove_w,mm,2 mm,±0.05 mm · faces end · ccpart:norcold_freezer_hinge_pin
+head_dia,mm,9 mm,±0.05 mm · faces side · ccpart:norcold_freezer_hinge_pin
+head_h,mm,3.2 mm,±0.05 mm · faces end · ccpart:norcold_freezer_hinge_pin
+overall_l,mm,42.18 mm,±0.1 mm · faces top · ccpart:norcold_freezer_hinge_pin
+overall_w,mm,12.4 mm,±0.1 mm · faces top · ccpart:norcold_freezer_hinge_pin
+pin_dia,mm,6.51 mm,±0.05 mm · faces top · ccpart:norcold_freezer_hinge_pin
+wall,mm,1.8 mm,±0.05 mm · faces side · ccpart:norcold_freezer_hinge_pin
