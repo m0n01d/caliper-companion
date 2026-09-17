@@ -15,9 +15,14 @@
 }
 
 /* -- slot row (DESIGN.md §4 "Thumbnail slot") ------------------------- */
+/* Also carries global.css's `.chip-row` (horizontal scroller, hidden
+   scrollbar): one slot per chip, so custom faces (SPEC §8a A7) can push it
+   past the viewport. `overflow: visible` on the cross axis would clip the
+   selected slot's outline otherwise, hence the padding. */
 .slot-row {
-  display: flex;
   gap: var(--cc-space-3);
+  padding: 4px;
+  margin: -4px;
 }
 
 .slot-selected {
@@ -119,3 +124,20 @@
   flex-direction: column;
   gap: var(--cc-space-2);
 }
+
+/* -- custom-face card (SPEC §8a A7; inline, opaque, non-modal) --------- */
+.custom-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
+}
+
+.custom-card-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+/* Custom chips and the "Capture <label>" caption show the slug via
+   global.css's `.mono` (DESIGN.md §7) — nothing page-specific needed. */
