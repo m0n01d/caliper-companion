@@ -1584,3 +1584,39 @@ clean under `+a`; `npm test` 205/205 (193 baseline + 12 net new in `EdgeSnapTest
   the second pair 40 px lower and drags its pending body up onto the line (snap off) before saving.
 - Screenshots (not committed): `…/scratchpad/a9/03-selected-viewport.png` — two overlapping
   dimensions plus a depth, the second selected from the list.
+## 2026-09-17 — Fusion import skill (agent/skill-build)
+
+Built SPEC §7's other half as a project skill: `.claude/skills/fusion-import/` (SKILL.md, one
+self-contained `scripts/import_ccpart.py`, a recording `scripts/fake_adsk.py`, 84 stdlib unittest
+cases, golden plan + call-log snapshots). Spec updated first with the review's R1–R4 rewrites
+(`docs/fusion/IMPORT-SKILL-SPEC.md`), then built to it. No Fusion here: the executor is tested
+against the fake; the owner runs the live V1–V15 checklist in Text Commands on the Mac.
+
+- **Two entry paths, one planner/executor.** MCP: the skill stages shell-side (`--extract` into
+  `~/.caliper-companion/imports/<slug>/`, pHYs written into the PNG copies), then two calls each
+  sending the file text + `__ccpart = run_import({...})` — `inspect` (read-only) and, after
+  confirmation, `execute`; no message boxes; `<dir>/import-report.json` is the channel. Standalone
+  (coordinator addition mid-build): `run(context)` from Scripts and Add-Ins opens a file dialog,
+  stages inside Fusion's Python with the same code, shows the plan in an OK/Cancel box, executes,
+  ends with a summary box and the same report file. `run()` dispatches on `__ccpart` (already ran) →
+  `CCPART_ARGS` (scripted) → standalone, so an MCP tool that also calls `run()` does nothing twice.
+- **Judgment calls.** (1) Parameter comment carries the feature `kind` (`length ±0.1 mm · faces top ·
+  ccpart:<slug>`) per review S4 — the brief's condensed format omitted it; one-line change if unwanted.
+  (2) Canvas name stays `label_photo` (brief), not review N2's `_uncalibrated` suffix: a rename after
+  calibration would defeat the by-name refresh; the uncalibrated status is in `canvas_note` and the
+  confirmation text instead. (3) Timeline group is `<slug> import` (brief), not S2's `{exportedAt}`
+  suffix; on re-import the kept sketches stay in the old group and only the new canvases get the new
+  one — the fake models group membership shifting on delete, and the test pins the new group to the
+  three new canvases. (4) Canvas refresh creates the new canvas **before** deleting the old one, so a
+  failed refresh keeps the old canvas (no transactions); the group range is computed from
+  `timelineObject.index` after the deletes, not from a marker captured up front. (5) `isComputeDeferred`
+  only above 6 faces (brief) — N5 said never; kept the brief's threshold, always in `finally`.
+  (6) Numbers via `f"{v:.4f}".rstrip("0").rstrip(".")` (S4): golden values come out `42.18 mm`, `2 mm`,
+  `±0.1 mm` — verbatim, never exponent notation. (7) Extra reserved names refused up front (S5):
+  `d<n>` and `mm cm m in ft deg rad`; app-side nit still open.
+- **Fake fidelity.** `fake_adsk` raises on attribute typos and on `createByReal`, logs every call and
+  property set, models `itemByName` returning `None`, `add` returning `None` on a duplicate name,
+  timeline objects that re-index when items are deleted, and scripted dialog answers. What it cannot
+  tell us is exactly the V-list (canvas factory/arg order, pHYs honoured, attributes on canvases,
+  `Canvases.itemByName`, `Matrix2D.copy`, the MCP tool's exec semantics, dialog filter syntax).
+- Not done: `part.path` (A10) is read into the plan and otherwise unused (v1 save); no CouchDB pull (v1).
