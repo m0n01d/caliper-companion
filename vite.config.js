@@ -42,7 +42,6 @@ export default defineConfig({
       // PouchDB's package entry does not resolve cleanly under Vite's ESM
       // pipeline; ternpike pins the browser bundle the same way.
       pouchdb: path.resolve('./node_modules/pouchdb/dist/pouchdb.js'),
-      'pouchdb-find': path.resolve('./node_modules/pouchdb/dist/pouchdb.find.js'),
     },
   },
   define: {
