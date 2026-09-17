@@ -1225,3 +1225,159 @@ confirmed restyled off it, and fixed two visible layout defects. Files: `src/glo
   `vite preview --port 3311`, reviewed by eye each iteration — caught and fixed the chevron-stacking
   regression and the features-table `table-layout: fixed` failure this way, neither of which any
   existing spec would have caught.
+
+## 2026-09-17 — Design wave 3b — a11y + polish (agent/w3-polish)
+
+Accessibility sweep + gap-note polish (DESIGN.md §9/§11) over the pages this track owns
+(`PartsList`, `Part`, `Capture`, `Debug`) plus `Ui`/`Icon`/`Shell`/`A2hsHint`/`global.css`/
+`theme.css`. `Annotate.*`/`Settings.*`/`Store.*`/`Canvas.res` are `agent/w3-foundation`'s sibling
+track — read for audit/reuse, never edited.
+
+- **`Ui.Live`**: a new visually-hidden `role="status" aria-live="polite"` component, mounted
+  unconditionally in every owned page's `view` (never behind a conditional — a live region only
+  announces *changes*, so one that appears after the fact is never heard). `PartsList` announces
+  "Part created" / "Part deleted"; `Part` announces "Export ready: `<file>`" / "Export shared" /
+  "Export failed: …" (built from the export `result`, not the already-composed display string, so
+  it doesn't nest "Export ready:" in front of "Downloaded …"); `Capture` announces "Face captured:
+  `<label>`". `PartCreated`/`Saved` both navigate away almost immediately after setting their
+  announcement (`Route.push`/`TimerStarted`), so those two are mostly symbolic — an AT may not get
+  to speak them before the live region itself unmounts. Flagging rather than skipping, since
+  DESIGN.md §9 asks for them regardless and there's no cheap way to delay the navigation for it.
+- **Focus management** (DESIGN.md §9). `PartsList`: `NewPartClicked`/`RenameStart` focus the
+  create/rename input; `DeleteDone` focuses `new-part` (present whether the list is now empty or
+  not — doubles as "focus goes to the list"). `Capture`: `CustomOpen` focuses
+  `custom-face-label`; `RecaptureCancelClicked` focuses the shutter — which needed a
+  `dataTestId="shutter"` + `tabIndex={-1}` added to it, since a `<label>` isn't natively focusable
+  and this is a programmatic-only target, never in the Tab order itself. All four go through a
+  local `focusTestId` cmd, duplicated per page (`PartsList.res`, `Capture.res`) rather than shared
+  — same reasoning as the existing duplicated `describeError`: no page-shared module is in this
+  track's file-ownership list to hang a common one on.
+  - **Real binding, not a new one**: `src/bindings/Canvas.res` (read-only from here) already
+    exports `byTestId`/`focus` — the exact pair Annotate.res's own `focusTestId` uses — so nothing
+    needed adding to `Ui.res`, despite the brief's fallback instructions anticipating that might be
+    necessary.
+  - **The microtask deferral is load-bearing, not decoration.** `Tea.res`'s `dispatch` runs a
+    msg's `cmd` *synchronously*, right after handing the new model to React's `setState` — before
+    React has actually re-rendered/committed the DOM (see `Tea.res`'s own doc comment on `use`).
+    Annotate's `focusTestId` gets away without this because its targets (`reading`, `name`,
+    `annotate-canvas`) are already mounted before the msg that focuses them; a freshly-opened
+    form's input isn't. Deferring one `Promise.resolve().then(...)` microtask — no new binding,
+    `Promise` is already how `Tea.fromPromise` itself is built — reliably lands after React's
+    synchronous-event commit. Verified empirically (a throwaway script, not committed) before
+    relying on it, not just assumed.
+- **`.capture-view:has(.input-selected-camera:focus-visible)` / `…-library…`** (`Capture.css`):
+  found and fixed a **dead CSS rule**. `.shutter:focus-within:has(input:focus-visible)` (and the
+  matching one for the "From library" label) can never match — the hidden camera/library `<input>`
+  the label is `htmlFor` isn't a DOM *descendant* of that label (`hiddenInputs` renders every
+  chip's inputs elsewhere, deliberately independent of `selectedLabel`/`model.dialog` — see
+  `Capture.res`'s own module-end notes), so `:focus-within`/`:has()` had nothing to find. Since
+  there's no way to key a static CSS rule to an arbitrary custom face's *id*, the fix is a static,
+  non-dynamic class (`input-selected-camera`/`input-selected-library`) `renderCaptureInput` adds to
+  whichever chip's input pair is currently selected, plus `:has()` reaching sideways from that
+  class at the shared `.capture-view` root to the sibling label representing it — one rule, works
+  for every label, default or custom.
+- **`.slot-check`** (`global.css`, used by `Part.res` and `Capture.res`): a small teal check badge
+  on captured thumbnail slots (DESIGN.md §9 "Color is never the only signal"). The teal ring vs.
+  dashed-empty border already differ by shape as well as hue, but the badge also covers the gap
+  between a face record resolving and its object-URL thumbnail actually loading, and doesn't
+  depend on being able to tell teal from the empty slot's `cc-border` grey at a glance. `.slot`
+  moved from `overflow: hidden` to `overflow: visible` (with `.slot-captured` alone carrying
+  `hidden`, so the photo itself still clips to the tile) so the badge can sit half outside the
+  56 px box without being cut off.
+- **Semantics (DESIGN.md §9).** `Ui.ListGroup` gained `~asList` (`role="list"` on the container,
+  default off — the component also wraps plain form-field groups and, in `Part.res`, a `<table>`,
+  neither of which is a list); `Ui.ListRow` now always carries `role="listitem"` unconditionally
+  (its whole purpose is "one row of a list" wherever it's used — checked every call site first:
+  only `Part.res`/`PartsList.res` use it, both now flagged `asList`). Hand-rolled `.list-row`s that
+  don't go through `Ui.ListRow` (`PartsList`'s Renaming/ConfirmingDelete strips, `Debug`'s timer
+  rows) got `role="listitem"` added directly. `Part.res`'s features table: found the CSS-grid
+  layout (`display: grid` + `display: contents` on `thead`/`tbody`/`tr` — wave 3's fix for the
+  "VALUE/TOL wrap" bug, see that entry) silently strips the *implicit* `table`/`row`/`cell` ARIA
+  roles Chromium/Firefox normally compute from the HTML tag, once `display` stops being
+  `table`-family — a real, documented CSS-Display/Core-AAM interaction, not a hypothetical; the
+  table was structurally a `<table>` but wasn't exposed as one to a screen reader. Fixed with
+  explicit `role="table"`/`"rowgroup"`/`"row"`/`"columnheader"`/`"cell"` plus `scope="col"` on the
+  headers, restoring real semantics regardless of the CSS `display` value — DESIGN.md §9's own
+  parenthetical ("role=table grid with proper roles if it stays a CSS grid") anticipated exactly
+  this. `lang`/`<main>` landmark were already correct (index.html, `Shell.res`) — verified, not
+  touched (index.html is outside this track's file-ownership list regardless).
+- **Focus-visible rings**: audited every interactive class. Most already had a ring via the base
+  `button, .btn { ... }` rule in `global.css` (every `<button>` tag, regardless of class, already
+  gets one — chips, segmented options, the Capture slot buttons). The real gap was plain `<a>`
+  elements, which had none: added a blanket `a:focus-visible` rule, plus an inward `-2px`-offset
+  override on `.list-row-link` specifically (it sits inside `.list-group`'s `overflow: hidden`, so
+  an outward ring at a row near the card's rounded edge would get clipped — same reasoning the
+  existing `button.list-row:focus-visible` rule already used). `touch-action: manipulation` added
+  to `.list-row-link`/`.face-slot` (the two custom controls in scope that are plain `<a>`s, not
+  `.btn`/`<button>`, so they didn't inherit it from the base rule). `-webkit-tap-highlight-color`
+  moved onto the universal `*`/`::before`/`::after` reset in addition to `html` (belt and
+  suspenders — it isn't a true inherited property, some engines want it closer to the tapped node).
+- **Reduced motion**: audited every page's CSS for `transition`/`animation`. Already fully covered
+  by the existing blanket `@media (prefers-reduced-motion: reduce) { *, *::before, *::after {
+  transition-duration: 0ms !important; ... } }` in `global.css` §12 — the `!important` universal
+  rule beats any more specific duration regardless of what adds a transition later, so nothing
+  page-specific was needed; confirmed rather than assumed.
+- **Contrast audit** (DESIGN.md §2/§9): computed WCAG relative-luminance ratios for every listed
+  token pair with a throwaway node script (not committed). All six pass 4.5:1 — `cc-text-2` on
+  `cc-surface-2` 6.58:1, `cc-text-3` on `cc-surface` 4.52:1, `cc-amber` on `cc-ground` 8.52:1,
+  `cc-amber-ink` on `cc-amber` 8.05:1, `cc-teal-ink` on `cc-teal-wash` 10.48:1, `cc-error` on
+  `cc-ground` 5.91:1. A few extra pairs actually used in owned pages were also checked (list/table
+  text on `cc-surface`, footnote/caption on `cc-ground`, the primary-button pressed state, etc.) —
+  all pass; the one pair under 4.5 (`cc-error`'s own icon-stroke colour composited onto the
+  translucent `warning-row-error` wash, 4.42:1) is a **graphic**, not text, so the applicable WCAG
+  bar is 1.4.11's 3:1, which it clears with room to spare. No token or usage changes needed.
+- **Gap-note polish**: `.stack-lg` gained its missing `display: flex; flex-direction: column`
+  (previously `gap`-only — a bare `.stack-lg` div, which is every owned page's outermost `view`
+  wrapper, rendered as a plain block with margin-collapsed children instead of the intended
+  `cc-space-5` vertical rhythm; confirmed visually via the screenshot tour before and after).
+  Capture's recapture-card and custom-face-card Cancel buttons, and A2hsHint's "Later", moved to
+  `Ui.Button ~variant=Plain`. Part's per-face Remove (in the faces-edit list) and the "Edit
+  faces"/"Done" toggle both moved off the deprecated `variant=Small` alias — Remove to
+  `variant=Danger size=Small` (per the brief), "Edit faces" to `variant=Secondary size=Small`
+  (a judgment call: DESIGN.md's "Small button" spec is `cc-field` background with no colour
+  connotation, which `Secondary` — `cc-surface` bg, bordered, neutral — is the closest existing
+  colour variant to, not `Danger`/`Primary`). Capture's own `custom-face-remove` (the "Remove
+  chip" button in the shutter block, `variant=Small` before this wave) got the same
+  `variant=Secondary size=Small` treatment, added to the brief's `variant=Small` sweep since it's
+  in this track's file (`Capture.res`) even though the brief's item 9 didn't name it explicitly.
+- **Icon-only aria-label audit** (item 1): every `Ui.Button ~variant=Icon` call site in owned files
+  (`PartsList`'s Rename/Delete) and every other icon-only control (`Shell`'s Back, `Capture`'s
+  shutter, `PartsList`/`Part`'s icon-only rows) already carried an `ariaLabel` from prior waves —
+  audited, nothing to fix. `~ariaLabel` stayed optional on `Ui.Button` per the brief (Annotate's
+  zoom buttons, outside this track, need it settable but Annotate can't be edited to make it
+  required without breaking that call site).
+- **`e2e/specs/a11y.spec.js`** (new): on `#/`, a part page and the capture page — every
+  `role=button` resolves to a non-empty accessible name, the features table exposes real
+  `role="columnheader"`/`scope="col"` headers (the regression guard for the CSS-grid/ARIA-role fix
+  above, not just "does a `<table>` exist"), each page's live region is attached, `New part`
+  autofocuses the name field, and a keyboard-only Tab pass reaches Back first (where the page has
+  one) then moves forward into real content. Two more tests exercise the specific focus-management
+  paths this wave added directly (custom-face card autofocus, recapture-cancel → shutter, rename
+  autofocus, delete → New part) since nothing else in the suite touches them.
+  - **Found and worked around a Chromium/Playwright quirk while writing the keyboard-order test**,
+    not an app bug: the very first `page.keyboard.press('Tab')` after a same-document SPA route
+    change (e.g. `page.goto('/#/parts/x')` from `/#/parts/x/faces/y`) can skip straight past the
+    (fully focusable, DOM-order-first, verified via a throwaway script) Back button to something
+    further down the page — `document.activeElement` reports `<body>` at that point, but Chromium
+    still anchors "first Tab" sequential-navigation search to wherever the last real user
+    interaction was, and that anchor can survive a hash-only navigation even once the element
+    itself is gone. A genuine `page.reload()` right before each keyboard-order assertion gives a
+    real clean starting point (and is arguably more representative anyway — a keyboard user
+    actually arriving at the URL fresh, not mid-SPA-session).
+- **Not done / for a later wave**: focus management wasn't extended to `Part.res`'s own face-delete
+  flow (`FaceDeleteConfirmed`/`FaceDeleted`) — the brief's item 4 names "a part" specifically, not
+  "a face", and the parallel improvement (focus `faces-edit` or the list after a face is removed)
+  is a reasonable follow-up but out of this wave's explicit scope. The hidden capture/library
+  `<input>`s themselves still have no visible focus indicator of their own when Tab-focused
+  directly (only the *label* they're `htmlFor` gets a ring now, via the `:has()` fix above) — an
+  element that must stay fully invisible for the design can't also paint a visible outline on
+  itself; this is the best available fix without restructuring the "always-mounted, selection-
+  independent inputs" architecture, which is deliberate (SPEC §8a A4 / docs/testids.md) and out of
+  scope to change here.
+- **Verification.** `rescript build` clean under `+a` (full clean rebuild, 65 modules); `npm test`
+  193/193; `npm run build` clean; `E2E_PORT=3420 npx playwright test --config=e2e/playwright.config.js
+  --project=chromium` **35/35** on Chromium (30 existing + 5 new `a11y.spec.js`), twice (once
+  before, once after the keyboard-order/Tab-reload fix above). Screenshots at 390×844 via
+  `scripts/screenshot-tour.mjs` against `vite preview --port 3421`, reviewed by eye — the
+  `.stack-lg` fix and the captured-slot check badges are both visible and correct in the result;
+  nothing else looked wrong.
