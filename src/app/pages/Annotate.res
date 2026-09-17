@@ -14,6 +14,13 @@
 // p2 placed → `reading` focused; Enter in `reading` → `name`; Enter in
 // `name` → Save → canvas. A dongle typing `42.18⏎` lands a reading and
 // advances with zero app code.
+//
+// Auto-fit (SPEC §8a A6): when p2 lands the view animates to fit the pair
+// (with the keyboard up the stage is half its height, so a fresh dimension
+// can sit under it), re-fits when the stage resizes, and animates back on
+// Save/Clear — unless the user moved the view in between. The animation is
+// a `Tea.effect` ticking `ViewportTick`; `update` only maps progress to a
+// transform, so every frame is still a pure function of the model.
 
 // ── Model ──────────────────────────────────────────────────────────────
 
@@ -61,6 +68,17 @@ type gesture =
 // or pinch — performs it.
 type focusIntent = Reading
 
+// SPEC §8a A6: the view is fitted to the pending pair once p2 lands. This
+// remembers the view to come back to and whether the user has moved the
+// view since (pinch, pan, zoom button) — which stops the re-fit on stage
+// resize and the restore on Save/Clear.
+type autoFit = {before: Viewport.t, touched: bool}
+
+// A viewport animation in flight (A6: 160 ms, `--cc-ease`). `gen` ties the
+// frames an effect dispatches to the tween that started them, so a stale
+// frame loop can never move a view the user has since taken over.
+type tween = {gen: int, from: Viewport.t, to: Viewport.t}
+
 type loaded = {
   part: Types.part,
   face: Types.face,
@@ -92,6 +110,9 @@ type model = {
   pending: pending,
   selected: option<string>, // dimension id being edited
   focusIntent: option<focusIntent>, // performed by the next canvas click
+  autoFit: option<autoFit>, // SPEC §8a A6
+  tween: option<tween>, // the viewport animation in flight, if any
+  tweenGen: int, // last tween generation minted
   announcement: string, // the `aria-live` line after a save (DESIGN.md §9)
   reading: string,
   name: string,
@@ -110,6 +131,7 @@ type msg =
   | PointerUp(int)
   | PointerCancel(int)
   | CanvasClicked
+  | ViewportTick(int, float) // (tween generation, progress 0..1)
   | ZoomIn
   | ZoomOut
   | ReadingChanged(string)
@@ -131,6 +153,7 @@ let handleHitRadius = 22.0 // a 44 px target (DESIGN.md §2) on a 22 px handle
 let lineHitRadius = 16.0
 let zoomStep = 1.5
 let maxZoomOverFit = 8.0
+let tweenMs = 160.0 // DESIGN.md §11.1 "Interaction feel": 150–200 ms
 
 let noPending = {p1: None, p2: None}
 
@@ -151,6 +174,35 @@ let focusTestId = (id: string, ~select: bool): Tea.cmd<msg> =>
         el->Canvas.select
       }
     | None => ()
+    }
+  )
+
+// Drive a viewport tween: one `ViewportTick(gen, progress)` per animation
+// frame until progress reaches 1 — or a single tick at 1 when the person
+// prefers reduced motion (SPEC §8a A6: instant). Timing stays in this
+// effect; `update` only maps progress to a transform. The loop always runs
+// to completion; frames of a superseded tween carry an old `gen` and are
+// ignored.
+let tweenCmd = (gen: int): Tea.cmd<msg> =>
+  Tea.effect(dispatch =>
+    if Canvas.prefersReducedMotion() {
+      dispatch(ViewportTick(gen, 1.0))
+    } else {
+      let startedAt = ref(None)
+      let rec frame = (now: float) => {
+        let t0 = switch startedAt.contents {
+        | Some(t0) => t0
+        | None =>
+          startedAt := Some(now)
+          now
+        }
+        let progress = Math.min((now -. t0) /. tweenMs, 1.0)
+        dispatch(ViewportTick(gen, progress))
+        if progress < 1.0 {
+          Canvas.requestAnimationFrame(frame)->ignore
+        }
+      }
+      Canvas.requestAnimationFrame(frame)->ignore
     }
   )
 
@@ -274,6 +326,9 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     pending: noPending,
     selected: None,
     focusIntent: None,
+    autoFit: None,
+    tween: None,
+    tweenGen: 0,
     announcement: "",
     reading: "",
     name: "",
@@ -306,6 +361,84 @@ let refit = (m: model, l: loaded): model => {
   let m = {...m, fitScale: fitted.scale}
   {...m, viewport: m.touched ? clampViewport(m, l, m.viewport) : fitted}
 }
+
+// ── SPEC §8a A6: auto-fit and the viewport tween ───────────────────────
+
+let segmentFit = (m: model, l: loaded, a: Types.point, b: Types.point): Viewport.t =>
+  Viewport.fitToSegment(
+    ~p1=a,
+    ~p2=b,
+    ~imageW=l.imageW,
+    ~imageH=l.imageH,
+    ~viewW=m.view.w,
+    ~viewH=m.view.h,
+    ~fitScale=m.fitScale,
+    ~maxScale=maxZoomOverFit *. m.fitScale,
+  )
+
+// Start animating the viewport to `target` (nothing to do when it is
+// already there). A tween in flight is superseded: its frames carry the
+// old generation and `update` drops them.
+let animateTo = (m: model, target: Viewport.t): (model, Tea.cmd<msg>) =>
+  if target == m.viewport {
+    ({...m, tween: None}, Tea.none)
+  } else {
+    let gen = m.tweenGen + 1
+    ({...m, tweenGen: gen, tween: Some({gen, from: m.viewport, to: target})}, tweenCmd(gen))
+  }
+
+// A tween in flight jumps to its end: a press, a zoom button or a stage
+// resize acts on the settled view, never on a frame of the animation (and
+// a tap computed from the published `data-transform` lands where it says).
+let settle = (m: model): model =>
+  switch m.tween {
+  | Some(tw) => {...m, viewport: tw.to, tween: None}
+  | None => m
+  }
+
+// The user took the view over (pinch, pan, zoom button): an active auto-fit
+// stops following — no re-fit on resize, no restore on Save (A6).
+let userMoved = (m: model): model => {
+  ...m,
+  touched: true,
+  tween: None,
+  autoFit: m.autoFit->Option.map(a => {...a, touched: true}),
+}
+
+// p2 landed: remember the view to come back to — the one from before an
+// earlier, still-untouched fit when the user re-tapped without saving —
+// and animate to the pair.
+let fitToPending = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
+  switch (m.pending.p1, m.pending.p2) {
+  | (Some(a), Some(b)) =>
+    let before = switch m.autoFit {
+    | Some({before, touched: false}) => before
+    | _ => m.viewport
+    }
+    animateTo({...m, autoFit: Some({before, touched: false})}, segmentFit(m, l, a, b))
+  | _ => (m, Tea.none)
+  }
+
+// Save, Clear or Delete ends the auto-fit: back to the remembered view —
+// clamped, since the stage may have changed size meanwhile — unless the
+// user moved the view in between, in which case it stays where they put it.
+let endAutoFit = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
+  switch m.autoFit {
+  | Some({before, touched: false}) => animateTo({...m, autoFit: None}, clampViewport(m, l, before))
+  | Some(_) => ({...m, autoFit: None}, Tea.none)
+  | None => (m, Tea.none)
+  }
+
+// Test hook (docs/testids.md): `fitting` while the view animates (the fit
+// after p2 or the restore after Save/Clear), then `fitted`, `touched` once
+// the user moved it, `none` outside an auto-fit.
+let autoFitState = (m: model): string =>
+  switch (m.tween, m.autoFit) {
+  | (Some(_), _) => "fitting"
+  | (None, Some({touched: true})) => "touched"
+  | (None, Some(_)) => "fitted"
+  | (None, None) => "none"
+  }
 
 let toScreen = (m: model, l: loaded, n: Types.point): Viewport.pt =>
   Viewport.fromNormalized(m.viewport, ~imageW=l.imageW, ~imageH=l.imageH, n)
@@ -431,17 +564,15 @@ let tap = (m: model, l: loaded, s: Viewport.pt, hit: hit): (model, Tea.cmd<msg>)
   // Second tap of a two-tap dimension: place p2 (wherever it lands, even on
   // a handle — p2 stays draggable). The reading gets focus from the click
   // that follows this tap (SPEC §8a A2), not from here.
-  | (Some(_), None, _) => (
-      {...m, pending: {...m.pending, p2: Some(n)}, focusIntent: Some(Reading)},
-      Tea.none,
-    )
+  | (Some(_), None, _) =>
+    fitToPending({...m, pending: {...m.pending, p2: Some(n)}, focusIntent: Some(Reading)}, l)
   // A tap (no movement) on a saved dimension still selects it (SPEC §8a A1).
   | (_, _, HitHandle(Existing(id), _)) | (_, _, HitBody(Existing(id))) => (select(m, l, id), Tea.none)
   // The pending pair is already the one being edited: a tap on it is a no-op.
   | (_, _, HitHandle(Pending, _)) | (_, _, HitBody(Pending)) => (m, Tea.none)
   | (_, _, HitNothing) =>
     switch m.selected {
-    | Some(_) => (clearEntry(m), Tea.none)
+    | Some(_) => endAutoFit(clearEntry(m), l)
     | None => ({...m, pending: {p1: Some(n), p2: None}, announcement: ""}, Tea.none)
     }
   }
@@ -496,19 +627,20 @@ let setPoints = (m: model, l: loaded, target: target, pts: pending): model =>
   }
 
 let panBy = (m: model, l: loaded, ~from: Viewport.pt, ~to: Viewport.pt): model => {
-  ...m,
-  touched: true,
+  ...userMoved(m),
   viewport: clampViewport(m, l, Viewport.pan(m.viewport, ~dx=to.x -. from.x, ~dy=to.y -. from.y)),
 }
 
 let zoomBy = (m: model, l: loaded, factor: float): model => {
-  ...m,
-  touched: true,
-  viewport: clampViewport(
-    m,
-    l,
-    Viewport.zoomAbout(m.viewport, ~factor, ~screenAnchor={x: m.view.w /. 2.0, y: m.view.h /. 2.0}),
-  ),
+  let m = settle(m)
+  {
+    ...userMoved(m),
+    viewport: clampViewport(
+      m,
+      l,
+      Viewport.zoomAbout(m.viewport, ~factor, ~screenAnchor={x: m.view.w /. 2.0, y: m.view.h /. 2.0}),
+    ),
+  }
 }
 
 let pointerById = (m: model, id: int): option<activePointer> => m.pointers->Array.find(p => p.id == id)
@@ -516,6 +648,8 @@ let pointerById = (m: model, id: int): option<activePointer> => m.pointers->Arra
 // ── Update ─────────────────────────────────────────────────────────────
 
 let pointerDown = (m: model, l: loaded, id: int, s: Viewport.pt): model => {
+  // A press during an animation lands on its end state (see `settle`).
+  let m = settle(m)
   let hit = hitTest(m, l, s)
   let pointers = m.pointers->Array.filter(p => p.id != id)->Array.concat([{id, start: s, pos: s, hit}])
   // An intent the last tap's click never collected (a pointer type that
@@ -560,8 +694,7 @@ let pointerMove = (m: model, l: loaded, id: int, s: Viewport.pt): model =>
         let prevA = a == id ? before.pos : pa.pos
         let prevB = b == id ? before.pos : pb.pos
         {
-          ...m,
-          touched: true,
+          ...userMoved(m),
           viewport: clampViewport(
             m,
             l,
@@ -605,11 +738,21 @@ let pointerEnd = (m: model, l: loaded, id: int, ~cancelled: bool): (model, Tea.c
     }
   }
 
+// The view goes back (A6) as the save is *initiated*, not when the write
+// lands: the Enter or tap that saves is the user's own action, and it is a
+// React event, so the published `data-transform` is the restored view
+// before the next thing anyone does — a spec reading it straight after the
+// Enter would otherwise still see the fitted view of the pair just saved.
 let trySave = (m: model, l: loaded): (model, Tea.cmd<msg>) =>
   switch buildDimension(m, l) {
-  | Some(dim) => (
-      {...m, busy: true, error: None},
-      saveCmd(~partId=m.partId, ~faceId=m.faceId, ~units=l.part.units, ~settings=l.settings, dim),
+  | Some(dim) =>
+    let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
+    (
+      m,
+      Tea.batch([
+        restore,
+        saveCmd(~partId=m.partId, ~faceId=m.faceId, ~units=l.part.units, ~settings=l.settings, dim),
+      ]),
     )
   | None => (m, Tea.none)
   }
@@ -627,7 +770,15 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     } else {
       let m = {...m, view, dpr}
       switch status {
-      | Ready(l) => (refit(m, l), Tea.none)
+      | Ready(l) =>
+        // A resize mid-animation ends it at its target, then re-fits the
+        // target for the new size. While the fitted pair is untouched the
+        // stage follows it (A6: the keyboard changed `--vv-height`).
+        let m = refit(settle(m), l)
+        switch (m.autoFit, m.pending.p1, m.pending.p2) {
+        | (Some({touched: false}), Some(a), Some(b)) => ({...m, viewport: segmentFit(m, l, a, b)}, Tea.none)
+        | _ => (m, Tea.none)
+        }
       | _ => (m, Tea.none)
       }
     }
@@ -642,6 +793,19 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     switch m.focusIntent {
     | Some(Reading) => ({...m, focusIntent: None}, focusTestId("reading", ~select=true))
     | None => (m, Tea.none)
+    }
+
+  // One frame of the viewport tween (A6). Frames of a superseded or
+  // cancelled tween carry a stale generation and change nothing.
+  | (ViewportTick(gen, progress), _) =>
+    switch m.tween {
+    | Some(tw) if tw.gen == gen =>
+      if progress >= 1.0 {
+        ({...m, viewport: tw.to, tween: None}, Tea.none)
+      } else {
+        ({...m, viewport: Viewport.lerp(tw.from, tw.to, Viewport.ease(progress))}, Tea.none)
+      }
+    | _ => (m, Tea.none)
     }
 
   | (ZoomIn, Ready(l)) => (zoomBy(m, l, zoomStep), Tea.none)
@@ -667,21 +831,25 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       NumberParse.format(dim.value, l.part.units) ++
       " " ++
       NumberParse.unitsLabel(l.part.units)
-    (
+    // `trySave` already restored the view; this covers a pair placed while
+    // the write was in flight.
+    let (m, restore) = endAutoFit(
       {...clearEntry(m), status: Ready({...l, dims, settings}), busy: false, announcement},
-      focusTestId("annotate-canvas", ~select=false),
+      l,
     )
+    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
   | (Saved(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
 
-  | (DeleteClicked, Ready(_)) =>
+  | (DeleteClicked, Ready(l)) =>
     switch m.selected {
-    | Some(id) if !m.busy => ({...m, busy: true, error: None}, deleteCmd(~faceId=m.faceId, id))
+    | Some(id) if !m.busy =>
+      let (m, restore) = endAutoFit({...m, busy: true, error: None}, l)
+      (m, Tea.batch([restore, deleteCmd(~faceId=m.faceId, id)]))
     | _ => (m, Tea.none)
     }
-  | (Deleted(Ok(dims)), Ready(l)) => (
-      {...clearEntry(m), status: Ready({...l, dims}), busy: false},
-      focusTestId("annotate-canvas", ~select=false),
-    )
+  | (Deleted(Ok(dims)), Ready(l)) =>
+    let (m, restore) = endAutoFit({...clearEntry(m), status: Ready({...l, dims}), busy: false}, l)
+    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
   | (Deleted(Error(why)), _) => ({...m, busy: false, error: Some(why)}, Tea.none)
 
   | (Moved(Ok(dims)), Ready(l)) => (
@@ -690,6 +858,9 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     )
   | (Moved(Error(why)), _) => ({...m, moving: false, error: Some(why)}, Tea.none)
 
+  | (CancelClicked, Ready(l)) =>
+    let (m, restore) = endAutoFit(clearEntry(m), l)
+    (m, Tea.batch([restore, focusTestId("annotate-canvas", ~select=false)]))
   | (CancelClicked, _) => (clearEntry(m), focusTestId("annotate-canvas", ~select=false))
 
   // Messages that need a loaded face, arriving before/after one.
@@ -737,6 +908,8 @@ type scene = {
   pendingLabel: option<string>,
   view: size,
   dpr: float,
+  reported: Viewport.t, // `data-transform`: the settled view (a tween's target while it runs)
+  autofit: string, // `data-autofit`
 }
 
 // Pill text (DESIGN.md §5): `name value`, prefixed ⌀ for a diameter and ↓
@@ -804,12 +977,13 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
   // oriented image size, so a spec can compute where a normalized point is.
   el->Canvas.setAttribute(
     "data-transform",
-    Float.toString(scene.viewport.scale) ++
+    Float.toString(scene.reported.scale) ++
     "," ++
-    Float.toString(scene.viewport.tx) ++
+    Float.toString(scene.reported.tx) ++
     "," ++
-    Float.toString(scene.viewport.ty),
+    Float.toString(scene.reported.ty),
   )
+  el->Canvas.setAttribute("data-autofit", scene.autofit)
   el->Canvas.setAttribute(
     "data-image-size",
     Float.toString(scene.imageW) ++ "x" ++ Float.toString(scene.imageH),
@@ -847,8 +1021,13 @@ module CanvasView = {
     , [])
 
     // Redraw as a pure function of the scene. Deps are the scene's fields
-    // (record identity is stable across unrelated model updates).
-    React.useEffect(() => {
+    // (record identity is stable across unrelated model updates). A layout
+    // effect, not a plain one: the test hooks `data-transform`/`data-autofit`
+    // are set here, and they must land in the same task as the render that
+    // changed the viewport — a Save restores the view (A6), and a spec that
+    // reads the attribute a frame later would otherwise compute its next
+    // tap from a transform the model has already left.
+    React.useLayoutEffect(() => {
       switch canvasRef.current->Nullable.toOption {
       | Some(el) => drawScene(el, scene)
       | None => ()
@@ -863,6 +1042,8 @@ module CanvasView = {
       scene.pendingLabel,
       scene.view,
       scene.dpr,
+      scene.reported,
+      scene.autofit,
     ))
 
     <canvas
@@ -954,6 +1135,11 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
     view: m.view,
     dpr: m.dpr,
+    reported: switch m.tween {
+    | Some(tw) => tw.to
+    | None => m.viewport
+    },
+    autofit: autoFitState(m),
   }
   let count = Array.length(l.dims)
   let zoom = m.fitScale > 0.0 ? m.viewport.scale /. m.fitScale : 1.0

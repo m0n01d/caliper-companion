@@ -755,3 +755,89 @@ under `src/app/pages/` was edited; wave 2 restyles them onto these classes.
 - Not done / for wave 2: pages still use their own classes (this section's §13 maps them); no
   scroll-edge shadow modulation (no reliable CSS for it in Safari); the 96 px face tiles on Part
   still overflow horizontally at 4 tiles (pre-existing; §11.2 wants 56 px slots).
+## 2026-09-17 — Design wave 2 — annotate + A6 (agent/w2-annotate)
+
+Restyle of the core screen onto the wave-1 foundation (DESIGN.md §11.2 "Annotate", §3, §4, §6,
+§9) and SPEC §8a A6 (fit the view to the dimension when p2 lands). Files: `Annotate.res`,
+`Annotate.css` (rewritten, 200 lines, tokens + global classes only), `annotate/Viewport.res`
+(+`fitToSegment`, `lerp`, `cubicBezier`/`ease`) + `tests/ViewportTest.res` (+10, 30 total),
+`bindings/Canvas.res` (`requestAnimationFrame`, `prefersReducedMotion`), `e2e/specs/annotate.spec.js`
+(+3, 10 total), `docs/testids.md`. Two commits: restyle, then A6.
+
+- **Layout.** Stage inset by the 16 px page margin on the photo mat with the 16 px radius, height
+  `min(300px, --vv-height × 0.5)` (min 200) so it still shrinks with the iOS keyboard; the `.panel`
+  below is edge to edge and stretches to the bottom of the screen (`min-height: 100%` on the page
+  root resolves because `.shell-content` is a flexed item of a definite-height column — verified in
+  the screenshot; where it doesn't resolve the panel simply ends early, nothing breaks). Never
+  `fixed`, never glass.
+- **Toolbar.** Top-right: `Ui.Pill` count, 44 px `.btn-icon` zoom out, mono `Ui.Pill` zoom readout
+  (teal), zoom in; over the photo the icon buttons are flat scrim, no border (one material for
+  everything floating on the canvas). Hint pill top-left in a reversed, wrapping flex row: at 390
+  both fit on one line; on a 360 phone the hint wraps under the toolbar instead of clipping.
+  Pills pass pointer events through to the canvas; only the buttons catch them. Canvas
+  `focus-visible` is a 2 px `cc-text-3` inset ring, not amber.
+- **Panel.** `Ui.Field` Reading — the input *is* the 38 px mono reading, unit Subhead `cc-text-2`
+  beside it, placeholder `0.00`/`0.000` per units (hig-brief §2: placeholder *and* a persistent
+  label); `Ui.Field` Name (mono 17, `feature_name` placeholder) + `Ui.ChipRow`/`Ui.Chip`;
+  Kind (`Ui.Segmented`, `kind-` ids) and Tolerance (`Ui.Field`, ± prefix, unit) on one row; amber
+  `Ui.Button Primary` block "Save dimension" → "Update" while editing; `Ui.Button Small` "Clear";
+  `Ui.Button Danger` "Delete" only while editing. Errors are the Field's Footnote `cc-error` line
+  (ids unchanged); the tolerance message sits under the whole row because its column is too narrow
+  for a sentence. `aria-live="polite"` line `annotate-live` ("Dimension saved: overall_l 12.34 mm",
+  cleared when the next p1 lands); the canvas wrapper is `role="img"` "End face, N dimensions" and
+  contains only the canvas, so the toolbar buttons stay real controls; the canvas keeps
+  `tabIndex=0` for the focus-return-after-save. Loading is the photo mat with a centred "Decoding…"
+  pill (§7). Hint while editing reads "Editing <name>" — with the saved pair as the pending points,
+  "Read the caliper" would mislead.
+- **Judgment calls.** (1) Segmented options in this row are 14 px / 4 px padding (a page-scoped
+  override of `.segmented-option`): "Diameter" at Subhead 15 semibold clips beside the 124 px
+  tolerance column on 390 px with the wide fallback font — same call wave 1 made in the compat
+  block. (2) `Ui.Button` has no Small+Danger combination and no `className` prop, so Delete is
+  `variant=Danger` with a page rule for the small metrics (40 px, Subhead) — a `Ui.res` gap for the
+  conductor. (3) `Ui.Pill` has no `className`/`ariaLabel` prop; the hint is wrapped in a div for
+  positioning. (4) Class names deliberately avoid every selector in global.css §13i
+  (`annotate-tools`, `annotate-unit`, not `-toolbar`/`-units`): the first screenshot showed the
+  compat `.annotate-toolbar` scrim capsule painting a blob behind the new toolbar. The three
+  remaining name overlaps (`annotate-stage`, `annotate-actions`, `annotate-tolerance`) are inert —
+  same value, or matched only through legacy child/ancestor selectors this page no longer renders
+  — so deleting §13 changes nothing here.
+- **A6 math.** `Viewport.fitToSegment(~p1, ~p2, ~imageW, ~imageH, ~viewW, ~viewH, ~padding=0.15,
+  ~minBox=0.1, ~fitScale, ~maxScale)`: bounding box in image px, never thinner than 10 % of the
+  image per axis (two coincident taps still zoom to something sensible), grown 15 % a side, fitted,
+  scale clamped to [fit, 8×fit], centred on the midpoint, then the ordinary pan clamp. A whole-image
+  segment yields `fit` exactly. Tests cover horizontal/vertical/oblique (both ends inside with
+  ≥ 10 % margin, transform legal), whole-image, the min-scale + offset clamp, the min box vs max
+  scale, and degenerate sizes. `lerp` + `cubicBezier(0.2, 0.8, 0.2, 1)` (= `--cc-ease`, bisection
+  on the x-polynomial) with pinned/monotone/identity tests.
+- **A6 model.** `autoFit: option<{before, touched}>`, `tween: option<{gen, from, to}>`, `tweenGen`.
+  p2 lands (`tap`) → `fitToPending`: `before` = the current view, or the earlier untouched fit's
+  `before` if the user re-tapped without saving; `animateTo(target)` mints a generation and runs
+  `tweenCmd(gen)`, a `Tea.effect` whose rAF loop dispatches `ViewportTick(gen, progress)` for 160 ms
+  (one tick at 1 under `prefers-reduced-motion`, read at the edge via `WebApi.Platform.matchMedia`);
+  `update` maps progress → `lerp(from, to, ease(p))`, and ticks whose `gen` isn't the live tween's
+  are dropped, so a superseded loop can never move the view. `userMoved` (pan, pinch, zoom button)
+  sets `touched` on the fit and drops the tween. `ViewSized` ends any tween at its target, refits,
+  and while the pair is untouched re-fits it for the new stage size (the keyboard case) — instantly,
+  the keyboard's own motion is enough. Save/Delete/Clear (and tap-off while editing) →
+  `endAutoFit`: animate back to `clampViewport(before)` unless touched. **A pointerdown settles a
+  running tween first** (`settle`), and `data-transform` reports the tween's *target* while it
+  runs, so a tap computed from the attribute lands where it says; `data-autofit` is
+  `fitting|fitted|touched|none` (`fitting` covers the restore too — the useful signal for tests is
+  "the view is moving"). Documented in docs/testids.md.
+- **The race that bit.** The first full e2e runs had `export.spec.js` lose a dimension twice (the
+  golden path's `head_h`, the kind-conflict test's second `wall`): `addDimension` reads
+  `data-transform` straight after the previous save's Enter, while the Store write is still in
+  flight — so it read the *fitted* view of the pair just saved, which put the next p1 outside the
+  canvas box, and the click missed. Pre-A6 the transform never changed at Save, so that early read
+  was harmless. Two fixes, both in the app (the spec is another page's contract): (1) the restore
+  starts when the save is *initiated* (`trySave`, `DeleteClicked`), not when `Saved` lands — the
+  Enter/tap is a React discrete event, so the render flushes synchronously and the published
+  transform is the restored view before Playwright's key/click call even returns (the
+  `Saved`/`Deleted` restore stays as a no-op safety net); (2) the redraw is a `useLayoutEffect`,
+  so the hooks commit with the render instead of a frame later. The narrower pre-existing window
+  (a tap placed before the write completes is wiped by `clearEntry`) is unchanged.
+- **Verification.** `rescript build` clean under `+a`; vitest 162/162; Vite build clean; Playwright
+  chromium on port 3230, 26/26 (23 existing + 3 A6) three runs in a row after the fix; screenshots at 390×844 (loaded, p1, pending/fitted at 3.06×, saved,
+  errors, editing, `--vv-height` 500 re-fit, 360-wide wrap) in the scratchpad, reviewed by eye.
+  **Unverified here:** the iOS keyboard sequence (p2 → keyboard → `visualViewport` resize → re-fit
+  → Save → restore → keyboard closes) and the tween's feel on device — phone check.

@@ -236,3 +236,153 @@ describe("Viewport drag math (SPEC §8a A1)", () => {
     expect(b.y -. a.y)->toBeCloseTo(b0.y -. a0.y, 9)
   })
 })
+
+// SPEC §8a A6: after p2 lands the view fits the pair. The stage here is the
+// annotate canvas at 390 wide with the 300 px cap (DESIGN.md §3).
+describe("Viewport.fitToSegment (SPEC §8a A6)", () => {
+  let stageW = 358.0
+  let stageH = 300.0
+  let fitScale = Viewport.fit(~imageW, ~imageH, ~viewW=stageW, ~viewH=stageH).scale // 300/1600
+  let maxScale = 8.0 *. fitScale
+  let fitTo = (a: Types.point, b: Types.point) =>
+    Viewport.fitToSegment(
+      ~p1=a,
+      ~p2=b,
+      ~imageW,
+      ~imageH,
+      ~viewW=stageW,
+      ~viewH=stageH,
+      ~fitScale,
+      ~maxScale,
+    )
+  let onScreen = (t: Viewport.t, n: Types.point) => Viewport.fromNormalized(t, ~imageW, ~imageH, n)
+  // Both endpoints inside the view with at least 10 % of it to spare on
+  // every side (the e2e criterion), and the transform legal.
+  let expectFitted = (t: Viewport.t, a: Types.point, b: Types.point) => {
+    [a, b]->Array.forEach(n => {
+      let s = onScreen(t, n)
+      expect(s.x >= 0.1 *. stageW && s.x <= 0.9 *. stageW)->toBeTruthy
+      expect(s.y >= 0.1 *. stageH && s.y <= 0.9 *. stageH)->toBeTruthy
+    })
+    expect(t.scale >= fitScale -. 1e-9 && t.scale <= maxScale +. 1e-9)->toBeTruthy
+    let legal = Viewport.clamp(t, ~minScale=fitScale, ~maxScale, ~imageW, ~imageH, ~viewW=stageW, ~viewH=stageH)
+    expect(legal.tx)->toBeCloseTo(t.tx, 6)
+    expect(legal.ty)->toBeCloseTo(t.ty, 6)
+  }
+
+  test("a short horizontal segment zooms in, centred on its midpoint, with margin", () => {
+    let a: Types.point = {x: 0.4, y: 0.45}
+    let b: Types.point = {x: 0.6, y: 0.45}
+    let t = fitTo(a, b)
+    expect(t.scale > fitScale)->toBeTruthy
+    expectFitted(t, a, b)
+    let mid = onScreen(t, {x: 0.5, y: 0.45})
+    expect(mid.x)->toBeCloseTo(stageW /. 2.0, 6)
+    expect(mid.y)->toBeCloseTo(stageH /. 2.0, 6)
+    // 15 % padding each side: the 240 image-px segment fills 1/1.3 of the width.
+    expect(t.scale)->toBeCloseTo(stageW /. (240.0 *. 1.3), 6)
+  })
+
+  test("a vertical segment fits by height", () => {
+    let a: Types.point = {x: 0.55, y: 0.3}
+    let b: Types.point = {x: 0.55, y: 0.6}
+    let t = fitTo(a, b)
+    expect(t.scale > fitScale)->toBeTruthy
+    expectFitted(t, a, b)
+    expect(t.scale)->toBeCloseTo(stageH /. (480.0 *. 1.3), 6)
+  })
+
+  test("an oblique segment ends up inside the view with margin", () => {
+    let a: Types.point = {x: 0.3, y: 0.3}
+    let b: Types.point = {x: 0.7, y: 0.6}
+    let t = fitTo(a, b)
+    expect(t.scale > fitScale)->toBeTruthy
+    expectFitted(t, a, b)
+  })
+
+  test("a whole-image segment yields the plain fit", () => {
+    let t = fitTo({x: 0.0, y: 0.0}, {x: 1.0, y: 1.0})
+    let f = Viewport.fit(~imageW, ~imageH, ~viewW=stageW, ~viewH=stageH)
+    expect(t.scale)->toBeCloseTo(f.scale, 9)
+    expect(t.tx)->toBeCloseTo(f.tx, 6)
+    expect(t.ty)->toBeCloseTo(f.ty, 6)
+  })
+
+  test("scale never drops below fit and the offsets obey the pan clamp", () => {
+    // Full height, off-centre: the scale clamps up to fit, and at fit the
+    // image is narrower than the view, so it is centred rather than
+    // panned onto the segment's midpoint.
+    let t = fitTo({x: 0.1, y: 0.0}, {x: 0.1, y: 1.0})
+    expect(t.scale)->toBeCloseTo(fitScale, 9)
+    expect(t.tx)->toBeCloseTo((stageW -. imageW *. fitScale) /. 2.0, 6)
+  })
+
+  test("nearly coincident points zoom to the minimum box, never past the maximum scale", () => {
+    let a: Types.point = {x: 0.5, y: 0.5}
+    let b: Types.point = {x: 0.501, y: 0.5}
+    let t = fitTo(a, b)
+    expectFitted(t, a, b)
+    // The minimum box is 10 % of the image on each axis, padded 15 % a side.
+    expect(t.scale)->toBeCloseTo(Math.min(stageW /. (120.0 *. 1.3), stageH /. (160.0 *. 1.3)), 6)
+    // Without the minimum box the scale would be unbounded: it clamps to max.
+    let unbounded = Viewport.fitToSegment(
+      ~p1=a,
+      ~p2=a,
+      ~imageW,
+      ~imageH,
+      ~viewW=stageW,
+      ~viewH=stageH,
+      ~minBox=0.0,
+      ~fitScale,
+      ~maxScale,
+    )
+    expect(unbounded.scale)->toBeCloseTo(maxScale, 9)
+  })
+
+  test("degenerate sizes fall back to fit instead of NaN", () => {
+    let t = Viewport.fitToSegment(
+      ~p1={x: 0.2, y: 0.2},
+      ~p2={x: 0.4, y: 0.4},
+      ~imageW,
+      ~imageH,
+      ~viewW=0.0,
+      ~viewH=stageH,
+      ~fitScale,
+      ~maxScale,
+    )
+    expect(t)->toEqual(Viewport.identity)
+  })
+})
+
+describe("Viewport tween math (SPEC §8a A6)", () => {
+  test("lerp is exact at both ends and linear between", () => {
+    let a: Viewport.t = {scale: 0.2, tx: 10.0, ty: -20.0}
+    let b: Viewport.t = {scale: 1.0, tx: -300.0, ty: -500.0}
+    expect(Viewport.lerp(a, b, 0.0))->toEqual(a)
+    expect(Viewport.lerp(a, b, 1.0))->toEqual(b)
+    let mid = Viewport.lerp(a, b, 0.5)
+    expect(mid.scale)->toBeCloseTo(0.6, 9)
+    expect(mid.tx)->toBeCloseTo(-145.0, 9)
+    expect(mid.ty)->toBeCloseTo(-260.0, 9)
+  })
+
+  test("ease is pinned at 0 and 1, eases out, and never goes backwards", () => {
+    expect(Viewport.ease(0.0))->toBeCloseTo(0.0, 9)
+    expect(Viewport.ease(1.0))->toBeCloseTo(1.0, 9)
+    expect(Viewport.ease(-0.5))->toBeCloseTo(0.0, 9)
+    expect(Viewport.ease(1.5))->toBeCloseTo(1.0, 9)
+    expect(Viewport.ease(0.5) > 0.5)->toBeTruthy
+    let prev = ref(0.0)
+    for i in 1 to 100 {
+      let y = Viewport.ease(Int.toFloat(i) /. 100.0)
+      expect(y >= prev.contents)->toBeTruthy
+      prev := y
+    }
+  })
+
+  test("cubicBezier with control points on the diagonal is the identity", () => {
+    [0.1, 0.25, 0.5, 0.75, 0.9]->Array.forEach(x =>
+      expect(Viewport.cubicBezier(~x1=0.25, ~y1=0.25, ~x2=0.75, ~y2=0.75, x))->toBeCloseTo(x, 6)
+    )
+  })
+})

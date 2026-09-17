@@ -156,3 +156,12 @@ module Input = {
 
   let make = (props: props): React.element => jsx("input", props)
 }
+
+// ── Animation frames + reduced motion — the A6 viewport tween ──────────
+// The callback receives the frame's DOMHighResTimeStamp in ms.
+@val external requestAnimationFrame: (float => unit) => int = "requestAnimationFrame"
+
+// DESIGN.md §6 / SPEC §8a A6: animations are instant when the person
+// prefers reduced motion. Same `matchMedia` binding the A2HS hint uses.
+let prefersReducedMotion = (): bool =>
+  WebApi.Platform.matchMedia("(prefers-reduced-motion: reduce)")->WebApi.Platform.matches

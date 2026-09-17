@@ -79,6 +79,11 @@ async function openFace(page) {
 
 async function readTransform(page) {
   const canvas = page.getByTestId('annotate-canvas')
+  // SPEC §8a A6: the view animates after p2 and after Save/Clear. While it
+  // does, `data-transform` already reports the end state and a pointerdown
+  // completes the animation first — but the zoom readout and the pixels
+  // lag, so settle before reading geometry an assertion will compare.
+  await expect(canvas).not.toHaveAttribute('data-autofit', 'fitting')
   const [s, tx, ty] = (await canvas.getAttribute('data-transform')).split(',').map(Number)
   const [w, h] = (await canvas.getAttribute('data-image-size')).split('x').map(Number)
   const box = await canvas.boundingBox()
@@ -427,5 +432,79 @@ test.describe('annotate', () => {
     await expect(page.getByTestId('delete')).toBeVisible()
     await expect(page.getByTestId('reading')).toHaveValue('42.18')
     await expect(page.getByTestId('name')).toHaveValue('overall_l')
+  })
+})
+
+// SPEC §8a A6: when p2 lands the view fits the pair; Save/Clear bring the
+// view back unless the user moved it. Reduced motion makes the 160 ms tween
+// instant, so every state below is a plain attribute wait.
+test.describe('annotate — SPEC §8a A6 (fit the view to the dimension)', () => {
+  // Two taps 60 px apart on screen at the fit scale, on a horizontal line
+  // through the middle of the image; returns the pre-tap transform.
+  async function placePair(page) {
+    await page.emulateMedia({reducedMotion: 'reduce'})
+    const t0 = await readTransform(page)
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'none')
+    const half = 30 / (t0.w * t0.s) // 30 screen px in normalized x
+    await tapNormalized(page, {x: 0.5 - half, y: 0.45})
+    await tapNormalized(page, {x: 0.5 + half, y: 0.45})
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'fitted')
+    await expect(page.getByTestId('reading')).toBeFocused()
+    return t0
+  }
+
+  function expectTransformNear(actual, expected) {
+    expect(Math.abs(actual.s - expected.s)).toBeLessThan(0.01)
+    expect(Math.abs(actual.tx - expected.tx)).toBeLessThan(0.01)
+    expect(Math.abs(actual.ty - expected.ty)).toBeLessThan(0.01)
+  }
+
+  test('two taps 60 px apart zoom the view onto the pair with ≥ 10 % margin', async ({page}) => {
+    await openFace(page)
+    const t0 = await placePair(page)
+    const t1 = await readTransform(page)
+    expect(t1.s).toBeGreaterThan(t0.s)
+    expect(Number(await page.getByTestId('zoom').textContent())).toBeGreaterThan(1)
+    const pts = await pendingPoints(page)
+    expect(pts).toHaveLength(2)
+    for (const [x, y] of pts) {
+      const p = screenOf(t1, {x, y})
+      expect(p.x).toBeGreaterThanOrEqual(t1.box.x + 0.1 * t1.box.width)
+      expect(p.x).toBeLessThanOrEqual(t1.box.x + 0.9 * t1.box.width)
+      expect(p.y).toBeGreaterThanOrEqual(t1.box.y + 0.1 * t1.box.height)
+      expect(p.y).toBeLessThanOrEqual(t1.box.y + 0.9 * t1.box.height)
+    }
+  })
+
+  test('Save brings the view back to where it was before the fit', async ({page}) => {
+    await openFace(page)
+    const t0 = await placePair(page)
+    await page.keyboard.type('12.34')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('name')).toBeFocused()
+    await page.keyboard.type('overall_l')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'none')
+    expectTransformNear(await readTransform(page), t0)
+    await expect(page.getByTestId('zoom')).toHaveText('1.00')
+    await expect(page.getByTestId('annotate-live')).toHaveText('Dimension saved: overall_l 12.34 mm')
+  })
+
+  test('a zoom-in between p2 and Save cancels the auto-fit: the view stays where the user put it', async ({page}) => {
+    await openFace(page)
+    const t0 = await placePair(page)
+    await page.getByTestId('zoom-in').click()
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'touched')
+    const moved = await readTransform(page)
+    expect(moved.s).toBeGreaterThan(t0.s)
+    await page.getByTestId('reading').fill('12.34')
+    await page.getByTestId('name').fill('overall_l')
+    await page.getByTestId('save').click()
+    await expect(page.getByTestId('dimension-count')).toHaveText('1')
+    await expect(page.getByTestId('annotate-canvas')).toHaveAttribute('data-autofit', 'none')
+    const after = await readTransform(page)
+    expect(Math.abs(after.s - moved.s)).toBeLessThan(0.01)
+    expect(Math.abs(after.s - t0.s)).toBeGreaterThan(0.01)
   })
 })

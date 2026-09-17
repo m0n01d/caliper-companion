@@ -27,10 +27,18 @@ stable; add to this list before you rely on a new one.
 - `capture-note` — the one-line explanation shown when camera access is unavailable
 
 ## Annotate (`#/parts/:id/faces/:faceId`)
-- `annotate-canvas` — the `<canvas>`. Carries two live attributes for tests: `data-transform="scale,tx,ty"`
+- `annotate-canvas` — the `<canvas>`. Carries live attributes for tests: `data-transform="scale,tx,ty"`
   (oriented-image px → canvas CSS px: `screen = img * scale + t`) and `data-image-size="WxH"` (the
   oriented bitmap, e.g. `1200x1600` for the EXIF-rotated `end.jpg`). Screen point of a normalized
   `(nx, ny)` = `canvasBox.xy + (nx*W, ny*H) * scale + (tx, ty)`.
+  `data-autofit` (SPEC §8a A6) is `fitting` while the view animates (the fit after p2, or the
+  restore after Save/Clear/Delete), `fitted` once the pair is fitted, `touched` after the user
+  zoomed/panned during the fitted state, `none` otherwise. While `fitting`, `data-transform`
+  reports the animation's **end state**, and a `pointerdown` completes the animation before the
+  tap is interpreted — so a tap computed from the attribute lands where it says. Wait for
+  `data-autofit` to leave `fitting` before reading geometry you will compare later (`zoom` and the
+  pixels lag until then). `page.emulateMedia({reducedMotion: 'reduce'})` makes the animation
+  instant.
 - `pending-points` — hidden readout of the pending/selected endpoints, `x1,y1;x2,y2` normalized to 4 dp
   (`x1,y1` with only p1 placed; empty when none)
 - `dimension-count` — readout of the number of saved dimensions on this face
