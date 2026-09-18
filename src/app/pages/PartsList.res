@@ -292,14 +292,10 @@ let focusFolderRename = (path: string): Tea.cmd<msg> =>
 let focusFolderRowLink = (path: string): Tea.cmd<msg> =>
   focusSelector(`[data-testid="folder-row"][data-path="${path}"] a`)
 
-// A13 (review S5): a folder change starts the new screen at the top.
-// `.shell` is the one `overflow-y: auto` container (global.css).
-let scrollToTop: Tea.cmd<msg> = Tea.effect(_dispatch =>
-  switch Canvas.querySelector(".shell") {
-  | Some(el) => Canvas.setScrollTop(el, 0)
-  | None => ()
-  }
-)
+// A13 (review S5): a folder change starts the new screen at the top —
+// `Shell.scrollToTop` since A16, which every cross-page route change
+// batches too.
+let scrollToTop: Tea.cmd<msg> = Shell.scrollToTop
 
 // "2 parts" / "1 part" — the toolbar labels, titles and live texts.
 let countNoun = (n: int, noun: string): string =>
@@ -1413,8 +1409,13 @@ let unitsRow = (form: createForm, ~dispatch: msg => unit): React.element =>
     </select>
   </div>
 
+// A16: `.parts-form` is the create form's outermost element — the take-over
+// that rises on mount (`cc-rise`, PartsList.css). The rename strip renders
+// the same `PartForm.view` inside a list row and does not get the wrapper:
+// nothing inside a `.list-group` gets a transform (the group clips overflow).
 let renderForm = (form: createForm, ~dispatch: msg => unit): React.element =>
-  PartForm.view(
+  <div className="parts-form">
+    {PartForm.view(
     ~draft=form.draft,
     ~idSuffix="",
     ~nameTestId="part-name",
@@ -1429,7 +1430,8 @@ let renderForm = (form: createForm, ~dispatch: msg => unit): React.element =>
     ~cancelTestId=None,
     ~onCancel=() => dispatch(FormCancel),
     ~grouped=true,
-  )
+  )}
+  </div>
 
 // A row's Normal content out of Edit mode is a single Ui.ListRow: thumbnail
 // leading, name + meta body wrapped in a real <a> (`~href`, chevron

@@ -12,6 +12,22 @@
 // §11.1 "Materials"), styled by `.shell-footer` in global.css; the page
 // supplies only the contents. `Main.res` wraps every page's view in one.
 
+// SPEC §8a A16 (review S3): `Main` renders one `<Shell>`, so `.shell` — the
+// scroll container — and its `scrollTop` persist across pages; a push from
+// a scrolled list would snapshot the new screen scrolled. Every cross-page
+// `RouteChanged` and `PartsList.FolderChanged` batches this. It runs inside
+// `dispatch`, before the commit, which is fine because the element
+// persists; the new screen is therefore snapshotted at the top. A
+// constructor applied to a lambda, not `Tea.effect(...)`, so the value
+// generalises over 'msg (the value restriction) and every page can use it.
+let scrollToTop: Tea.cmd<'msg> = Tea.Effect(
+  _dispatch =>
+    switch Canvas.querySelector(".shell") {
+    | Some(el) => Canvas.setScrollTop(el, 0)
+    | None => ()
+    },
+)
+
 @react.component
 let make = (
   ~title: string,

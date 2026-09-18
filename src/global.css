@@ -416,13 +416,20 @@ button,
   transition:
     background-color var(--cc-motion-press) linear,
     opacity var(--cc-motion-press) linear,
-    transform var(--cc-motion) var(--cc-ease);
+    transform var(--cc-motion-press) linear;
 }
 
-/* Pressed = opacity 0.6 (UIKit plain buttons); no scale, nothing bounces. */
+/* Pressed = opacity 0.6 (UIKit plain buttons); nothing bounces. */
 button:active,
 .btn:active {
   opacity: 0.6;
+}
+
+/* SPEC §8a A16 press feedback: the capsule also scales to 0.97 over
+   `--cc-motion-press`, linear — `.btn` only, never a bare <button> (a list
+   row, a segmented option): nothing else moves on press. */
+.btn:active {
+  transform: scale(0.97);
 }
 
 button:focus-visible,
@@ -705,6 +712,19 @@ button.list-row:focus-visible {
   opacity: 0.6;
 }
 
+/* SPEC §8a A16 press feedback: scale the *row* (0.985) while its link is
+   pressed — the link is the text-only <a> beside the thumbnail, so scaling
+   it would leave the thumb still. `:has` (Safari 15.4+); the rule covers
+   part rows and folder rows alike, both `.list-row` with a `.list-row-link`.
+   A scale-down never overflows the clipping `.list-group`. */
+.list-row:has(> .list-row-link) {
+  transition: transform var(--cc-motion-press) linear;
+}
+
+.list-row:has(> .list-row-link:active) {
+  transform: scale(0.985);
+}
+
 /* Inward ring, like `button.list-row:focus-visible` below: `.list-group`
    clips overflow, so an outward ring on a row at the top/bottom edge would
    get cut off by the card's own rounded corners. */
@@ -893,6 +913,7 @@ textarea:disabled {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  transition: transform var(--cc-motion-press) linear; /* A16 press scale */
 }
 
 .chip-lg {
@@ -903,6 +924,7 @@ textarea:disabled {
 
 .chip:active {
   opacity: 0.6;
+  transform: scale(0.97); /* SPEC §8a A16 press feedback */
 }
 
 /* On = the ivory fill at chip size (A14 table): solid against the hairline
@@ -1328,10 +1350,12 @@ button.warning-row {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  transition: transform var(--cc-motion-press) linear; /* A16 press scale */
 }
 
 .face-card:active {
   opacity: 0.6;
+  transform: scale(0.985); /* SPEC §8a A16 press feedback */
 }
 
 .face-card:focus-visible {
@@ -1450,4 +1474,134 @@ button.warning-row {
    the dashed one instead of doubling up with it. */
 .face-card-empty.face-card-selected {
   border: none;
+}
+
+/* ── 15. Motion (SPEC §8a A16; DESIGN.md §6) ──────────────────────────── */
+/* Opacity and transform only, nothing bounces. Two stated exceptions to
+   §6's 120–160 ms: a page push / pop moves a whole screen and runs at the
+   HIG's ~350 ms (`--cc-motion-nav`); a take-over rises over 280 ms
+   (`--cc-motion-sheet`). Everything here is zeroed under
+   `prefers-reduced-motion` — §12's block for the CSS animations, the
+   `!important` rule at the end of this section for the view-transition
+   pseudos, which §12's `*, *::before, *::after` never reaches. */
+
+/* Page navigation. `Motion.res` sets `html[data-nav]` (`push` | `pop` |
+   `fade`, nothing else) before `document.startViewTransition` and clears it
+   after `finished`; the CSS is keyed on the `(root)` pseudos only — the
+   sticky bar is part of the root snapshot (a persistent-bar effect is a
+   later A16c). NOTHING here ever transforms `.shell` or `.app-frame`: a
+   transform on an ancestor of the sticky bar or footer would make them
+   scroll away. The pseudos are positioned, so the slides are pure
+   compositor work, and setting `animation` on them replaces the UA's
+   `plus-lighter` crossfade (measured: only the author animations remain),
+   so opaque slides composite normally. UIKit's parallax: the screen
+   underneath moves 30 % and dims to 0.6 while the top screen travels the
+   full width; one curve for both layers so they stay locked. */
+@keyframes cc-nav-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes cc-nav-out {
+  to {
+    transform: translateX(-30%);
+    opacity: 0.6;
+  }
+}
+
+@keyframes cc-nav-back-in {
+  from {
+    transform: translateX(-30%);
+    opacity: 0.6;
+  }
+}
+
+@keyframes cc-nav-back-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes cc-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cc-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+html[data-nav="push"]::view-transition-old(root) {
+  animation: cc-nav-out var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+html[data-nav="push"]::view-transition-new(root) {
+  animation: cc-nav-in var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+/* Pop: the leaving screen slides out to the right *over* the returning one
+   (`z-index: 1` on the old layer — the new layer paints later by default). */
+html[data-nav="pop"]::view-transition-old(root) {
+  z-index: 1;
+  animation: cc-nav-back-out var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+html[data-nav="pop"]::view-transition-new(root) {
+  animation: cc-nav-back-in var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+/* Fade: same-depth siblings (folders reached from search, both ways). */
+html[data-nav="fade"]::view-transition-old(root) {
+  animation: cc-fade-out 200ms var(--cc-ease-in) both;
+}
+
+html[data-nav="fade"]::view-transition-new(root) {
+  animation: cc-fade-in 200ms var(--cc-ease-out) both;
+}
+
+/* Take-overs enter by rising 24 px and fading in on mount (the create form
+   `.parts-form` and the folder picker `.folder-picker`, PartsList.css); the
+   Edit toolbar rises from below the edge. No exit animations — an unmount
+   is a cut, and the route transition covers the big exits. Only take-overs
+   rise: nothing inside a `.list-group` gets a transform (the group clips
+   overflow; a rising row would paint over its neighbour). */
+@keyframes cc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@keyframes cc-rise-footer {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+/* The footer exists only while editing (`Shell.res` renders it from the
+   footer slot), so mount is the hook. Its blurred `::before` rides the
+   transforming element — the allowed pattern (liquid-glass-web.md: animate
+   the transform of a pre-blurred layer). The element is the sticky footer
+   itself, not an ancestor of it, so its stickiness is untouched. */
+.shell-footer {
+  animation: cc-rise-footer var(--cc-motion-sheet) var(--cc-ease-out);
+}
+
+/* Reduced motion (review B1, measured): the View Transitions API still runs
+   under `prefers-reduced-motion` (Chromium played the UA crossfade to
+   311 ms with no CSS), and a rule on `::view-transition-group(*)` alone does
+   not stop the nav slides — `html[data-nav="push"]::view-transition-old(root)`
+   outranks the bare pseudo in the cascade (the slide ran to 442 ms). Chrome's
+   canonical rule, after the nav rules and with `!important`: the transition
+   then lasts ≈ 2 frames and is a cut. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }

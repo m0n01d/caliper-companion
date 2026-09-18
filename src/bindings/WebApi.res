@@ -1,6 +1,7 @@
 // WebApi — hand-written bindings to the slice of the DOM the app shell
 // touches: service-worker registration, hash routing, localStorage, viewport
-// layout, and the iOS platform checks behind the Add-to-Home-Screen hint.
+// layout, the iOS platform checks behind the Add-to-Home-Screen hint, and
+// (SPEC §8a A16) the View Transitions API behind page pushes and pops.
 // Real `external`s over the abstract types in the standard library's `Dom`
 // module; no `%raw`, no `Obj.magic`, no untyped `@val` shortcuts.
 //
@@ -92,6 +93,46 @@ module Style = {
   let setDocumentVar = (name: string, value: string): unit =>
     document->documentElement->style->setProperty(name, value)
 }
+
+// ── document.documentElement attributes — `data-nav` (SPEC §8a A16) ─────
+// The nav CSS is keyed on `html[data-nav]` (`push` | `pop` | `fade`); only
+// `Motion.res` sets or clears it.
+module Document = {
+  @val external document: Dom.document = "document"
+  @get external documentElement: Dom.document => Dom.element = "documentElement"
+  @send external setAttribute: (Dom.element, string, string) => unit = "setAttribute"
+  @send external removeAttribute: (Dom.element, string) => unit = "removeAttribute"
+
+  let setDataNav = (nav: string): unit => document->documentElement->setAttribute("data-nav", nav)
+  let removeDataNav = (): unit => document->documentElement->removeAttribute("data-nav")
+}
+
+// ── View Transitions API (SPEC §8a A16) ─────────────────────────────────
+// `document.startViewTransition(cb)` — iOS 18+ / Chrome 111+ / Firefox 144+.
+// `startFn` is the feature check: reading the method as a property is
+// `undefined` where the API is missing (and sees a test's `addInitScript`
+// wrapper, which patches `Document.prototype`). `start` is `@send`, so
+// `this` is the document, and the wrapper's `orig.call(this, cb)` works.
+// `finished` fulfils once the animations end and *rejects* when the update
+// callback throws — callers clear on both branches.
+module ViewTransition = {
+  type t
+  type startFn
+
+  @val external document: Dom.document = "document"
+  @get external startFn: Dom.document => Nullable.t<startFn> = "startViewTransition"
+  @send external start: (Dom.document, unit => unit) => t = "startViewTransition"
+  @get external finished: t => promise<unit> = "finished"
+
+  let supported = (): bool => document->startFn->Nullable.toOption->Option.isSome
+}
+
+// `ReactDOM.flushSync` is not in `@rescript/react`; `react-dom` is already
+// a dependency. Inside a view transition's update callback it forces the
+// commit before the callback returns — React would otherwise batch the
+// `setState` past the new-state capture and the transition would snapshot
+// the *old* screen twice.
+@module("react-dom") external flushSync: (unit => unit) => unit = "flushSync"
 
 // ── Platform detection — the A2HS hint (SPEC §5 iOS rules) ──────────────
 module Platform = {
