@@ -218,3 +218,54 @@ would be traced along with the part.
 **Overall tagline candidate:** "Calipers in. CAD out." — short, no pun to explain, and it says what
 the pipeline does. ("Photo to parameters." is the precise alternative if the export's Fusion user
 parameters should be the headline.)
+
+## 7. Monochrome exploration (2026-09-18, exploratory — nothing ships)
+
+Owner: "monochrome, minimalist, as glass-like as possible." Rendered from the **real app** in a
+throwaway worktree (removed since): `src/theme.css` tokens swapped per palette plus the hardcoded
+canvas/export colours in `Draw.res`/`Render.res` (a palette swap is three files, not one), then
+`scripts/screenshot-tour.mjs`. Boards in `mockups/`: `mono-{graphite,paper,glass}.png` (three screens + full
+token table), `mono-compare.png` (Dark Sky vs the three), `brand-mono.html/.png` (icons). Accent = text; accent-ink = ground; live-wash = surface-2.
+
+| Token | Graphite | Paper | Glass (+ G1–G8 below) |
+|---|---|---|---|
+| ground · surface · surface-2 · field · border | `#111214` `#1C1D20` `#26272B` `#171819` `#303236` | `#1A1816` `#242220` `#2E2B28` `#1F1D1B` `#3A3733` | `#0E0F11` `#1B1C1F` `#26272B` `#151618` `#34363A` |
+| text · text-2 · text-3 · accent-pressed | `#F2F2F0` `#A9ABAF` `#83868B` `#D9DADB` | `#F2EDE4` `#B5AEA3` `#928C82` `#DAD4C9` | `#F2F2F0` `#A9ABAF` `#8C8F94` `#D9DADB` |
+| live · live-border · error · error-ink · mat | `#C9CBCE` `#45484D` `#F0605A` `#2B0A0A` `#202124` | `#CFC8BC` `#4A463F` `#E8685C` `#2B0E08` `#262421` | `#C9CBCE` `#45484D` `#F0605A` `#2B0A0A` `#1E1F22` |
+| glass fill · strong · stroke · highlight · blur | today's §11 recipe | today's recipe | `rgba(28,29,32,.55)` `rgba(14,15,17,.70)` ink@18 % ink@28 % 24 px · saturate 1.2 |
+
+**Contrast** (Graphite / Paper / Glass, all ≥ 4.5): text on ground 16.7 / 15.2 / 17.1 · text-2 on surface
+7.3 / 7.2 / 7.4, on surface-2 6.5 / 6.4 / 6.5 · text-3 on surface 4.6 / 4.75 / 4.7 (Paper's lifted from 4.39) ·
+accent-ink on accent = text on ground · live on ground 11.5 / 10.7 / 11.9 · error on ground 5.8 / 5.5 / 5.8,
+error-ink on error 5.7 / 5.6 / 5.7 · Glass hairline primary: label ≈ 14, the hairline itself ≈ 5.6.
+
+**A3 overlay in mono** (vs the ground@85 % halo, pale / dark fixture): active line and pill 11.9 / 16.2,
+10.6 / 14.7, 12.4 / 16.5 — Dark Sky orange is 4.95 / 6.84; saved dims at §5's 60 % 4.0 / 4.7, 3.7 / 4.6,
+4.1 / 4.8 (blue 1.7 / 3.7). Stronger than today; only saved pill text at 60 % on a pale photo drops to 3.4–3.7 — stop dimming pill text.
+
+**What mono loses → how it is carried.** accent = tappable / live = verified → by fill: primary = ivory
+fill + dark label (or glass + white hairline), secondary = hairline, verified = solid `live` fill vs hairline.
+Snap pill on/off → `chip[aria-pressed]` keeps its ivory fill: on = filled, off = outline. Flagged rows →
+`error` red, the one chroma kept. Active vs saved on the canvas → white vs 60 % grey plus pill style.
+
+**Glass beyond tokens** (worktree-only `global.css`, the adoption cost): G1 ambient ink gradients on
+the frame, shell transparent · G2 the material (`-webkit-backdrop-filter` first, `blur(24px)
+saturate(1.2)`, 18 % hairline, 28 % specular) on `.list-group .panel .btn-secondary .btn-icon
+.btn-small .chip .segmented .field-input .a2hs-hint .toggle-track .face-card-empty` · G2a bar icon
+buttons stay bare · G3 `.btn-primary` = glass + 55 % white hairline · G4 selected segment = lighter
+glass · G5 Folders / Parts / Features headers hidden (search path headers kept) · G6 1.5 px icons ·
+G7 bar hairlines 18 % · G8 `@supports not` and `prefers-reduced-transparency` → opaque `cc-surface`.
+**Risks** (`liquid-glass-web.md` §2): 10–20 blurred surfaces a screen is the scroll-FPS worst case on
+mid-tier iPhones; sticky + blur lags on fast flicks and Safari 26 auto-tints fixed/sticky edges; iOS never
+reports reduced transparency, so glass must clear 4.5:1 unaided (it does); no blur over the live canvas.
+
+**Icons** (16 px · clear tile at 60): m1 line napkin+lens+⌀ — ring in a square, ⌀ lost · busy. m2 lens alone —
+one idea, holds · best fit, an SF Symbol's weight. m3 bare dimension — reads expand · not Snapkin. m4 ivory
+napkin — strongest silhouette · fights the frosted tile. Pairing: Graphite → m2, Paper → m4, Glass → m2.
+
+**Recommendation: hybrid.** Graphite tokens with the Glass language (ambient light, 18 % hairlines, 1.5 px
+icons, no group headers, hairline primary) but blur on at most four surfaces a screen — nav bar, Edit toolbar,
+list groups, annotate panel — and hairline-outlined opaque `cc-surface` for chips, fields, capsules,
+segmented: the same material at arm's length, at no cost. Mono canvas overlay (it tests
+better than orange), red for errors, m2 as the icon. The mock is the ceiling; the shipped app is that minus
+blur on small repeated controls. If "tap me" loudness is missed, one accent on the primary capsule and canvas handles is the smallest way back.
