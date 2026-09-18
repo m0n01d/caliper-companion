@@ -8,18 +8,39 @@ stable; add to this list before you rely on a new one.
   capsule (list empty) or the bar's trailing 44 px icon button, `aria-label="New part"` (list
   non-empty) — never both (P2a, review-2026-09-17.md P3)
 - `parts-edit` — the bar's trailing "Edit" / "Done" text action; present once the list is
-  non-empty. Out of edit mode a row is purely navigational (chevron only); in edit mode each row
-  also shows `part-rename` (icon button, `aria-label="Rename"`) and `part-delete` (P2a,
-  review-2026-09-17.md P1 — these used to be permanent per-row icon buttons)
+  non-empty. Out of edit mode a row is purely navigational (chevron only). In edit mode (SPEC §8a
+  A12b) every row becomes selectable — a plain `<div class="list-row" role="listitem">` with no
+  link and no chevron: a leading `part-select` checkbox, the body as its `<label>`, and
+  `part-rename` (icon button, `aria-label="Rename"`) trailing outside the label; the bottom
+  toolbar (`edit-toolbar`) carries Move / Delete for the selection. Done clears the selection and
+  any open editor or strip. ~~`part-delete`~~ is retired (P2a's per-row delete)
 - `part-name` — text input · `part-units` — `<select>` with `mm` / `in` · `part-create` — submit
 - `part-row` — one per part in the list (contains the name and a 72 px first-face thumbnail);
-  `part-rename`, `part-delete` inside a row, only in edit mode (see `parts-edit`)
+  `part-select` and `part-rename` inside a row, only in edit mode (see `parts-edit`)
+- `part-select` — the row's `<input type="checkbox" id="part-select-<id>">` in edit mode, drawn as
+  a selection circle, `aria-label="Select <name>"`; tapping the row body (its label) toggles it,
+  the pencil never does. A query change clears every selection
 - `part-rename-input`, `part-rename-save`, `part-rename-cancel` — inline rename form (shown in place
-  of a row's normal contents after `part-rename`)
-- `part-delete-confirm`, `part-delete-cancel` — inline confirm strip (shown after `part-delete`)
+  of a row's normal contents after `part-rename`); one inline editor at a time — opening it closes
+  a folder rename and vice versa
+- ~~`part-delete-confirm`~~, ~~`part-delete-cancel`~~ — retired with `part-delete` (A12b); the
+  confirm strip lives in the toolbar now (`parts-delete-confirm` / `parts-delete-cancel`)
+- **Edit toolbar** (A12b) — `edit-toolbar`, in the Shell's footer slot (a sibling after `main`,
+  `position: sticky; bottom: 0`, glass), present while editing and neither the create form nor the
+  picker is open · `parts-move` — "Move" / "Move n" (text action, `aria-disabled` until a row is
+  checked); opens the picker titled `Move n Parts` (`Move 1 Part`) with the root preselected —
+  Done = `Store.moveParts`, selection cleared, Edit mode stays on, focus back here; Cancel keeps
+  the selection, focus back here · `parts-delete` — "Delete" / "Delete n" (same rule, `cc-error`);
+  swaps the pair for the inline strip `Delete n parts? This removes their faces and dimensions.`
+  (`Delete 1 part? … its …`) with `parts-delete-confirm` (red) / `parts-delete-cancel` (focused on
+  open; Cancel refocuses `parts-delete`). Confirm = `Store.deleteParts` → rows gone, focus to
+  `parts-edit`; with no parts left Edit leaves the bar (`editing` resets) and focus goes to
+  `new-part`
 - `parts-empty` — the empty state
 - `parts-live` — visually hidden `aria-live="polite"` line (design wave 3b, DESIGN.md §9): "Part
-  created" / "Part deleted"; empty otherwise
+  created" / "Moved n parts to Miata / Interior" ("… to the top level"; counts only the parts
+  actually moved, nothing when none moved) / "Deleted n parts" ("Deleted 1 part") / "Deleted
+  folder Archive"; empty otherwise (~~"Part deleted"~~ went with the per-row delete)
 - `parts-search` — the `<input type="search" inputmode="search" enterkeyhint="search">` above the
   list (SPEC §8a A10), present once the list is non-empty and the create form is closed; live,
   case-insensitive filter on name or folder path (stored or display form), sections preserved ·
@@ -31,7 +52,32 @@ stable; add to this list before you rely on a new one.
   `parts-section-header` — the section's `<h2>`, text `"<display path> · <count>"` (e.g.
   `Miata / Interior · 2`; rendered uppercase by `.list-group-header`, so `textContent` is the
   mixed-case spelling and `innerText` the uppercase one). **Absent for the root section**, so a
-  list with no folders has zero headers
+  list with no folders has zero headers. Counts are direct parts only (A12b: never descendants)
+- **Empty folders** (A12b, review S5) — an explicit **leaf** folder with no parts and no
+  subfolders is a `parts-section` too: header `<display> · 0` and one Footnote row
+  `parts-section-empty` ("Empty folder", `role="listitem"`), so it stays visible, pickable,
+  renamable and deletable; still shown under `parts-empty` when the list has no parts at all.
+  Search hides it unless the query matches its path. A folder with subfolders but no direct parts
+  renders nothing outside Edit mode and, while editing, a header-only row `parts-folder` (a
+  `.list-group-section` with **no** container) whose `<h2>` is `parts-folder-header` (text = the
+  display path, no count) plus the pencil — **not** `parts-section-header`, which stays one per
+  real section
+- **Folder rename / delete** (A12b, Edit mode, on the header) — `folder-rename` (44 px pencil,
+  `aria-label="Rename folder"`, `data-path="<stored path>"` so `[data-testid="folder-rename"][data-path="Miata"]`
+  finds one folder's) on every folder header and header-only row · `folder-delete` (trash,
+  `aria-label="Delete folder"`, same `data-path`) **only** on an empty leaf (no confirm —
+  `Store.deleteFolder` can't refuse it): the section disappears, `parts-live` reads
+  `Deleted folder <display>`, focus goes to `parts-edit`. Both sit beside the `<h2>` in a
+  `.list-group-header-row`, never inside it. Rename = the header becomes `folder-rename-form`:
+  `folder-rename-input` (prefilled with the leaf name, focused on open, `autocapitalize="words"
+  autocorrect="off" spellcheck="false" enterkeyhint="done"`; Enter saves, Escape cancels) ·
+  `folder-rename-save` (primary, `aria-disabled` while `Folder.validateSegment` fails or the name
+  is unchanged — a case-only change counts) · `folder-rename-cancel` (focus back to that folder's
+  `folder-rename`) · `folder-rename-error` — the inline rule (`a/b`, `?`, > 32 chars) or the
+  store's `A folder named "X" already exists here.` Save = `Store.renameFolder(~from,
+  ~to=join(parent(from), name))` — one segment, the parent is kept; the subtree (descendant folders
+  and every part under it) follows, `parts-section-header`s re-derive, focus goes to the renamed
+  folder's `folder-rename`. Starting a folder rename closes any row rename strip and vice versa
 - `part-folder-row` — the **Folder row** (SPEC §8a A12a) in **both** the create form (a `list-row`
   `<button>` with a chevron: title "Folder", trailing value the chosen folder in display form —
   `Miata / Interior` — or `None` at root) and the inline rename strip (the same `<button>`, drawn
@@ -40,7 +86,8 @@ stable; add to this list before you rely on a new one.
   retired — the free-text Folder field and its chips are gone
 - **Folder picker** (A12a) — takes over the page while open (list, search, Edit/"+" hidden; the
   create form or the rename strip it came from is restored on return). Bar: `.shell-title` reads
-  `Choose Folder` (centred Headline, no Large Title) between `folder-picker-cancel` (leading text
+  `Choose Folder` — or `Move n Parts` / `Move 1 Part` when opened from `parts-move` (A12b) —
+  (centred Headline, no Large Title) between `folder-picker-cancel` (leading text
   action; replaces `settings-link` while open) and `folder-picker-done` (trailing) ·
   `folder-picker-list` — the one `role="listbox"` container · `folder-option` — one
   `<button type="button" role="option">` per row: root first (`data-path=""`,

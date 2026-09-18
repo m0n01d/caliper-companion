@@ -400,6 +400,148 @@ let deletePart = async (t: t, partId: string): unit => {
   }
 }
 
+// -- folder management (SPEC §8a A12b) ---------------------------------------
+//
+// Bulk moves, bulk deletes and folder rename / delete. Every multi-doc
+// write here is one `bulkDocs`, the same shape `ensureFolders` uses; a
+// per-doc failure in its result (a concurrent writer) surfaces as a thrown
+// error, so the page's generic storage message shows instead of a silent
+// half-move. The refusals (`NotEmpty`, `Exists`, `Nested`) are `result`s
+// because the page decides what to say about them; a JS exception is still
+// "storage broke".
+
+type folderError = NotEmpty | Exists | Nested
+
+let bulkOk = (results: array<PouchDb.doc>): bool =>
+  results->Array.every(r => getBool(r, "ok") == Some(true))
+
+let bulkDocsOrThrow = async (t: t, docs: array<PouchDb.doc>): unit =>
+  if Array.length(docs) > 0 {
+    let results = await PouchDb.bulkDocs(t.db, docs)
+    if !bulkOk(results) {
+      JsError.throwWithMessage("bulkDocs: a document write was rejected")
+    }
+  }
+
+// Raw part rows for the ids given, with their current `_rev` — one `part:`
+// range read whatever the count.
+let partDocsOf = async (t: t, partIds: array<string>): array<(PouchDb.doc, Types.part)> => {
+  let rows = await allDocsRange(t, ~startkey="part:", ~endkey=prefixEnd("part:"))
+  rows->Array.filterMap(row =>
+    switch row.doc->Nullable.toOption {
+    | Some(doc) if Array.includes(partIds, row.id) =>
+      PartDoc.fromDoc(doc)->Option.map(part => (doc, part))
+    | _ => None
+    }
+  )
+}
+
+// `ensureFolder` first, then one `bulkDocs` rewriting each part whose
+// `path` differs (`updatedAt` bumped, as `putPart` does); parts already
+// there are skipped. Returns the moved records only.
+let moveParts = async (t: t, ~partIds: array<string>, ~path: string): array<Types.part> => {
+  if path != "" {
+    let _ = await ensureFolder(t, ~path)
+  }
+  let now = Clock.nowIso()
+  let moved =
+    (await partDocsOf(t, partIds))
+    ->Array.filter(((_, part)) => part.path != path)
+    ->Array.map(((doc, part)) => (doc, {...part, path, updatedAt: now}))
+  await bulkDocsOrThrow(
+    t,
+    moved->Array.map(((doc, part)) => PartDoc.toDoc(~rev=revOf(Some(doc)), part)),
+  )
+  moved->Array.map(((_, part)) => part)
+}
+
+// `deletePart` for each id, in sequence, inside one promise — one
+// `PartsDeleted` for the page rather than N `DeleteDone`s (review S8).
+let deleteParts = async (t: t, ~partIds: array<string>): unit =>
+  for i in 0 to Array.length(partIds) - 1 {
+    switch partIds[i] {
+    | Some(id) => await deletePart(t, id)
+    | None => ()
+    }
+  }
+
+// Removes the folder doc; refuses with `NotEmpty` while any part sits in
+// it or under it, or any folder doc is under it. A path with no doc is
+// already gone: `Ok`.
+let deleteFolder = async (t: t, ~path: string): result<unit, folderError> => {
+  let parts = await listParts(t)
+  let folders = await folderRows(t)
+  let partInside = parts->Array.some(p => p.path == path || Folder.isUnder(p.path, ~folder=path))
+  let folderInside = folders->Array.some(row => Folder.isUnder(FolderDoc.pathOf(row), ~folder=path))
+  if partInside || folderInside {
+    Error(NotEmpty)
+  } else {
+    switch folders->Array.find(row => FolderDoc.pathOf(row) == path) {
+    | Some(row) =>
+      await bulkDocsOrThrow(t, [deletionDoc(row.id, row.value.rev)])
+      Ok()
+    | None => Ok()
+    }
+  }
+}
+
+// `to` is already validated by the page. `Exists` when a folder doc other
+// than `from` equals `to` case-insensitively (a case-only rename `Miata` →
+// `miata` is allowed — review B5); `Nested` when `to` is under `from`.
+// Otherwise one `bulkDocs`: the old folder doc deleted, the new one created
+// (`createdAt` kept, `updatedAt` bumped), every descendant folder doc
+// rewritten the same way (`Folder.rebase`) and every part whose `path ==
+// from` or is under it rewritten with a bumped `updatedAt` (as `putPart`),
+// so the subtree follows.
+let renameFolder = async (t: t, ~from: string, ~to: string): result<unit, folderError> =>
+  if from == to {
+    Ok()
+  } else {
+    let folders = await folderRows(t)
+    let toLower = String.toLowerCase(to)
+    let twin =
+      folders->Array.some(row => {
+        let p = FolderDoc.pathOf(row)
+        p != from && String.toLowerCase(p) == toLower
+      })
+    if twin {
+      Error(Exists)
+    } else if Folder.isUnder(to, ~folder=from) {
+      Error(Nested)
+    } else {
+      let now = Clock.nowIso()
+      let inSubtree = (p: string): bool => p == from || Folder.isUnder(p, ~folder=from)
+      let docs = []
+      folders->Array.forEach(row => {
+        let p = FolderDoc.pathOf(row)
+        if inSubtree(p) {
+          Array.push(docs, deletionDoc(row.id, row.value.rev))
+          let createdAt =
+            row.doc
+            ->Nullable.toOption
+            ->Option.flatMap(d => getStr(d, "createdAt"))
+            ->Option.getOr(now)
+          let moved = FolderDoc.toDoc(Folder.rebase(p, ~from, ~to), ~now)
+          setStr(moved, "createdAt", createdAt)
+          Array.push(docs, moved)
+        }
+      })
+      // A folder only implied by its parts (none after the A12a migration,
+      // but a hand-edited store could) still gets its new doc.
+      if !(folders->Array.some(row => FolderDoc.pathOf(row) == from)) {
+        Array.push(docs, FolderDoc.toDoc(to, ~now))
+      }
+      let parts = await listParts(t)
+      let movingIds = parts->Array.filterMap(part => inSubtree(part.path) ? Some(part.id) : None)
+      (await partDocsOf(t, movingIds))->Array.forEach(((doc, part)) => {
+        let rebased = {...part, path: Folder.rebase(part.path, ~from, ~to), updatedAt: now}
+        Array.push(docs, PartDoc.toDoc(~rev=revOf(Some(doc)), rebased))
+      })
+      await bulkDocsOrThrow(t, docs)
+      Ok()
+    }
+  }
+
 // -- faces --------------------------------------------------------------
 
 let kindRank = (k: Types.faceKind): int =>

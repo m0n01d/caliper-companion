@@ -75,6 +75,37 @@ let listParts: t => promise<array<Types.part>>
 // dimension of the part, and its dogfood timer (if any).
 let deletePart: (t, string) => promise<unit>
 
+// -- folder management (SPEC §8a A12b) ---------------------------------------
+//
+// Refusals are `result`s, not exceptions; `NotEmpty` and `Nested` are
+// unreachable from the A12b UI (delete only shows on empty leaves, an inline
+// rename keeps the parent) and exist as store guards. Every multi-doc write
+// is one `bulkDocs`; a per-doc rejection in its result throws, so the page
+// shows its generic storage message rather than a silent half-move.
+type folderError = NotEmpty | Exists | Nested
+
+// `ensureFolder` first, then one `bulkDocs` rewriting each part whose `path`
+// differs (`updatedAt` bumped, as `putPart`); parts already there are
+// skipped. Returns the moved records only — `[]` when nothing moved.
+let moveParts: (t, ~partIds: array<string>, ~path: string) => promise<array<Types.part>>
+
+// `deletePart` for each id in sequence, inside one promise.
+let deleteParts: (t, ~partIds: array<string>) => promise<unit>
+
+// Removes the folder doc; `Error(NotEmpty)` while any part sits in it or
+// under it (`Folder.isUnder`) or any folder doc is under it. A path with
+// no doc is `Ok` (already gone).
+let deleteFolder: (t, ~path: string) => promise<result<unit, folderError>>
+
+// `to` is already validated by the page. `Error(Exists)` when a folder doc
+// other than `from` equals `to` case-insensitively (a case-only rename is
+// allowed); `Error(Nested)` when `to` is under `from`. Otherwise one
+// `bulkDocs` deletes the old folder doc, creates the new one (`createdAt`
+// kept, `updatedAt` bumped), rewrites every descendant folder doc
+// (`Folder.rebase`) and every part whose `path == from` or is under it
+// (`updatedAt` bumped), so the subtree follows. `from == to` is a no-op.
+let renameFolder: (t, ~from: string, ~to: string) => promise<result<unit, folderError>>
+
 // -- faces --------------------------------------------------------------
 
 // Single `put` with an inline `_attachments` entry, so the doc and its

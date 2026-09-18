@@ -61,13 +61,26 @@ test.describe('parts', () => {
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page.getByTestId('part-row')).toHaveCount(1)
 
-    // P2a (layout A): same "Edit" gate as the rename test above.
+    // A12b: delete lives in the Edit-mode toolbar — check the row, then
+    // Delete opens the confirm strip in the same slot. With no parts left,
+    // Edit leaves the bar and focus goes to the empty state's own capsule.
     await page.getByTestId('parts-edit').click()
-    await page.getByTestId('part-delete').click()
-    await page.getByTestId('part-delete-confirm').click()
+    await expect(page.getByTestId('parts-delete')).toHaveText('Delete')
+    await expect(page.getByTestId('parts-delete')).toBeDisabled()
+    await page.getByTestId('part-select').check()
+    await expect(page.getByTestId('parts-delete')).toHaveText('Delete 1')
+    await page.getByTestId('parts-delete').click()
+    await expect(page.getByTestId('edit-toolbar')).toContainText(
+      'Delete 1 part? This removes its faces and dimensions.',
+    )
+    await page.getByTestId('parts-delete-confirm').click()
 
     await expect(page.getByTestId('parts-empty')).toBeVisible()
     await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(page.getByTestId('parts-live')).toHaveText('Deleted 1 part')
+    await expect(page.getByTestId('parts-edit')).toHaveCount(0)
+    await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
+    await expect(page.getByTestId('new-part')).toBeFocused()
   })
 
   test('settings wedge toggle persists after reload', async ({page}) => {
@@ -367,5 +380,253 @@ test.describe('parts — folders — picker (SPEC §8a A12a)', () => {
     await optionFor(page, 'a/b/c/d/e').click()
     await expect(page.getByTestId('folder-new')).toBeEnabled()
     await expect(page.getByTestId('folder-new-depth')).toHaveCount(0)
+  })
+})
+
+// SPEC §8a A12b — folder management: Edit mode selects rows for the bottom
+// toolbar's Move (the picker, `ForMove`) and Delete (one confirm strip);
+// section headers rename inline (the subtree follows) and delete when
+// empty; an explicit leaf folder with no parts is a "· 0" section.
+const folderButton = (page, id, path) => page.locator(`[data-testid="${id}"][data-path="${path}"]`)
+
+// A folder made in the picker is a real doc even if the picker is then
+// Cancelled (A12a) — the way to get an empty folder.
+async function createEmptyFolder(page, name) {
+  await page.goto('/')
+  await page.getByTestId('new-part').click()
+  await page.getByTestId('part-folder-row').click()
+  await optionFor(page, '').click()
+  await page.getByTestId('folder-new').click()
+  await page.getByTestId('folder-new-name').fill(name)
+  await page.getByTestId('folder-new-create').click()
+  await expect(optionFor(page, name)).toHaveAttribute('aria-selected', 'true')
+  await page.getByTestId('folder-picker-cancel').click()
+  await page.getByRole('button', {name: 'Cancel'}).click()
+  await expect(page.getByTestId('part-name')).toHaveCount(0)
+}
+
+test.describe('parts — folders — management (SPEC §8a A12b)', () => {
+  test('an empty folder is a · 0 section; Edit selects rows; Move 2 goes through the picker; Delete 1 through the toolbar', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    await createPartIn(page, 'Hinge pin')
+    await createPartIn(page, 'Door card clip')
+    await createEmptyFolder(page, 'Archive')
+
+    // Root (headerless), Archive · 0 with its one Footnote row, Miata / Interior · 1.
+    const sections = page.getByTestId('parts-section')
+    await expect(sections).toHaveCount(3)
+    const headers = page.getByTestId('parts-section-header')
+    await expect(headers).toHaveCount(2)
+    await expect(headers.nth(0)).toHaveText('Archive · 0')
+    await expect(headers.nth(1)).toHaveText('Miata / Interior · 1')
+    await expect(page.getByTestId('parts-section-empty')).toHaveText('Empty folder')
+    await expect(sections.nth(1).getByTestId('parts-section-empty')).toHaveCount(1)
+    await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
+    // Search hides an empty folder unless its path matches the query.
+    await page.getByTestId('parts-search').fill('arch')
+    await expect(sections).toHaveCount(1)
+    await expect(headers).toHaveText(['Archive · 0'])
+    await expect(page.getByTestId('parts-search-empty')).toHaveCount(0)
+    await page.getByTestId('parts-search').fill('bezel')
+    await expect(sections).toHaveCount(1)
+    await expect(headers).toHaveText(['Miata / Interior · 1'])
+    await page.getByTestId('parts-search-clear').click()
+    await expect(sections).toHaveCount(3)
+
+    // Edit: rows are checkbox rows — no link anywhere in a section — and the
+    // toolbar's actions are disabled until something is checked.
+    await page.getByTestId('parts-edit').click()
+    await expect(page.getByTestId('parts-section').getByRole('link')).toHaveCount(0)
+    await expect(page.getByTestId('part-row')).toHaveCount(3)
+    await expect(page.getByTestId('part-delete')).toHaveCount(0)
+    await expect(page.getByTestId('parts-move')).toHaveText('Move')
+    await expect(page.getByTestId('parts-move')).toBeDisabled()
+    await expect(page.getByTestId('parts-delete')).toBeDisabled()
+    const checks = page.getByTestId('part-select')
+    await expect(checks).toHaveCount(3)
+    await expect(checks.nth(0)).toHaveAttribute('aria-label', 'Select Door card clip')
+    // The body is the checkbox's label: tapping the title toggles.
+    await sections.nth(0).getByText('Door card clip').click()
+    await expect(checks.nth(0)).toBeChecked()
+    await checks.nth(1).check()
+    await expect(page.getByTestId('parts-move')).toHaveText('Move 2')
+    await expect(page.getByTestId('parts-delete')).toHaveText('Delete 2')
+    // The pencil is outside the label — it opens the rename strip, no toggle.
+    await sections.nth(0).getByTestId('part-rename').first().click()
+    await expect(page.getByTestId('part-rename-input')).toBeFocused()
+    await page.getByTestId('part-rename-cancel').click()
+    await expect(page.getByTestId('parts-move')).toHaveText('Move 2')
+
+    // Move: the picker takes over titled by the count, root preselected;
+    // Cancel keeps the selection and focuses Move.
+    await page.getByTestId('parts-move').click()
+    await expect(page.locator('.shell-title')).toHaveText('Move 2 Parts')
+    await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(optionFor(page, '')).toHaveAttribute('aria-selected', 'true')
+    await expect(optionFor(page, '')).toBeFocused()
+    await page.getByTestId('folder-picker-cancel').click()
+    await expect(page.getByTestId('parts-move')).toHaveText('Move 2')
+    await expect(page.getByTestId('parts-move')).toBeFocused()
+    await page.getByTestId('parts-move').click()
+    await optionFor(page, 'Archive').click()
+    await page.getByTestId('folder-picker-done').click()
+    await expect(headers).toHaveText(['Archive · 2', 'Miata / Interior · 1'])
+    await expect(sections).toHaveCount(2)
+    await expect(page.getByTestId('parts-section-empty')).toHaveCount(0)
+    await expect(page.getByTestId('parts-live')).toHaveText('Moved 2 parts to Archive')
+    await expect(page.getByTestId('parts-move')).toBeFocused()
+    await expect(page.getByTestId('parts-move')).toHaveText('Move')
+    await expect(page.getByTestId('parts-edit')).toHaveText('Done')
+    // Moving a part into the folder it is already in announces nothing new.
+    await checks.nth(0).check()
+    await page.getByTestId('parts-move').click()
+    await optionFor(page, 'Archive').click()
+    await page.getByTestId('folder-picker-done').click()
+    await expect(page.getByTestId('parts-live')).toHaveText('Moved 2 parts to Archive')
+    await expect(page.getByTestId('parts-move')).toHaveText('Move')
+
+    // Delete one: the confirm strip sits in the toolbar, focus lands on its
+    // Cancel; confirming removes the row and focuses Edit/Done.
+    await checks.nth(2).check()
+    await expect(page.getByTestId('parts-delete')).toHaveText('Delete 1')
+    await page.getByTestId('parts-delete').click()
+    await expect(page.getByTestId('parts-move')).toHaveCount(0)
+    await expect(page.getByTestId('edit-toolbar')).toContainText(
+      'Delete 1 part? This removes its faces and dimensions.',
+    )
+    await expect(page.getByTestId('parts-delete-cancel')).toBeFocused()
+    await page.getByTestId('parts-delete-cancel').click()
+    await expect(page.getByTestId('parts-delete')).toHaveText('Delete 1')
+    await expect(page.getByTestId('parts-delete')).toBeFocused()
+    await page.getByTestId('parts-delete').click()
+    await page.getByTestId('parts-delete-confirm').click()
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    // The folder the deleted part lived in stays as an empty · 0 section.
+    await expect(sections).toHaveCount(2)
+    await expect(headers).toHaveText(['Archive · 2', 'Miata / Interior · 0'])
+    await expect(page.getByTestId('parts-section-empty')).toHaveCount(1)
+    await expect(page.getByTestId('parts-live')).toHaveText('Deleted 1 part')
+    await expect(page.getByTestId('parts-edit')).toBeFocused()
+    await expect(page.getByTestId('parts-edit')).toHaveText('Done')
+    // Done clears the leftover state; everything above persisted.
+    await page.getByTestId('parts-edit').click()
+    await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
+    await page.reload()
+    await expect(headers).toHaveText(['Archive · 2', 'Miata / Interior · 0'])
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+  })
+
+  test('folder rename: an intermediate folder is a header-only row while editing; the subtree follows; case-only saves; a sibling twin and a slash are refused inline', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    await createPartIn(page, 'Bracket', 'Archive')
+    await page.goto('/')
+    // Miata (subfolders, no direct parts) renders nothing outside Edit mode.
+    await expect(page.getByTestId('parts-section')).toHaveCount(2)
+    await expect(page.getByTestId('parts-folder-header')).toHaveCount(0)
+    await expect(page.getByTestId('folder-rename')).toHaveCount(0)
+    await page.getByTestId('parts-edit').click()
+    await expect(page.getByTestId('parts-section')).toHaveCount(2)
+    await expect(page.getByTestId('parts-folder-header')).toHaveText('Miata')
+    await expect(page.getByTestId('folder-rename')).toHaveCount(3)
+    await expect(page.getByTestId('folder-delete')).toHaveCount(0)
+    // The heading's accessible name is the heading alone — the buttons are
+    // siblings, not children.
+    await expect(page.getByRole('heading', {name: 'Archive · 1'})).toHaveCount(1)
+
+    // Rename Miata → MX-5: prefilled, focused, Save disabled while unchanged.
+    await folderButton(page, 'folder-rename', 'Miata').click()
+    const input = page.getByTestId('folder-rename-input')
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('Miata')
+    await expect(input).toHaveAttribute('enterkeyhint', 'done')
+    await expect(page.getByTestId('folder-rename-save')).toBeDisabled()
+    await expect(page.getByTestId('parts-folder-header')).toHaveCount(0)
+    await input.fill('a/b')
+    await expect(page.getByTestId('folder-rename-error')).toContainText('Folder name "a/b" can use')
+    await expect(page.getByTestId('folder-rename-save')).toBeDisabled()
+    await input.fill('MX-5')
+    await expect(page.getByTestId('folder-rename-error')).toHaveCount(0)
+    await page.getByTestId('folder-rename-save').click()
+    await expect(page.getByTestId('parts-folder-header')).toHaveText('MX-5')
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 1', 'MX-5 / Interior · 1'])
+    await expect(folderButton(page, 'folder-rename', 'MX-5')).toBeFocused()
+    await expect(page.getByTestId('folder-rename-form')).toHaveCount(0)
+
+    // One inline editor at a time: a folder rename closes a row's strip and
+    // vice versa.
+    await page.getByTestId('part-rename').first().click()
+    await expect(page.getByTestId('part-rename-input')).toHaveCount(1)
+    await folderButton(page, 'folder-rename', 'MX-5/Interior').click()
+    await expect(page.getByTestId('part-rename-input')).toHaveCount(0)
+    await expect(page.getByTestId('folder-rename-form')).toHaveCount(1)
+    await page.getByTestId('part-rename').first().click()
+    await expect(page.getByTestId('folder-rename-form')).toHaveCount(0)
+    await page.getByTestId('part-rename-cancel').click()
+
+    // Case-only rename saves (Enter submits); Cancel focuses the pencil.
+    await folderButton(page, 'folder-rename', 'MX-5/Interior').click()
+    await input.fill('interior')
+    await input.press('Enter')
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 1', 'MX-5 / interior · 1'])
+    await expect(folderButton(page, 'folder-rename', 'MX-5/interior')).toBeFocused()
+    await folderButton(page, 'folder-rename', 'MX-5').click()
+    await input.fill('archive')
+    await page.getByTestId('folder-rename-save').click()
+    await expect(page.getByTestId('folder-rename-error')).toHaveText(
+      'A folder named "archive" already exists here.',
+    )
+    await expect(page.getByTestId('parts-folder-header')).toHaveCount(0)
+    await page.getByTestId('folder-rename-cancel').click()
+    await expect(page.getByTestId('parts-folder-header')).toHaveText('MX-5')
+    await expect(folderButton(page, 'folder-rename', 'MX-5')).toBeFocused()
+
+    // The part followed its folder: its page subtitle, and it all persisted.
+    await page.getByTestId('parts-edit').click()
+    await page.getByTestId('part-row').filter({hasText: 'Window switch bezel'}).getByRole('link').click()
+    await expect(page.locator('.shell-subtitle')).toHaveText('MX-5 / interior')
+    await page.goto('/')
+    await page.reload()
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 1', 'MX-5 / interior · 1'])
+  })
+
+  test('folder delete: only on an empty leaf, no confirm; deleting the last part exits Edit mode and leaves the folder as an empty section', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Bracket', 'Miata/Interior')
+    await createEmptyFolder(page, 'Archive')
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 0', 'Miata / Interior · 1'])
+    await page.getByTestId('parts-edit').click()
+    await expect(page.getByTestId('folder-delete')).toHaveCount(1)
+    await expect(folderButton(page, 'folder-delete', 'Archive')).toHaveAttribute('aria-label', 'Delete folder')
+    await expect(folderButton(page, 'folder-delete', 'Miata/Interior')).toHaveCount(0)
+    await expect(folderButton(page, 'folder-delete', 'Miata')).toHaveCount(0)
+    await folderButton(page, 'folder-delete', 'Archive').click()
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Miata / Interior · 1'])
+    await expect(page.getByTestId('parts-live')).toHaveText('Deleted folder Archive')
+    await expect(page.getByTestId('parts-edit')).toBeFocused()
+
+    // Deleting the last part: Edit leaves the bar, focus goes to the empty
+    // state's capsule, and the folder it lived in stays visible as a · 0
+    // section under the empty state (it is a real doc, never "vanished").
+    await page.getByTestId('part-select').check()
+    await page.getByTestId('parts-delete').click()
+    await page.getByTestId('parts-delete-confirm').click()
+    await expect(page.getByTestId('parts-empty')).toBeVisible()
+    await expect(page.getByTestId('parts-edit')).toHaveCount(0)
+    await expect(page.getByTestId('new-part')).toBeFocused()
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Miata / Interior · 0'])
+    await expect(page.getByTestId('parts-section-empty')).toHaveCount(1)
+
+    // Gone for good: the picker no longer lists Archive.
+    await page.reload()
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-folder-row').click()
+    await expect(optionFor(page, 'Archive')).toHaveCount(0)
+    await expect(optionFor(page, 'Miata/Interior')).toHaveCount(1)
   })
 })

@@ -171,3 +171,100 @@
   -webkit-appearance: none;
   appearance: none;
 }
+
+/* SPEC §8a A12b — Edit mode selects (review S2). A selectable row is a plain
+   `.list-row` whose leading `<input type="checkbox">` is drawn as a 24 px
+   selection circle inside a 44 px hit area; the body (thumbnail, title,
+   meta) is the checkbox's `<label>`, so the whole row toggles; the pencil
+   stays a trailing sibling outside it. The check is pure CSS (a rotated
+   two-sided border) — no image, no icon font. */
+.part-select {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--cc-tap-min);
+  height: var(--cc-tap-min);
+  margin: 0 calc(-1 * var(--cc-space-2)) 0 calc(-1 * var(--cc-space-3));
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.part-select::before {
+  content: "";
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--cc-text-3);
+  border-radius: 50%;
+  transition:
+    background-color var(--cc-motion-press) linear,
+    border-color var(--cc-motion-press) linear;
+}
+
+.part-select:checked::before {
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+}
+
+.part-select:checked::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  width: 7px;
+  height: 12px;
+  margin-top: -2px;
+  border: solid var(--cc-accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.part-select:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -4px;
+}
+
+.part-row-label {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--cc-space-3);
+  min-width: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.part-row-label:active {
+  opacity: 0.6;
+}
+
+/* The selection toolbar's contents (the Shell's `.shell-footer` supplies
+   the sticky glass, hairline and safe-area padding): Move and Delete as
+   two accent text actions, edge to edge, Delete in `cc-error`; the confirm
+   strip stacks its Footnote over the Delete/Cancel pair. */
+.edit-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-2);
+}
+
+.edit-toolbar-danger {
+  color: var(--cc-error);
+}
+
+/* The inline folder-rename form replaces the section header (A12b): the
+   same field + Save/Cancel pair as a row's rename strip, at the header's
+   own page-x inset so it lines up with the heading it replaces. */
+.folder-rename {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+  padding: 0 var(--cc-page-x);
+}

@@ -631,3 +631,129 @@ describe("Store — folders (SPEC §8a A12a)", () => {
     expect(await Store.listFolders(store))->toEqual(["Archive", "Archive/2025"])
   })
 })
+
+// SPEC §8a A12b — bulk moves and deletes, folder rename / delete. Every
+// rename is one `bulkDocs` over the subtree; the refusals are `result`s.
+describe("Store — folder management (SPEC §8a A12b)", () => {
+  let mkPart = async (store, ~name, ~path) =>
+    await Store.createPart(store, ~name, ~slug=Slug.make(name), ~path, ~units=Types.Mm)
+
+  testAsync("renameFolder Miata → MX-5 moves the subtree's folder docs and parts, bumping only those", async () => {
+    let dir = freshDbPath()
+    let store = openStore(dir)
+    let dashboard = await mkPart(store, ~name="Dash clip", ~path="Miata/Interior/Dashboard")
+    let direct = await mkPart(store, ~name="Badge", ~path="Miata")
+    let root = await mkPart(store, ~name="Hinge pin", ~path="")
+    let other = await mkPart(store, ~name="Bracket", ~path="Miatas/Old")
+    let raw = PouchDb.make(dir, {})
+    let before = await PouchDb.get(raw, "folder:Miata", {})
+    let createdAt = Dict.get(before, "createdAt")
+    await clockPast(dashboard.updatedAt)
+    await clockPast(other.updatedAt)
+
+    expect(await Store.renameFolder(store, ~from="Miata", ~to="MX-5"))->toEqual(Ok())
+    expect(await Store.listFolders(store))->toEqual([
+      "Miatas",
+      "Miatas/Old",
+      "MX-5",
+      "MX-5/Interior",
+      "MX-5/Interior/Dashboard",
+    ])
+    let byId = id => Store.getPart(store, id)
+    let movedDash = await byId(dashboard.id)
+    expect(movedDash->Option.map(p => p.path))->toEqual(Some("MX-5/Interior/Dashboard"))
+    expect(movedDash->Option.map(p => p.updatedAt > dashboard.updatedAt))->toEqual(Some(true))
+    let movedDirect = await byId(direct.id)
+    expect(movedDirect->Option.map(p => p.path))->toEqual(Some("MX-5"))
+    expect(movedDirect->Option.map(p => p.updatedAt > direct.updatedAt))->toEqual(Some(true))
+    // A root part and a look-alike prefix (`Miatas`, not under `Miata`) are untouched.
+    expect((await byId(root.id))->Option.map(p => (p.path, p.updatedAt)))->toEqual(Some(("", root.updatedAt)))
+    expect((await byId(other.id))->Option.map(p => (p.path, p.updatedAt)))->toEqual(
+      Some(("Miatas/Old", other.updatedAt)),
+    )
+    // The new folder doc keeps `createdAt` and bumps `updatedAt`.
+    let after = await PouchDb.get(raw, "folder:MX-5", {})
+    expect(Dict.get(after, "createdAt"))->toEqual(createdAt)
+    expect(Dict.get(after, "updatedAt") != createdAt)->toBeTruthy
+    expect(Dict.get(after, "path"))->toEqual(Some(JSON.String("MX-5")))
+  })
+
+  testAsync("a case-only rename is Ok; a sibling twin is Exists; a nested target is Nested", async () => {
+    let store = freshStore()
+    let _ = await mkPart(store, ~name="Badge", ~path="Miata/Interior")
+    let _ = await Store.ensureFolder(store, ~path="Archive")
+    expect(await Store.renameFolder(store, ~from="Miata", ~to="miata"))->toEqual(Ok())
+    expect(await Store.listFolders(store))->toEqual(["Archive", "miata", "miata/Interior"])
+    expect((await Store.listParts(store))->Array.map(p => p.path))->toEqual(["miata/Interior"])
+    expect(await Store.renameFolder(store, ~from="miata", ~to="archive"))->toEqual(Error(Store.Exists))
+    expect(await Store.renameFolder(store, ~from="miata", ~to="miata/Sub"))->toEqual(Error(Store.Nested))
+    // Refusals write nothing.
+    expect(await Store.listFolders(store))->toEqual(["Archive", "miata", "miata/Interior"])
+    // Same spelling is a no-op.
+    expect(await Store.renameFolder(store, ~from="Archive", ~to="Archive"))->toEqual(Ok())
+    expect(await Store.listFolders(store))->toEqual(["Archive", "miata", "miata/Interior"])
+  })
+
+  testAsync("deleteFolder refuses NotEmpty with a part in or under it or a subfolder; deletes an empty leaf", async () => {
+    let store = freshStore()
+    let _ = await mkPart(store, ~name="Dash clip", ~path="Miata/Interior/Dashboard")
+    let _ = await Store.ensureFolders(store, ~paths=["Archive/2025", "Empty"])
+    expect(await Store.deleteFolder(store, ~path="Miata"))->toEqual(Error(Store.NotEmpty))
+    expect(await Store.deleteFolder(store, ~path="Miata/Interior/Dashboard"))->toEqual(
+      Error(Store.NotEmpty),
+    )
+    expect(await Store.deleteFolder(store, ~path="Archive"))->toEqual(Error(Store.NotEmpty))
+    expect(await Store.deleteFolder(store, ~path="Archive/2025"))->toEqual(Ok())
+    expect(await Store.deleteFolder(store, ~path="Archive"))->toEqual(Ok())
+    expect(await Store.deleteFolder(store, ~path="Empty"))->toEqual(Ok())
+    // Already gone is still Ok.
+    expect(await Store.deleteFolder(store, ~path="Empty"))->toEqual(Ok())
+    expect(await Store.listFolders(store))->toEqual(["Miata", "Miata/Interior", "Miata/Interior/Dashboard"])
+  })
+
+  testAsync("moveParts rewrites only the parts not already there and returns them", async () => {
+    let store = freshStore()
+    let a = await mkPart(store, ~name="A", ~path="")
+    let b = await mkPart(store, ~name="B", ~path="")
+    let c = await mkPart(store, ~name="C", ~path="Miata")
+    await clockPast(c.updatedAt)
+    let moved = await Store.moveParts(store, ~partIds=[a.id, c.id], ~path="Miata")
+    expect(moved->Array.map(p => p.id))->toEqual([a.id])
+    expect(moved->Array.map(p => p.path))->toEqual(["Miata"])
+    expect((await Store.getPart(store, a.id))->Option.map(p => (p.path, p.updatedAt > a.updatedAt)))->toEqual(
+      Some(("Miata", true)),
+    )
+    expect((await Store.getPart(store, b.id))->Option.map(p => (p.path, p.updatedAt)))->toEqual(Some(("", b.updatedAt)))
+    expect((await Store.getPart(store, c.id))->Option.map(p => (p.path, p.updatedAt)))->toEqual(
+      Some(("Miata", c.updatedAt)),
+    )
+    // A new target gets its folder docs; the root never does.
+    let toArchive = await Store.moveParts(store, ~partIds=[b.id], ~path="Archive/2025")
+    expect(toArchive->Array.map(p => p.path))->toEqual(["Archive/2025"])
+    expect(await Store.listFolders(store))->toEqual(["Archive", "Archive/2025", "Miata"])
+    expect(await Store.moveParts(store, ~partIds=[a.id, b.id], ~path=""))->toHaveLength(2)
+    expect((await Store.listParts(store))->Array.map(p => p.path)->Array.toSorted(String.compare))->toEqual([
+      "",
+      "",
+      "Miata",
+    ])
+    // Nothing to move: no write, empty result.
+    expect(await Store.moveParts(store, ~partIds=[c.id], ~path="Miata"))->toEqual([])
+    expect(await Store.moveParts(store, ~partIds=[], ~path="Miata"))->toEqual([])
+  })
+
+  testAsync("deleteParts removes each part with its faces, in one promise", async () => {
+    let store = freshStore()
+    let a = await mkPart(store, ~name="A", ~path="")
+    let b = await mkPart(store, ~name="B", ~path="Miata")
+    let keep = await mkPart(store, ~name="Keep", ~path="")
+    let _ = await Store.putFace(store, mkFace(~partId=a.id, ~kind=Types.Top), ~image=onePixelBlob(), ~contentType="image/jpeg")
+    let _ = await Store.putFace(store, mkFace(~partId=b.id, ~kind=Types.Side), ~image=onePixelBlob(), ~contentType="image/jpeg")
+    await Store.deleteParts(store, ~partIds=[a.id, b.id])
+    expect((await Store.listParts(store))->Array.map(p => p.id))->toEqual([keep.id])
+    expect(await Store.facesOf(store, ~partId=a.id))->toEqual([])
+    expect(await Store.facesOf(store, ~partId=b.id))->toEqual([])
+    // The folder doc outlives its last part (A12b: an empty leaf section).
+    expect(await Store.listFolders(store))->toEqual(["Miata"])
+  })
+})

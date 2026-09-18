@@ -227,11 +227,40 @@ a:focus-visible {
     calc(var(--cc-space-5) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
 }
 
+/* The Shell's footer slot (SPEC §8a A12b, review B1): the second and last
+   glass surface (DESIGN.md §11.1 "Materials" — the nav bar and, while
+   editing, the Parts bottom toolbar). A sibling after `main` directly in
+   `.shell`: `main` is `flex: 1 1 auto`, so a short page still pushes it to
+   the bottom edge, and on a long one `position: sticky; bottom: 0` inside
+   the scroll container catches it — never `fixed` (SPEC §5; inside the page
+   body a sticky element would sit mid-screen under a three-part list). Same
+   pseudo-child recipe as the top bar, hairline on the top edge, safe-area
+   padding on the bottom. Contents are the page's (`Shell ~footer`). */
+.shell-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex: 0 0 auto;
+  padding: var(--cc-space-2) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-2) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.shell-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
 /* The glass recipe, verbatim from liquid-glass-web.md §3. Used by the nav bar
-   only (DESIGN.md §11.1 "Materials"); never on content, inputs, or anything
-   over the canvas. `-webkit-backdrop-filter` stays first. */
+   and the Shell footer slot only (DESIGN.md §11.1 "Materials"); never on
+   content, inputs, or anything over the canvas. `-webkit-backdrop-filter`
+   stays first. */
 .glass,
-.shell-topbar::before {
+.shell-topbar::before,
+.shell-footer::before {
   background: var(--glass-fill);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -246,9 +275,16 @@ a:focus-visible {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+.shell-footer::before {
+  border-radius: 0;
+  border-width: 1px 0 0;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3);
+}
+
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass,
-  .shell-topbar::before {
+  .shell-topbar::before,
+  .shell-footer::before {
     background: var(--cc-surface); /* fall back to a plain opaque cc-surface card */
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
@@ -260,7 +296,8 @@ a:focus-visible {
    browsers that DO report the preference, and as a statement of intent. */
 @media (prefers-reduced-transparency: reduce) {
   .glass,
-  .shell-topbar::before {
+  .shell-topbar::before,
+  .shell-footer::before {
     background: var(--cc-surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -475,6 +512,35 @@ button[aria-disabled="true"]:active,
   color: var(--cc-text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* SPEC §8a A12b (review S1): a header with trailing controls — PartsList's
+   folder Rename/Delete while editing — the <h2> and the 44 px icon buttons
+   side by side as siblings (never inside the heading, which would leak the
+   button names into its accessible name). The buttons set the row height;
+   the heading keeps its page-x padding and ellipsises rather than wraps. */
+.list-group-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-2);
+  min-height: var(--cc-tap-min);
+}
+
+.list-group-header-row .list-group-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-group-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--cc-space-1);
+  padding-right: var(--cc-space-2);
 }
 
 .list-group-footer {
