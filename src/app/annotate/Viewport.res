@@ -237,3 +237,9 @@ let cubicBezier = (~x1: float, ~y1: float, ~x2: float, ~y2: float, x: float): fl
 // `--cc-ease` from theme.css (DESIGN.md §11.1 "Interaction feel"), so the
 // viewport tween and the CSS transitions share one feel.
 let ease = (progress: float): float => cubicBezier(~x1=0.2, ~y1=0.8, ~x2=0.2, ~y2=1.0, progress)
+
+// SPEC §8a A16b: a just-saved pill settles from 1.04 to exactly 1 on the
+// same curve. `progress` is the frame loop's linear 0..1 (clamped here, so a
+// stray value past the end still lands on 1).
+let settleScale = (progress: float): float =>
+  1.0 +. 0.04 *. (1.0 -. ease(Math.min(Math.max(progress, 0.0), 1.0)))

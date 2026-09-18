@@ -184,6 +184,27 @@
   color: var(--cc-text-2);
 }
 
+/* SPEC §8a A16b: when the reading takes focus after p2 (`focusTestId`), a
+   one-shot 2 px ring just outside the focus outline fades over 400 ms, so
+   the eye lands where the keyboard is about to type. It restarts on each
+   focus (fine). A shadow, not the outline: the `input:focus` outline
+   (global.css §6, 2 px at offset 0) stays put underneath; the 4 px spread
+   is the 2 px ring beyond it. Zeroed under `prefers-reduced-motion` by
+   global.css §12. */
+[data-testid="reading"]:focus {
+  animation: cc-ring-fade 400ms var(--cc-ease-out);
+}
+
+@keyframes cc-ring-fade {
+  from {
+    box-shadow: 0 0 0 4px var(--cc-accent);
+  }
+
+  to {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
 .annotate-name {
   display: flex;
   flex-direction: column;
