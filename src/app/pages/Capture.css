@@ -207,3 +207,18 @@
 
 /* Custom chips and the "Capture <label>" caption show the slug via
    global.css's `.mono` (DESIGN.md §7) — nothing page-specific needed. */
+
+/* ── SPEC §8a A17: medium and expanded ────────────────────────────────── */
+/* The page sits in the Shell's 720 column and the kind grid is 3-up
+   (global.css §16 — the same rule as Part's; review S9: there is no live
+   preview to enlarge, the shutter is a `<label>` for a hidden file input,
+   and the cards carry the captured / selected state a chip row would lose;
+   4-up in 720 would give 168 px cards, smaller than medium's 216). The
+   shutter block and "From library" (a `.btn-block`, capped at 400 by §16)
+   centre at a 480 px max. The A2HS hint keys on standalone, not width. */
+@media (min-width: 600px) {
+  .shutter-block {
+    max-width: 480px;
+    margin-inline: auto;
+  }
+}

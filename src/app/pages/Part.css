@@ -88,3 +88,40 @@
   color: var(--cc-text);
   font: var(--cc-text-footnote);
 }
+
+/* ── SPEC §8a A17: the expanded two-column Part page ──────────────────── */
+/* Below 1024 `.part-columns` is the plain `.stack-lg` it always was (the
+   medium 3-up grid is global.css §16's). At expanded the Shell gives Part
+   the wide column (1120) and the root becomes a grid: the gallery (668 px
+   — `auto-fill` reads the grid's own width, 3 × 212 px cards, "+ Capture"
+   last; no container query, no card cap, review S4) and a 320–380 px
+   aside holding the features group, Export and the timer. Edit mode's face
+   list lands in the gallery column. `align-items: start` / `align-self:
+   start` is load-bearing (review B1, measured): a grid child with auto
+   height stretches to the gallery's row and has no room to stick — after
+   a 1000 px scroll the aside's top was −932 with `stretch`, 44 with
+   `start`. A second sticky inside the `.shell` scroller is fine: nothing
+   between `.shell` and this page has `overflow`, and nothing here has
+   `transform` (the A16 nav slide is on the root, outside the scroller). */
+@media (min-width: 1024px) {
+  .part-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: var(--cc-space-6);
+    align-items: start;
+  }
+
+  .part-columns > .page-error {
+    grid-column: 1 / -1;
+  }
+
+  .part-columns .face-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .part-aside {
+    position: sticky;
+    top: calc(var(--cc-bar-height) + var(--cc-page-x));
+    align-self: start;
+  }
+}

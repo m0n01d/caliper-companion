@@ -543,8 +543,17 @@ let renderTimer = (model: model): React.element => {
   <p className="t-footnote mono muted" dataTestId="timer"> {React.string(text)} </p>
 }
 
+// SPEC §8a A17 (review S3): the root is `.part-columns` — a plain
+// `.stack-lg` at compact and medium, a two-column grid at expanded
+// (Part.css): the gallery (or Edit mode's face list) on the left, the
+// features, Export and timer in a sticky `.part-aside` on the right. The
+// two wrappers keep DOM order (a11y's Tab tests) and the 24 px rhythm at
+// 390 — each wraps one element, and the aside is its own `.stack-lg`, so
+// the four blocks sit exactly where they did as siblings. `Ui.Live` is
+// `visually-hidden` (absolute) and takes no grid cell; the error `p` spans
+// both columns; the `Pending` / `Missing` branches are single-column.
 let view = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="stack-lg">
+  <div className="stack-lg part-columns">
     <Ui.Live text=model.announcement testId="part-live" />
     {switch model.error {
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
@@ -561,10 +570,12 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
       </div>
     | Found(part) =>
       <>
-        {renderFacesSection(model, ~dispatch)}
-        {renderFeatures(model, ~part)}
-        {renderExport(model, ~dispatch)}
-        {renderTimer(model)}
+        <div className="part-gallery"> {renderFacesSection(model, ~dispatch)} </div>
+        <div className="part-aside stack-lg">
+          {renderFeatures(model, ~part)}
+          {renderExport(model, ~dispatch)}
+          {renderTimer(model)}
+        </div>
       </>
     }}
   </div>
