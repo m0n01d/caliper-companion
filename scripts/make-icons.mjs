@@ -23,13 +23,14 @@ import fs from 'node:fs'
 const GROUND = '#0E0F11', INK = '#F2F2F0'
 
 // Ring: r 300 centred (512, 512), stroke 64 (outer r 332, 180–844; inner r
-// 268, 244–780). ⌀ line: x 316–708 at y 512, stroke 64 (the same weight as
-// the ring — "one ink, one weight"), round caps — the caps alone reach
-// 284–740, 40 px clear of the inner ring (268 − 40 = 228 from centre).
+// 268, 244–780). ⌀ line: x 340–684 at y 512, stroke 64 (the same weight as
+// the ring — "one ink, one weight"), butt caps: each end sits inside an
+// arrowhead, where the head is already wider than the line (±37 px at
+// x 340), so the line and the heads read as one continuous shape. A round
+// cap would poke past the head's slope (only ±27 px tall at x 316) and draw
+// a notch — the first cut of this icon did exactly that.
 // Arrowheads: filled, 112 (tip-to-base) × 96 (base width), tips at x 252 /
-// 772 (8 px inside the inner ring), bases at x 364 / 660, overlapping the
-// line's own round-capped end so the two paths read as one continuous
-// shape, not two abutting ones.
+// 772 (8 px inside the inner ring), bases at x 364 / 660.
 //
 // `rounded` only for the SVG favicon; PNGs stay square so platform masks
 // apply. Safe zone: the ring's outer edge (r 332) sits 78 px inside
@@ -40,7 +41,7 @@ const GROUND = '#0E0F11', INK = '#F2F2F0'
 const svg = (rounded) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <rect width="1024" height="1024" ${rounded ? 'rx="224"' : ''} fill="${GROUND}"/>
   <circle cx="512" cy="512" r="300" fill="none" stroke="${INK}" stroke-width="64"/>
-  <path d="M316 512L708 512" fill="none" stroke="${INK}" stroke-width="64" stroke-linecap="round"/>
+  <path d="M340 512L684 512" fill="none" stroke="${INK}" stroke-width="64"/>
   <path d="M252 512L364 464L364 560Z" fill="${INK}"/>
   <path d="M772 512L660 464L660 560Z" fill="${INK}"/>
 </svg>

@@ -2666,3 +2666,16 @@ here). Per SPEC §8a A14's "Build split" and `docs/design/a14-glass-review.md` �
   table and the built-CSS contrast measurements SPEC's Docs bullet also asks for are about
   `global.css`'s materials, which this agent didn't touch — left to A14a / the conductor's merge
   pass, which also reconciles this entry with A14a's own LOGBOOK section.
+
+## 2026-09-18 — A14 integration close-out
+
+- Merged `agent/a14b-overlays` at `fe02c8f` on top of A14a (LOGBOOK union-merged). Combined build:
+  `rescript build` clean, vitest 276/276, Chromium e2e 58/58 (`--workers=1`, port 4363), Vite clean.
+  Screenshot tour regenerated on the combined build (mono UI + mono overlays) into
+  `docs/screenshots/`.
+- **Icon fix on top of A14b.** The first cut's ⌀ line (x 316–708, round caps) let each r 32 cap poke
+  past the arrowhead's slope, which is only ±27 px tall at x 316 — a visible notch at every size.
+  Now x 340–684 with butt caps, ending where the head is already ±37 px; heads unchanged. The
+  generator's comment says why.
+- Looked at: `07-annotate-saved` (ink dimensions on halo, Snap on = ivory fill, disabled primary
+  reads as disabled), `12-parts-list`, `08-part-features`, `16`, `14`, and the 512 / 180 icons.
