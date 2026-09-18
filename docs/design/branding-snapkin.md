@@ -293,3 +293,41 @@ canvas handle's ring/dot.
 `.panel` / chips / fields (the "at most four surfaces" estimate above); an in-app "Reduce glass"
 toggle (SPEC §13, A15) — `prefers-contrast: more` (which *does* reach iOS, unlike
 `prefers-reduced-transparency`) is A14's only shipped fallback; m1/m3/m4 as icon candidates.
+
+## 9. Splash — Fusion blue (2026-09-18, mock only, nothing decided)
+
+Owner: "a splash of colour using the Autodesk Fusion blue from the sketch tool" on the shipped A14
+mono glass (`d7030c5`). Rendered from the real app in a throwaway worktree (removed): `Overlay.res`
+constants and `theme.css` tokens per placement, a few worktree-only `global.css` rules where tokens
+cannot split one slot, then the screenshot tour. Boards in `mockups/`: `splash-s1.png` … `splash-s4.png`
+(four screens + the file delta under each), `splash-compare.png` (mono shipped vs S1–S4, rows per
+screen), `brand-splash.png` (the m2 lens with the blue three ways, dark and clear tiles, wordmark).
+
+**The blue** (values from `palettes-2026-09-17.md` §1, the older Autodesk product palette — the current
+brand hub has no primary blue, only tertiary Twilight `#1D91D0`, rejected at 5.49 on ground and 3.97 vs
+the pale halo). Two steps: **autodeskBlue-500 `#0696D7`** for fills — it is the brand/sketch blue, and a
+`cc-ground` label on it is 5.80:1 (pressed `#0684BE`, 4.61); **autodeskBlue-400 `#38ABDF`** for text and
+canvas lines — 7.36 on ground, 6.54 on surface, 5.74 on the glass-wash peak, and vs the ground@85 % halo
+5.32 pale / 7.11 dark, where 500 is 4.19 on the pale fixture, too thin for a 2 px line (bare pale photo
+1.76 — the halo does the work, as before). Wash / ink for live: 900 `#0A324D` / 100 `#CDEAF7` (10.60).
+Saved dims at the shipped 0.7 alpha: 3.36 / 4.06 vs halo (mono ivory 4.0 / 4.7, Dark Sky 1.7 / 3.7).
+
+| | Buys | Costs | Files |
+|---|---|---|---|
+| **S1 Sketch** | The canvas looks like a Fusion sketch: lines, handles, pills, snap ring and the export PNG in blue-400; every UI surface stays mono, the ivory primary untouched. Blue means exactly one thing — measured geometry — the same thing it means in Fusion. | Line-on-halo drops from 12.4 to 5.3 on a pale photo (still clear). | **`Overlay.res` only**: `ink`, `live` → `#38ABDF`. |
+| **S2 Live** | Blue also says verified: captured ring, check badge, slot ring, Snap pill on, selected segment and ring. Coherent with S1 (snapped = geometry). | The mono "fill = tappable" rule gets a second meaning: a blue-500 fill on the Snap chip means *on*, an ivory fill on the primary means *tap*. | S1 + `theme.css` 4 live tokens + 3 `global.css` rules (chip on, segment on, selected ring). |
+| **S3 Primary** | Export / Save / Create and Edit / Done / + in blue: the app reads "Fusion-adjacent" on every screen. | The ivory-fill primary — the one loud thing A14 kept — is gone; blue must carry "tap me" and "measured" at once. | S2 + 3 rules (`.btn-primary`, pressed, bar text/icons). |
+| **S4 Accent** | Dark Sky's structure in blue: accent token = blue-500 (primary, bar, exported meta 5.15 on surface, hint icon, focus, selected ring), chips on blue. | Most colour, least hierarchy: one hue for measured, verified, on and tap. Bar text at 500 is 5.80, below 400's margin. | S2 + 3 accent tokens + the S3 rules + 1 (bar on the accent token). |
+
+Blur budget is unchanged in all four (the two sticky surfaces); nothing else in `global.css` moves.
+
+**Icon** (`brand-splash.png`): (a) blue ⌀ on an ivory ring — one blue element, the measurement; felt
+more than seen at 16, reads at 60. (b) ivory line on a blue ring — the blue survives 16 but the emphasis
+flips to the dimension. (c) all blue — the Fusion idiom, strongest colour, but a third-party-looking
+blue glyph on a clear tile. Wordmark: (a) with an ivory word; on a blue-500 panel, mark and word in ground.
+
+**Recommendation: S1**, with icon (a). The blue then appears only on the thing the app measures — on the
+canvas, in the export, and once in the icon — which is what "the blue from the sketch tool" means; it
+costs two constants in one file, keeps the mono fill rule and the ivory primary intact, and keeps the
+blur budget. S2 is the honest next step if the owner wants blue in the UI (it stays coherent: snapped =
+geometry); S3 and S4 trade A14's hierarchy for colour and are not recommended.
