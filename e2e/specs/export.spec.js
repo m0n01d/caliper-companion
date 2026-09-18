@@ -426,31 +426,44 @@ const pixelAt = (png, x, y) => {
 
 // Scans a vertical column at `xFrac`*width, `± spanPx` around `yFrac`*height
 // (the dimension line's own y, for the horizontal line this suite always
-// draws), and reports whether an amber-core pixel and a dark-halo pixel are
-// both present somewhere in that column.
+// draws), and reports whether the ink line and its halo are legible there:
+// not merely present anywhere in the column, but composited correctly —
+// white → halo → ink → halo → white, top to bottom. `sawInk` is true only
+// for an ink pixel that has a halo pixel at some smaller y *and* a halo
+// pixel at some larger y in the same column (SPEC §8a A14b).
 //
-// Thresholds: the accent orange (Dark Sky `#FF7F2A` = (255,127,42), or the
-// earlier amber `#F2A33A` = (242,163,58)) sits inside R>200/G∈[100,190]/B<90
-// even after PNG's lossless re-encode. The halo
-// (`rgba(23,24,26,0.85)`) composited over a pure-white background works out
-// to ≈(58,59,60) — right at the edge of a literal "<60" on the blue
-// channel after 8-bit rounding, so this uses <70 instead: still nowhere
-// near amber (R>200) or a white/near-white background (255), but with
-// enough margin not to flake on that composite.
+// Thresholds: the ink line is exactly `Overlay.ink` #F2F2F0 = (242,242,240)
+// even after PNG's lossless re-encode, so `isInk` uses a tight window
+// (every channel in [225, 250], max−min <= 12) rather than an unbounded
+// "channel >= 200", which would pass the white photo itself
+// (255,255,255) with no line drawn at all. The halo (`Overlay.halo`,
+// cc-ground at 85 %) composited over a pure-white background works out to
+// ≈(50,51,53) and over black to ≈(12,13,14) — both comfortably under a
+// literal "<70" on every channel (kept from the pre-mono scheme; the
+// code's 70, not 60, for a documented rounding margin), and nowhere near
+// white or ink.
 function sampleLegibility(png, {xFrac, yFrac, spanPx}) {
   const cx = Math.round(png.width * xFrac)
   const cy = Math.round(png.height * yFrac)
-  let sawAmber = false
-  let sawHalo = false
+  const isHalo = ({r, g, b}) => r < 70 && g < 70 && b < 70
+  const isInk = ({r, g, b}) =>
+    [r, g, b].every(c => c >= 225 && c <= 250) && Math.max(r, g, b) - Math.min(r, g, b) <= 12
+
+  const column = []
   for (let y = Math.max(0, cy - spanPx); y <= Math.min(png.height - 1, cy + spanPx); y++) {
-    const {r, g, b} = pixelAt(png, cx, y)
-    // Accent core: warm orange family. Dark Sky's #FF7F2A is (255,127,42);
-    // the pre-palette amber #F2A33A was (242,163,58). Both fit R>200 /
-    // G∈[100,190] / B<90; white (255,255,255) and the halo never do.
-    if (r > 200 && g >= 100 && g <= 190 && b < 90) sawAmber = true
-    if (r < 70 && g < 70 && b < 70) sawHalo = true
+    column.push(pixelAt(png, cx, y))
   }
-  return {sawAmber, sawHalo}
+
+  const sawHalo = column.some(isHalo)
+  let haloAbove = false
+  let sawInk = false
+  for (let i = 0; i < column.length; i++) {
+    const px = column[i]
+    if (isInk(px) && haloAbove && column.slice(i + 1).some(isHalo)) sawInk = true
+    if (isHalo(px)) haloAbove = true
+  }
+
+  return {sawInk, sawHalo}
 }
 
 test.describe('render legibility (SPEC §8a A3)', () => {
@@ -458,7 +471,7 @@ test.describe('render legibility (SPEC §8a A3)', () => {
     {name: 'white', color: '#ffffff'},
     {name: 'black', color: '#000000'},
   ]) {
-    test(`amber line + halo are both visible on an all-${bg.name} photo`, async ({
+    test(`ink line + halo are both visible on an all-${bg.name} photo`, async ({
       page,
       browserName,
     }) => {
@@ -492,8 +505,8 @@ test.describe('render legibility (SPEC §8a A3)', () => {
       const {entries} = await exportAndUnzip(page, dir, `legibility-${bg.name}`)
       const png = decodePng(Buffer.from(entries['faces/top_dimensioned.png']))
 
-      const {sawAmber, sawHalo} = sampleLegibility(png, {xFrac: 0.35, yFrac: 0.5, spanPx: 25})
-      expect(sawAmber).toBe(true)
+      const {sawInk, sawHalo} = sampleLegibility(png, {xFrac: 0.35, yFrac: 0.5, spanPx: 25})
+      expect(sawInk).toBe(true)
       expect(sawHalo).toBe(true)
     })
   }
