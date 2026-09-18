@@ -2984,3 +2984,108 @@ the `.shell` scroller and `(hover: hover)` with a trackpad are to be eyeballed o
   footnote 160 px from a centred capsule read as a mistake. Compact unchanged.
 - `rescript format` rewrites files this repo does not format (239 lines of churn in
   `PartsList.res`); the ReScript edits here are hand-formatted to match their neighbours.
+
+## 2026-09-18 — A17-ii adaptive layout: Annotate medium / expanded, Escape, `adaptive.spec.js`, wide `07`, DESIGN §12 (agent/a17-adaptive)
+
+SPEC §8a A17-ii on `7a7481d` (A17-i merged), with `docs/design/a17-adaptive-review.md` B2, B3, S5,
+S6, S7, S11, S12 and N5 applied. No new dependency, no `%raw`, no `position: fixed`, no container
+query, nothing that binds under 600; `.shell` stays the one scroll container — the Annotate panel's
+own `overflow-y` at expanded is the single exception, and the page then has nothing left to scroll.
+
+**What changed.**
+- `Annotate.css` only, for the layout. Medium (≥ 600): `.annotate-stage { height: max(300px,
+  min(var(--vv-height, 100dvh) * 0.55, 720px)) }`. Expanded under `(min-width: 1024px) and
+  (min-aspect-ratio: 1/1)`: `.annotate` is the grid `minmax(0, 1fr) var(--cc-panel)`, `gap: 0`,
+  all four of `.shell-content`'s paddings undone by its margins, `min-height: 0` (over the compact
+  `calc(100% + …)`), `height: calc(var(--vv-height, 100dvh) - var(--cc-bar-height))` — review B2
+  as written; the stage `height: auto; min-height: 0; margin: page-x` (the left one keeps
+  `env(safe-area-inset-left)`); the panel `min-height: 0; overflow-y: auto; overscroll-behavior:
+  contain; border-width: 0 0 0 1px; border-radius: 0; box-shadow: none` and `padding-left:
+  var(--cc-page-x)` (the compact rule's left padding carries the left safe-area inset — a
+  right-hand column should not). The tools strip is already the panel's first child.
+- Canvas sizing, confirmed and untouched (review S11): `CanvasView`'s `ResizeObserver` reports
+  `getBoundingClientRect` width *and* height as `ViewSized`, `refit` calls `Viewport.fit(~viewW,
+  ~viewH)`, `drawScene` resizes the backing store from both — a height-driven cell resizes it
+  (backing 972 × 808 at 1440 × 900) and the untouched A6 pair re-fits.
+- Escape (review S7): `WebApi.Keyboard` — `type event`, `key`, `defaultPrevented`, `isComposing`,
+  `preventDefault`, `onKeyDown` (`@as("keydown")` on `addEventListener`) and `subscribe`, a
+  `Tea.effect` registering the document listener once and dispatching only when `!defaultPrevented
+  && !isComposing && key == "Escape"`. `Main.msg` gains `KeyPressed(string)`, `init` batches the
+  subscription beside `Route.subscribe`, `update` routes `KeyPressed("Escape")` into the mounted
+  page by a direct `update` call (the `FolderChanged` shape); Annotate / Settings / Debug are a
+  no-op. `PartsList.Escape` = the first of the picker's New Folder field → `NewFolderCancel`,
+  picker → `PickerCancel`, form → `FormCancel`, `confirmingDelete` → `DeleteCancel`, a `Renaming`
+  row → `RenameCancel(id)` (new `renamingRow` helper over `rowStates`), folder rename →
+  `FolderRenameCancel`, the root New Folder field → `NewFolderCancel`, else nothing; `Part.Escape`
+  = `pendingDelete` → `FaceDeleteCancelled`; `Capture.Escape` = `RecaptureConfirm` →
+  `RecaptureCancelClicked`, else `customDraft` → `CustomCancel`. The three `update`s are `let rec`
+  so the arm re-enters the page's own Cancel msg and its focus handling rides along. The folder
+  rename strip's own Escape now calls `preventDefault`.
+- `e2e/specs/adaptive.spec.js`: the 1440 block (`hasTouch: false, isMobile: false`, review B3) and
+  the 820 block (touch kept), eight tests — the Parts column ≤ 720 and centred in `.shell` (± 2)
+  at both sizes; Part's two `.part-columns` tracks, Export ≤ 400 and the aside's top at bar + page-x
+  (68) after `.shell` scrolls 1000 (the gallery stretched to 3000 px by `evaluate`, the A17-i
+  probe's fixture — one face is not enough content to scroll at 1440 × 900); Annotate at 1440 with
+  the canvas's right edge ≤ the panel's left, the canvas ≥ 600 tall, `.shell.scrollHeight ===
+  clientHeight` before and after two taps that land as pending points with the reading focused,
+  the panel `overflow-y: auto`; hover on a part row changing its computed background and the
+  link's `cursor: pointer`; Escape closing the picker, then the form, then a no-op; the 820 face
+  grid with three tracks, a card ≤ 240 and `.part-columns` not a grid; the 820 canvas ≥ 500 tall
+  with the panel below it. `e2e/README.md` gained one clause for the per-describe viewport.
+- `docs/screenshots/wide/{desktop,ipad}/…-07-annotate-saved.png` and DESIGN.md §12.
+
+**Measured (Playwright Chromium; `hasTouch: false, isMobile: false` at 1440 and the 1024-wide
+short window, the project's touch elsewhere; `--vv-height` = the viewport height).**
+
+| Viewport | `.annotate` | Stage = canvas | Panel | `.shell` scroll / client | After p1, p2 |
+|---|---|---|---|---|---|
+| 1440 × 900 | grid `1020px 420px`, margin `-24 -24 -20`, min-height 0 | 972 × 808 at (24, 68), right edge 996; backing 972 × 808 | x 1020, 420 × 856, `overflow-y: auto` (856 / 856: the content fits) | **900 / 900** | `data-autofit="fitted"`, both points inside, reading focused, still 900 / 900 |
+| 1180 × 820 (iPad landscape) | grid `760px 420px` | 712 × 728 at (24, 68) — the board's figure | x 760, 420 × 776 | 820 / 820 | fitted, inside, focused |
+| 1024 × 500 (a short window) | grid | 556 × 408 | 420 × 456, scrollHeight 594 — **the panel scrolls itself** (`scrollTop = 200` clamps to 138, the tools strip at y −78) | 500 / 500 | — |
+| 1024 × 1366 (13-inch portrait) | `flex` — stacked, the aspect gate | 976 × 720 (the cap) at (24, 68) | full width at y 800 | 1395 / 1366 (the page scrolls) | fitted, inside, focused |
+| 820 × 1180 (iPad portrait) | `flex` — stacked | 780 × 649 at (20, 64) | full width at y 733 | 1320 / 1180 (the page scrolls) | fitted, inside, focused |
+| 390 × 844 | `flex`, margin `0 -16 -20`, min-height `calc(100% + 20px)` | 358 × 300 at (16, 60) | y 372, 390 wide, `overflow-y: visible` | 967 / 844 | as before |
+
+**Screenshots.** `TOUR_ONLY=07 TOUR_DSF=1` at `1440x900` into `docs/screenshots/wide/desktop/` and
+at `820x1180` into `wide/ipad/`, both tours end to end, looked at against
+`adaptive-after-desktop-annotate.png` and the iPad boards: the 972 × 808 stage at (24, 68), the
+420 panel at 1020 with its left hairline, the tools strip on top, Reading / Name / chips / Kind /
+Save / Clear / Dimensions in order; the stacked 649-tall stage over the full-width panel at 820.
+Phone tour (390 × 844, DSF 2) into a temp dir twice: `05`, `07` and eleven others byte-identical to
+`docs/screenshots/`, the two runs identical to each other on `05`, `06`, `07`, `11`. `06` differs
+from the committed one by 420 px in the kind row (CSS y 702–740: a sub-pixel raster of the
+segmented indicator's edge — A17-i's note placed its `06` diff at the reading caret) and `11` at
+the timer digit; `10` differs between any two runs (Debug's readouts). To settle `06`, the untouched
+base `7a7481d` was built from `git archive` in the scratchpad and toured on :4399: its `06` and `11`
+are byte-identical to this branch's, and its `06` differs from the committed one by the same 420 px
+— the committed `06` predates the drift, nothing at 390 is touched here, and nothing in
+`docs/screenshots/*.png` is regenerated.
+
+**Tests.** `npx rescript build` clean (warnings are errors); vitest 283 / 283 unchanged; the full
+Chromium suite `E2E_PORT=4398 … --project=chromium --workers=1` **73 / 73, twice** (65 before + 8).
+No existing spec changed; `shell.spec.js` still counts 13 Debug rows. WebKit cannot launch in this
+sandbox (`e2e/README.md`) — to be eyeballed on the iPad: the grid following the on-screen keyboard
+through `--vv-height` (and the panel's `overscroll-behavior: contain` in Safari), the
+`(min-aspect-ratio: 1/1)` gate on a 13-inch iPad in portrait, a hardware keyboard's Escape, and
+`(hover: hover)` with a trackpad.
+
+**Deviations and calls.**
+- The panel's `padding-left: var(--cc-page-x)` at expanded is not in the spec's rule: the compact
+  panel padding adds `env(safe-area-inset-left)` on the left, which belongs to a sheet spanning
+  the screen, not a right-hand column. Zero in the sandbox and on every iPad, so the boards'
+  numbers hold either way.
+- The stage margin keeps `env(safe-area-inset-left)` on its left where the spec has a bare
+  `margin: var(--cc-page-x)` — same reasoning, same zero on every target.
+- `PartsList.Escape` also closes the root New Folder field (last in precedence), beyond the spec's
+  list: it is an inline editor like the others and its input has no Escape of its own.
+- `WebApi.Keyboard.subscribe` returns a `Tea.cmd` from the binding module (the spec's
+  `Keyboard.subscribe(k => KeyPressed(k))` in `Main.init`); `Timers.everySecond` is the precedent
+  for a binding that hands back a cmd.
+- The `Renaming`-row Cancel and the folder rename Cancel are mutually exclusive by construction
+  (one inline editor at a time, A12b review S9), so their order in the arm never decides anything.
+- The name chips at expanded stay the horizontal scroll strip (`.chip-row`'s existing
+  `overflow-x: auto`, three chips visible in the 420 panel) where the desktop board wraps them
+  into three rows. The component is untouched by A17 and the strip scrolls at 390 too; wrapping
+  it is a call for the owner, not this pass.
+- `rescript format` rewrites files this repo does not format; the ReScript edits are
+  hand-formatted to match their neighbours, as in A17-i.

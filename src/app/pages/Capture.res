@@ -143,6 +143,8 @@ type msg =
   | RecaptureConfirmClicked
   | RecaptureKeepClicked
   | RecaptureCancelClicked
+  // A17-ii: the document-level Escape (`Main.KeyPressed`); see `update`.
+  | Escape
   | DimensionsDeletedThenSave
   | DeleteDimensionsFailed(string)
 
@@ -412,8 +414,17 @@ let init = (~partId: string): (model, Tea.cmd<msg>) => {
 
 // -- update --------------------------------------------------------------
 
-let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
+let rec update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
+  // SPEC §8a A17-ii: Escape, routed here from `Main.KeyPressed` by a direct
+  // `update` call. The recapture confirm first (it sits over the grid),
+  // then the "+ Custom" card's draft — each through its own Cancel msg.
+  | Escape =>
+    switch (model.dialog, model.customDraft) {
+    | (RecaptureConfirm(_), _) => update(model, RecaptureCancelClicked)
+    | (NoDialog, Some(_)) => update(model, CustomCancel)
+    | (NoDialog, None) => (model, Tea.none)
+    }
   | GotPart(part) => ({...model, partChecked: true, partExists: part->Option.isSome}, Tea.none)
   | GotFaces(faces) =>
     let selectedLabel = model.labelManuallySelected ? model.selectedLabel : defaultLabel(faces)

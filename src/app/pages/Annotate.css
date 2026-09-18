@@ -3,14 +3,16 @@
    .pill, .btn-*) in src/global.css. Only the layout that is specific to
    this screen is here.
 
-   Layout: a flex column — the photo stage on top, inset by the page margin
-   with the 16 px photo radius; the hairline-material control `.panel`
-   (global.css §11; translucent, never blurred) below it in normal flow
-   (never `position: fixed`, SPEC §5), edge to edge and down to
+   Layout (compact, < 600): a flex column — the photo stage on top, inset by
+   the page margin with the 16 px photo radius; the hairline-material
+   control `.panel` (global.css §11; translucent, never blurred) below it in
+   normal flow (never `position: fixed`, SPEC §5), edge to edge and down to
    the bottom of the screen. The stage's height tracks `--vv-height` (kept
    live from `visualViewport` by Index.res) and is capped at 300 px (§3), so
    when the iOS keyboard shrinks the visual viewport the stage shrinks with
-   it and the reading field rides up into view. */
+   it and the reading field rides up into view. Medium raises the cap and
+   expanded (landscape-or-square only) puts the panel beside the stage —
+   the two `@media` blocks at the end of this file (SPEC §8a A17-ii). */
 
 .annotate {
   display: flex;
@@ -356,5 +358,87 @@
 
   .annotate-kind {
     flex-basis: 100%;
+  }
+}
+
+/* ── Medium (≥ 600; SPEC §8a A17-ii) ───────────────────────────────── */
+/* iPad portrait and iPhone landscape keep the stacked layout in the 720
+   column (the Shell's `bleed` column is 100 %, so the panel still runs edge
+   to edge) and the stage gets 55 % of the visual viewport, 300–720 px:
+   `min` lifts today's 300 px cap (half a phone's height) to 649 px on an
+   820 × 1180 iPad, and the outer `max` keeps an iPhone in landscape
+   (375–440 tall, where 55 % is 206–242) from getting *less* than compact
+   (review S5). Everything else — the panel, the tools strip, the
+   Dimensions list — is the compact page under it. */
+@media (min-width: 600px) {
+  .annotate-stage {
+    height: max(300px, min(var(--vv-height, 100dvh) * 0.55, 720px));
+  }
+}
+
+/* ── Expanded, landscape or square (≥ 1024; SPEC §8a A17-ii) ───────── */
+/* Side by side: a grid of the stage (the flexible cell) and the panel
+   (`--cc-panel`, 420) filling the visual viewport under the bar. The
+   `min-aspect-ratio` gate keeps a 13-inch iPad in portrait (1024 / 1032 ×
+   1366) on the stacked medium layout, where side by side would give a
+   604 × 1322 cell with a landscape photo in a third of it (review S6).
+
+   The grid must fit inside `.shell` exactly (review B2, measured: with only
+   the side and bottom margins undone it overshot by 48 px — `.shell-
+   content`'s top and bottom padding — and the page scrolled under its own
+   panel scroller). So all four of `.shell-content`'s paddings are undone
+   here, the compact `min-height: calc(100% + …)` is overridden to 0, and
+   the height is the visual viewport minus the bar: `.shell` has exactly
+   its own height of content (`scrollHeight === clientHeight`; the e2e
+   asserts it). `--vv-height`, not `100dvh` (review S12): iPadOS keeps the
+   layout viewport when the on-screen keyboard shows and only
+   `visualViewport` shrinks, so the grid follows the keyboard — the stage
+   cell shrinks (the canvas re-fits through its ResizeObserver) and the
+   panel scrolls with the reading field at its top; a hardware keyboard
+   opens nothing and nothing moves. `.shell` stays the app's one scroll
+   container; the panel's own `overflow-y` is the single exception, and
+   the page has nothing left to scroll. Nothing here has `transform` or
+   `overflow` on an ancestor of the sticky bar. */
+@media (min-width: 1024px) and (min-aspect-ratio: 1/1) {
+  .annotate {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--cc-panel);
+    gap: 0;
+    margin: calc(-1 * var(--cc-page-x)) calc(-1 * (var(--cc-page-x) + env(safe-area-inset-right)))
+      calc(-1 * (var(--cc-space-5) + env(safe-area-inset-bottom)))
+      calc(-1 * (var(--cc-page-x) + env(safe-area-inset-left)));
+    min-height: 0;
+    height: calc(var(--vv-height, 100dvh) - var(--cc-bar-height));
+  }
+
+  /* The stage fills its cell (`align-self: stretch` with `height: auto`)
+     inside the page margin on all four sides — 972 × 808 at 1440 × 900,
+     712 × 728 at 1180 × 820. The canvas inside it is `position: absolute;
+     inset: 0`, so it takes the cell's full height and reports it through
+     `ResizeObserver` → `ViewSized` → `refit` (Annotate.res); no ReScript
+     change (review S11). */
+  .annotate-stage {
+    height: auto;
+    min-height: 0;
+    margin: var(--cc-page-x) var(--cc-page-x) var(--cc-page-x)
+      calc(var(--cc-page-x) + env(safe-area-inset-left));
+  }
+
+  /* The panel is the right column with its own scroll — the tools strip at
+     its top, then Reading / Name / Kind / Tolerance / Save / Clear /
+     Dimensions. A hairline on the left edge only, square corners, no
+     inset highlight (it is a side column now, not a sheet rising from the
+     bottom). `min-height: 0` lets a grid item shrink below its content so
+     the scroll is the panel's, not the page's. The left padding drops the
+     left safe-area inset the compact rule adds (the panel is on the right
+     now); the right and bottom keep theirs. */
+  .annotate .panel {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-left: var(--cc-page-x);
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+    box-shadow: none;
   }
 }

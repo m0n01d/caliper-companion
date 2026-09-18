@@ -51,6 +51,8 @@ type msg =
   | FaceDeleteConfirmed
   | FaceDeleteCancelled
   | FaceDeleted(result<unit, string>)
+  // A17-ii: the document-level Escape (`Main.KeyPressed`); see `update`.
+  | Escape
 
 let store = () => Store.shared()
 
@@ -109,8 +111,16 @@ let loadFaceImageCmd = (face: Types.face): Tea.cmd<msg> =>
     _e => FaceImageLoaded(face.id, None),
   )
 
-let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
+let rec update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
+  // SPEC §8a A17-ii: Escape, routed here from `Main.KeyPressed` by a direct
+  // `update` call — closes the inline Remove confirm, the one thing this
+  // page can have open, through its own Cancel msg.
+  | Escape =>
+    switch model.pendingDelete {
+    | Some(_) => update(model, FaceDeleteCancelled)
+    | None => (model, Tea.none)
+    }
   | PartLoaded(Some(p)) => ({...model, partStatus: Found(p)}, Tea.none)
   | PartLoaded(None) => ({...model, partStatus: Missing}, Tea.none)
   | FacesLoaded(fs) => ({...model, faces: fs}, Tea.batch(fs->Array.map(loadFaceImageCmd)))
