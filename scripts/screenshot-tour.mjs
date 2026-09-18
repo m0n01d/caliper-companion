@@ -24,6 +24,15 @@ const context = await browser.newContext({
 const page = await context.newPage()
 const shot = async (name) => {
   await page.waitForLoadState('networkidle')
+  // SPEC §8a A16: route changes slide (350 ms) and take-overs rise (280 ms)
+  // in this real-Chromium context — settle here, in the tour, never in the
+  // app: wait until no view transition is in flight (`data-nav` is cleared
+  // on `finished`) and no CSS animation or transition is still running.
+  await page.waitForFunction(
+    () =>
+      !document.documentElement.hasAttribute('data-nav') &&
+      document.getAnimations().every((a) => a.playState !== 'running'),
+  )
   await page.waitForTimeout(150)
   const p = path.join(outDir, `${name}.png`)
   await page.screenshot({ path: p })

@@ -36,6 +36,19 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${port}`,
     trace: 'retain-on-failure',
+    // SPEC §8a A16: every route change is a View Transitions push / pop /
+    // fade (350 / 200 ms). `reduce` emulates the media feature only — the
+    // API still runs, but global.css §15's `!important` rule makes it a cut
+    // (≈ 2 frames), the CSS rises / press scales drop to 0 ms (§12), and
+    // Annotate's `frames` single-ticks the A5/A6 tweens. No existing
+    // assertion observes any of that (every post-navigation read is
+    // `page.url()`, a URL wait, a retrying `expect` or an auto-waiting
+    // locator). motion.spec.js opts back into `no-preference` where it
+    // needs the real animations. Note the nesting: `reducedMotion` is a
+    // BrowserContext option but not a first-class test option (only
+    // `colorScheme` is) — set directly under `use` it is silently ignored,
+    // so it goes through `contextOptions`.
+    contextOptions: {reducedMotion: 'reduce'},
   },
   projects: [
     {
