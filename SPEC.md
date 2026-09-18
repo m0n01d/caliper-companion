@@ -911,86 +911,184 @@ mode offering part selection / Move / Delete only and the three A12b management 
     rename autofocuses …"; `shell.spec.js` (gear at root, `Settings.back` → `#/`);
     `export.spec.js` (`createPart` walks the picker; asserts the Part page only).
 
-### A14 — Hybrid glass: monochrome tokens, glass language with a blur budget, the lens icon — **no JSON delta**
+### A14 — Hybrid glass: monochrome tokens, glass language with two blurred surfaces, the lens icon — **no JSON delta**
 
 Owner: "as glass-like as possible. Simple. Minimal. Monochrome." Explored in
 `docs/design/branding-snapkin.md` §7 (real screens re-rendered in Graphite, Paper and Glass;
-`mockups/mono-*.png`, `brand-mono.png`). The full-glass mock blurs 10–20 surfaces a screen — the
-scroll-jank case `docs/design/liquid-glass-web.md` documents — so A14 is the hybrid it recommends:
-monochrome tokens, the glass *language* everywhere, real blur on at most four surfaces per screen.
-Dark only stays. No data or export-contract change.
+`mockups/mono-*.png`, `brand-mono.png`); reviewed before build in `docs/design/a14-glass-review.md`
+(read it first — every number below is measured there). The full-glass mock blurs 10–20 surfaces a
+screen — the scroll-jank case `docs/design/liquid-glass-web.md` documents — so A14 is the hybrid:
+monochrome tokens, the glass *language* everywhere, real blur on the two sticky surfaces only.
+Dark only stays. No data or export-contract change. Two build agents, disjoint files: **A14a**
+(tokens, materials, headers) and **A14b** (overlays, icon, export test, docs) — see the split at the
+end.
 
-**Tokens (`src/theme.css`, the §7 "Glass" column; every text pair ≥ 4.5:1, numbers in §7):**
+**Tokens (`src/theme.css`, the §7 "Glass" column — confirmed over §7's own "Graphite tokens"
+recommendation, which predates G1: under the ambient wash the frame's hottest corner is ground +
+14 % ink = (46,47,48) and a 55 % fill over it is (36,37,39); Glass `text-3 #8C8F94` is 4.73:1
+there, Graphite's `#83868B` 4.20:1, and Graphite's lighter ground leaves the wash less headroom):**
 - [ ] `ground #0E0F11 · surface #1B1C1F · surface-2 #26272B · field #151618 · border #34363A ·
   text #F2F2F0 · text-2 #A9ABAF · text-3 #8C8F94 · accent = text #F2F2F0 · accent-pressed #D9DADB ·
   accent-ink #0E0F11 · live #C9CBCE · live-border #45484D · live-wash #26272B · live-ink #F2F2F0 ·
   error #F0605A · error-ink #2B0A0A · error-wash rgb(240 96 90 / 0.2) · photo-mat #1E1F22 ·
   scrim #0E0F11cc`. Glass: `--glass-fill rgba(28,29,32,.55) · --glass-fill-strong rgba(14,15,17,.70)
   · --glass-stroke rgba(242,242,240,.18) · --glass-highlight rgba(242,242,240,.28) · --glass-blur 24px
-  · --glass-saturate 1.2`. `error` is the one chroma in the app. `theme-color` in `index.html` and
-  `theme_color` / `background_color` in `public/manifest.json` = `#0E0F11`.
-- [ ] Semantic names stay (`accent`, `live`): the *rule* changes from hue to fill. Tappable = ink
-  text on a hairline surface; **primary = ivory fill (`text`) with `accent-ink` label**, pressed
-  `accent-pressed`, disabled 40 % opacity (a filled primary stays the one loud element per screen,
-  17:1). Verified = solid `live` fill (face-card check badge, selected ring 2 px `live`) versus a
-  hairline outline. Snap pill on = filled ivory chip (`aria-pressed`), off = outline; the same for
-  the segmented control's selected segment (ivory fill, dark label). Flagged / conflict rows keep
-  `error`.
+  · --glass-saturate 1.2`; `--glass-radius-sm` / `--glass-radius-pill` stay. `error` is the one
+  chroma in the app. `theme-color` in `index.html` and `theme_color` / `background_color` in
+  `public/manifest.json` = `#0E0F11`. Rule: `text-3` never sits on bare ground (4.14:1 under the
+  wash's peak) — only on `surface`, `field` or a glass fill (DESIGN §2 gets the sentence).
+- [ ] Semantic names stay (`accent`, `live`): the *rule* changes from hue to fill, and "accent =
+  text" is **not** a value swap — three controls need their own treatment. The fill/outline table:
 
-**Glass language (`src/global.css`; the §7 rule list G1–G8, with the budget):**
-- [ ] **G1 ambient light**: two soft radial ink gradients painted on `.app-frame` (top-left ~14 %
-  ink, bottom-right ~8 %, large radii), `.shell` transparent, so glass has something to refract on
-  an empty screen. No `background-attachment: fixed`.
-- [ ] **G2 the blur budget**: real `backdrop-filter` on at most **four surfaces per screen** —
-  the nav bar (`.shell-topbar::before`, as today), the Edit toolbar (`.shell-footer`, as today),
-  `.list-group` **only on the Parts root / folder view and the Part page's features group** (content
-  scrolls beneath them), and the annotate `.panel`. Everything else is the **hairline material**:
-  opaque `surface` (or `field`) + 1 px `--glass-stroke` + `inset 0 1px 0 --glass-highlight`, no
-  blur — capsules, chips, fields, the segmented control, the toggle track, face cards and the
-  empty face card, the A2HS hint, the picker's option list, Settings and Debug groups. State the
-  count per screen in the LOGBOOK (Parts root: bar + 2 groups + toolbar-while-editing = 4).
-- [ ] **G3 primary** as above (fill, not glass). **G4** selected segment = ivory fill.
-- [ ] **G5 fewer words**: the "Folders", "Parts" and "Features · n" group headers are removed
-  (the grouping is self-evident: folder rows carry a glyph and a chevron, feature rows are mono).
-  Kept: search-result path headers (`parts-section-header`, they *are* the information), Settings'
-  "Default tolerances" / "Diagnostics", Debug's "Timers" / "Viewport" (the shell spec asserts
-  them), the picker's "Choose Folder" title. The Features count moves nowhere — the rows are the
-  count.
-- [ ] **G6** Lucide icons at `stroke-width 1.5` (`Icon.res` default), size unchanged. **G7** bar
-  hairlines at 18 % ink (`--glass-stroke`). Capsule and group radii unchanged.
+  | Control | Off / normal | On / selected / primary |
+  |---|---|---|
+  | `.btn-primary` | ivory `text` fill, `accent-ink` label (17:1); pressed `accent-pressed`; disabled 40 % opacity (a 1.8:1 ghost — disabled controls are exempt, DESIGN §6 says so) | — |
+  | `.btn-secondary`, `.btn-danger` | hairline material (below); danger = `error` fill, `error-ink` label | — |
+  | `.chip`, `capture-chip-*`, `.annotate-tools .annotate-snap` | hairline; the Snap pill off = `text-2` label on transparent (as today) | `[aria-pressed="true"]`: `background: var(--cc-text); color: var(--cc-accent-ink)` — the Snap pill is `.annotate-snap`, not a `.chip`; today its on state is a *text* colour (`Annotate.css:130-136`), so the fill is a new rule on that selector |
+  | `.segmented-option` | transparent, `text-2` label | `rgba(242,242,240,.16)` over `field`, `text` label (10.3:1) — a lighter neutral, **not** ivory (§7 G4 "lighter glass"), so the primary stays the one ivory capsule on Annotate |
+  | `.toggle` | track `surface-2`, knob `text` | track `text`, knob **`ground`** (with knob `text` the knob vanishes — `global.css:942-956`) |
+  | `.face-card` | `surface-2` mat + hairline; empty = 2 px dashed `border` | captured = 2 px `live` ring + `live` check badge (`ground` check); selected = 2 px `text` ring |
+  | Edit toolbar text actions | `text`; "Delete n" `error`; disabled 40 % | — |
+  | `.shutter` | `text` fill, `box-shadow: 0 0 0 3px var(--cc-ground), 0 0 0 6px var(--cc-text)` — the iOS gap ring; drop the 4 px border (`text` ring on an `accent` fill is one flat disc) | pressed `accent-pressed` |
+  | `.bar-action` (Edit / Done / +) | `text` — the title's colour; `.bar-action-strong` 600 already separates them | — |
+  | focus-visible | 2 px `text` outline, offset 2 (rule unchanged, value follows the token) | — |
+  | `Ui.WarningRow` Live, `.annotate-dim-row` selected | the only `live-wash` / `live-border` / `live-ink` surfaces | — |
+
+  Flagged / conflict rows keep `error` (`Part.css` `.flag-marker`, `Ui.WarningRow` Error).
+
+**Glass language (`src/global.css`; the §7 rule list G1–G8):**
+- [ ] **G1 ambient light**: `.app-frame { background: radial-gradient(120vmax 80vmax at 0 0,
+  rgba(242,242,240,.14), transparent 60%), radial-gradient(100vmax 70vmax at 100% 100%,
+  rgba(242,242,240,.08), transparent 60%) var(--cc-ground) }`; `.shell` stays transparent.
+  `.app-frame` is `100dvh` and does not scroll, so the wash is viewport-stable without
+  `background-attachment: fixed`. `html, body` keep `--cc-ground`.
+- [ ] **G2 the materials**: real `backdrop-filter` on **exactly two surfaces**, the sticky bar
+  (`.shell-topbar::before`) and the sticky footer (`.shell-footer::before`), both with
+  `--glass-fill-strong` (70 %): content does pass under them — the annotate stage, face cards,
+  thumbnails — and 55 % over a white photo composites to (130,131,132), title `text` 3.4:1 and
+  `text-2` 1.7:1; 70 % gives (86,87,88), `text` 6.5:1 (7.4:1 on the pale fixture; today's 72 % is
+  5.5:1). Everything else is the **hairline material**: `background: var(--glass-fill)` (55 %,
+  translucent, **no filter** — nothing is behind an in-flow surface but the G1 wash, and a blur of
+  a smooth gradient is the gradient), 1 px `--glass-stroke`, `inset 0 1px 0 --glass-highlight` on
+  capsules, chips, cards, `.list-group`, `.panel` and `.a2hs-hint` (not on fields, the segmented
+  track or the toggle track, which keep `field` / `surface-2` and the stroke only). Inner list
+  dividers stay `border`. No route-scoped selector: every `.list-group` — Parts groups, search
+  sections, the picker's listbox, the create form's grouped fields, Capture's `custom-card` /
+  `recapture-card` (they use the class directly, `Capture.res:851, :904`), Settings, Debug — is the
+  same material. Inside the annotate `.panel`: `.annotate-tools { background: transparent }` (an
+  opaque band inside a translucent panel otherwise), the Dimensions list keeps its opaque
+  `surface-2`. Nothing blurs inside anything that blurs. Blur count per screen, for the LOGBOOK:
+
+  | Screen | Blurred surfaces |
+  |---|---|
+  | Parts root, folder view, search results, picker, create form | bar (1); + footer toolbar while editing (2) |
+  | Part, Capture, Annotate, Settings, Debug | bar (1) |
+
+- [ ] **G3 primary** = ivory fill, not glass (§7's glass + 55 % hairline primary reads as a large
+  secondary in `mono-glass.png`). **G4** selected segment = 16 % ink neutral (table above).
+- [ ] **G5 fewer words**: `Ui.ListGroup` gains `~headerHidden: bool=false`, which puts
+  `visually-hidden` on the `<h2>`. Clip-hidden headings stay in the accessibility tree (the two
+  adjacent `role="list"`s keep their names for VoiceOver) and in every existing e2e
+  `getByRole('heading')` count. Passed by: PartsList's "Folders" and "Parts" groups
+  (`PartsList.res:1718, :1723`) and Part's "Features · n" (`Part.res:428`; the empty state is a
+  separate branch, `Part.res:426`, so nothing reads oddly). Kept visible: search-result path
+  headers (`parts-section-header`, they *are* the information), Settings' "Default tolerances" /
+  "Diagnostics", Debug's "Timers" / "Viewport", the picker's "Choose Folder" title.
+- [ ] **G6** Lucide icons at `stroke-width 1.5`: `Icon.res:164` is a literal `strokeWidth="2"`,
+  no prop — change the literal; `.face-card-check svg { stroke-width: 3 }` still wins (CSS beats
+  presentation attributes). Size unchanged. **G7** bar hairlines at 18 % ink (`--glass-stroke`,
+  already the bar's border). Capsule and group radii unchanged.
 - [ ] **G8 fallbacks**: `@supports not (backdrop-filter)` and
-  `@media (prefers-reduced-transparency: reduce)` → the four blurred surfaces become opaque
-  `surface` with the same hairline. `prefers-reduced-motion` handling unchanged.
+  `@media (prefers-reduced-transparency: reduce)` cover the two blurred surfaces (the existing
+  blocks, `global.css:284-306`, unchanged — don't extend them to `.list-group` / `.panel`).
+  `prefers-reduced-transparency` never fires on iOS (caniuse, 2026-09-18: Safari / iOS "not
+  supported" through 27.x; Chrome 118+; Firefox behind a flag) — but **`prefers-contrast: more`
+  does** map to iOS "Increase Contrast", so add `@media (prefers-contrast: more)`: the two blurred
+  surfaces opaque `surface`, no filter; `--glass-stroke` → 28 % ink. `prefers-reduced-motion`
+  handling unchanged. An in-app "Reduce glass" toggle (the only working fallback on the target
+  platform) is **A15**, noted in §13, not built here.
+- [ ] Colour-literal sweep, beyond the canvas grep: `.face-card-scrim`'s gradient
+  `rgba(23,26,30,…)` → `rgba(14,15,17,…)` (`global.css:1284`); the `<select>` chevron data-URI
+  `stroke='%23b9b5ab' stroke-width='2'` → `%23A9ABAF`, `1.5` (`global.css:728`); `Draw.scrim`
+  (below). `e2e/specs/capture.spec.js:63, :65` are fixtures — leave them.
 
 **Canvas and export overlays (A3 in monochrome):**
-- [ ] Every hard-coded overlay colour in the annotate canvas and the export renderer
-  (`grep -rn "#[0-9a-fA-F]\{6\}\|rgba\?(" src/app/annotate src/app/export`) moves into one
-  `Overlay` palette module (constants, one place; the canvas cannot read CSS variables cheaply):
-  active line, handles, pill fill and text = `text #F2F2F0` on the ground@85 % halo; **saved**
-  dimensions = `text` at 70 % for line and handles, pill text at 100 % (§7: 60 % pill text drops to
-  3.4:1 on a pale photo); the snap ring = `live`; flagged / conflict = `error`. Measured in §7:
-  active 11.9 / 16.2 on the pale / dark fixture (was 4.95 / 6.84 in orange).
-- [ ] `export.spec.js` "render legibility (A3)": the amber window `r > 200 && g ∈ [100,190] &&
-  b < 90` becomes an **ink** window — a pixel with `min(r,g,b) ≥ 200` and `max−min ≤ 20` — and the
-  halo check stays (all channels `< 60`); test names say "ink line + halo", not "amber". The
-  white-photo case must still find both (the halo is what makes ink visible on white).
+- [ ] Every hard-coded overlay colour in `Draw.res:24-30` and `Render.res:205-209` moves into
+  **`src/app/Overlay.res`** (app level — both `annotate/` and `export/` read it; the canvas cannot
+  read CSS variables cheaply): `ink "#F2F2F0" · inkOn "#0E0F11" · halo "rgba(14,15,17,0.85)" ·
+  scrim "rgba(14,15,17,0.8)" · live "#C9CBCE" · savedAlpha 0.7`. `Draw.colourFor` / `pill` and
+  `Render.*Color` read it. No flagged / conflict colour: nothing on the canvas or in the export
+  paints those states (they are the Part page's rows, `Part.css` `.flag-marker` and
+  `Ui.WarningRow`, which keep `error`).
+
+  | Style | Line, extensions, arrowheads | Handle | Pill |
+  |---|---|---|---|
+  | Pending | `ink` over `halo`, alpha 1 | disc `ink`, ring and dot `inkOn` (with the style colour the ring and dot vanish into the disc) | `ink` fill, 1 px `inkOn` border, `inkOn` label (17:1) |
+  | Selected | as Pending | as Pending | `scrim` fill, `ink` label |
+  | Dimmed | at `savedAlpha` 0.7, halos included (`dimension`'s `globalAlpha` group) | none (as today) | drawn **after** `restore`, at alpha 1: `scrim` fill, `ink` label — inside the group a 100 % label on a 70 % pill is 3.9:1 on white |
+  | Snap ring | `live` over `halo` | — | — |
+  | Export (`Render`) | `halo`, `ink`, alpha 1 | `ink` / `inkOn` | `ink` fill, `inkOn` border and label |
+
+  Measured (white / pale / black photo, line vs halo): active 11.3 / 12.0 / 17.4 (orange was
+  4.95 / 6.84); dimmed at 0.7 → 4.6 / 5.0 / 8.5 (0.6 gives 3.5 / 3.8 — §7's numbers, confirmed);
+  saved label on the full-alpha scrim pill 9.4 / 10.3 / 17.5. Pending and Selected now differ by
+  the pill alone (DESIGN §5 says so).
+- [ ] `export.spec.js` "render legibility (SPEC §8a A3)": `sampleLegibility` returns
+  `{sawInk, sawHalo}`. `isHalo = r < 70 && g < 70 && b < 70` (unchanged — the code's 70, not 60,
+  for the documented rounding margin; the halo over the new ground is (50,51,53) on white,
+  (12,13,14) on black). `isInk = [r, g, b].every(c => c >= 225 && c <= 250) && max − min <= 12`
+  (the line is exactly (242,242,240); white is 255, so an unbounded `≥ 200` window would pass the
+  white photo with no line drawn). `sawInk` is true only for an ink pixel with a halo pixel at a
+  smaller y **and** one at a larger y in the same column (white → halo → ink → halo → white).
+  Titles: `` `ink line + halo are both visible on an all-${bg.name} photo` `` for `white` and
+  `black`; the comment block `:429-439` rewritten for ink. `RenderTest.res` gains one tabled case:
+  `contrastRatio(Overlay.inkOn, Overlay.ink) ≥ 4.5`.
 
 **Icon (`scripts/make-icons.mjs`):**
-- [ ] The **m2** mark from `brand-mono`: one ink, one weight — a circle r 300 centred (512, 512)
-  with a 72 px stroke, and a ⌀ dimension across it: line from x 300 to 724 at y 512, 72 px round
-  caps, filled arrowheads 120 × 104 with tips 8 px inside the ring, no ticks; ink `#F2F2F0` on
-  `#0E0F11`, inside the 80 % safe area; favicon `rx 224`; PNGs full-bleed. The napkin mark stays
-  in the doc as the expressive variant, not shipped. Remove-and-re-add on the phone to see it.
+- [ ] The **m2** lens from `brand-mono`, re-weighted for the tile (the board's stroke 44 with open
+  chevrons is `brand-mono.html:108-110`; the numbers here keep its proportions at a system-glyph
+  weight and fill the heads): one ink, one weight — a circle r 300 centred (512, 512) with a
+  **64 px** stroke (outer r 332: 180–844; inner r 268), and a ⌀ dimension across it: line from
+  **x 316 to 708** at y 512 with round caps (ends 284–740; 40 px clear of the inner ring = 0.6 px at
+  16 px, 2.3 px at 60 — with a 72 stroke and a 300–724 line the gap is 16 px = 0.25 px at 16 and
+  the favicon reads as θ), filled arrowheads **112 × 96** with tips at x 252 and 772 (8 px inside
+  the inner ring; bases at 364 / 660, where the ring's inner half-height is 223), no ticks; ink
+  `#F2F2F0` on `#0E0F11`. Safe zone: the mark sits 78 px inside Android's **maskable circle, ⌀ 80 %
+  (r 410; 102–922 on the axes)**; iOS only clips corners. (The "205–819" figure is the 60 % box;
+  `make-icons.mjs:25`'s "250–774 … 80 %" is 51 % — fix that comment to "the maskable 80 % circle,
+  r 410".) Favicon `rx 224`; PNGs full-bleed. The napkin mark stays in the doc as the expressive
+  variant, not shipped. Remove-and-re-add on the phone to see it.
 
 **Docs and gates:**
-- [ ] `DESIGN.md` §2 token table replaced (mono), §11.1 "Materials" rewritten around the blur
-  budget and the hairline material, §11.2 per-screen notes where headers vanish;
+- [ ] `DESIGN.md` §2 token table replaced (mono, plus the `text-3` rule), §4 rows Primary button,
+  Chip, Segmented control, Face card, Shutter, Scrim pill and Warning row rewritten from the table
+  above, §5 (`:103-106`) colours rewritten from the overlay table, §11.1 "Colour" (the two-accent
+  rule becomes the fill rule), "Materials" (two blurred surfaces + the hairline material), "Icons"
+  (1.5), "Interaction feel" (`accent-pressed` is now grey), §11.2 per-screen notes (Parts / Part
+  headers hidden, Capture's selected ring, Annotate's capsule, Settings' toggle);
+  `docs/testids.md:47-53, :69-70, :141` (header wording: hidden, not absent);
   `docs/design/palettes-2026-09-17.md` gets a one-line pointer to §7 ("superseded by A14");
-  `branding-snapkin.md` gains "§8 Adopted" (what shipped, what stayed a mock); LOGBOOK section with
-  the per-screen blur count and every contrast pair actually measured on the built CSS (a small
-  node script over the tokens is fine).
+  `branding-snapkin.md` gains "§8 Adopted" (what shipped, what stayed a mock, and that the Glass
+  column — not Graphite — was taken, with the `text-3` reason); §13 gains the A15 "Reduce glass"
+  line; LOGBOOK section with the blur table above and every contrast pair actually measured on the
+  built CSS (a small node script over the tokens is fine).
 - [ ] Screenshot tour regenerated (all of `01`–`17`) and looked at; icon PNGs regenerated.
-- [ ] Playwright: the full suite green twice; only the A3 legibility test changes as above; `a11y`
-  and `shell` unchanged (Debug/Settings headers kept). Unit suite unchanged.
-- [ ] **Not in A14**: a light appearance; a theme toggle; Paper; blur on more than four surfaces;
-  any change to `features.json`, `parameters.csv`, the export PNG's geometry, or the skill.
+- [ ] Playwright: the full suite green twice. **Changes:** `export.spec.js` "render legibility
+  (SPEC §8a A3)" — both tests (titles, `sampleLegibility` `:440-453`, comment `:429-439`) as above.
+  **Unchanged, by construction of G5:** `parts.spec.js` "the root lists only its own parts…"
+  (`:191-192`) and "one folder per screen…" (`:747`, `:782-783`) — the heading counts hold with
+  `headerHidden`; `shell.spec.js` (Timers / Viewport), `a11y.spec.js` (`features-list` by testid,
+  no heading), `faces.spec.js` / `annotate.spec.js` (`aria-pressed` attribute assertions, not
+  style), `capture.spec.js`. Unit suite unchanged except the one added `RenderTest` case.
+- [ ] **Build split.** **A14a** (sonnet): `src/theme.css`, `src/global.css`,
+  `src/app/pages/Annotate.css`, `src/app/pages/Capture.css`, `src/app/components/Icon.res:164`,
+  `src/app/components/Ui.res` (`headerHidden`), `src/app/pages/PartsList.res:1718, :1723`,
+  `src/app/pages/Part.res:428`, `index.html:7`, `public/manifest.json:9-10`; its LOGBOOK section.
+  **A14b** (sonnet, parallel — disjoint files): `src/app/Overlay.res` (new),
+  `src/app/annotate/Draw.res`, `src/app/export/Render.res`, `src/app/export/tests/RenderTest.res`,
+  `e2e/specs/export.spec.js:429-499`, `scripts/make-icons.mjs` + `public/` icons; then, **after
+  A14a lands**, the docs bullet above and its own LOGBOOK section (both agents append to LOGBOOK —
+  serialize that). Conductor: tour `01`–`17`, suite twice.
+- [ ] **Not in A14**: a light appearance; a theme toggle; Paper; the "Reduce glass" toggle (A15);
+  blur on anything but the bar and footer; any change to `features.json`, `parameters.csv`, the
+  export PNG's geometry, or the skill.
