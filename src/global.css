@@ -1665,3 +1665,126 @@ html[data-nav="fade"]::view-transition-new(root) {
     animation: none !important;
   }
 }
+
+/* ── 16. Size classes and pointer hover (SPEC §8a A17-i) ─────────────── */
+/* Medium (≥ 600) and expanded (≥ 1024) — the table is theme.css's header;
+   the two numbers appear here only in the `@media` preludes. Nothing in
+   this section touches compact: every rule is inside a `min-width` block
+   or the pointer block, and the chromium e2e project (390 × 844,
+   `hasTouch`) matches neither (review B3). */
+
+@media (min-width: 600px) {
+  /* The column is the Shell's, not the page's (review S2): `.shell-content`
+     is one element in Shell.res a page cannot reach, and the pages want
+     three widths. `Main.view` maps each page to `Shell.column`, rendered as
+     `data-column` on `.shell`; `--col` is what the content, the Large
+     Title and the two bars read. `wide` stays 720 here — 1120 only at
+     expanded, below. `bleed` is Annotate's (A17-ii). `.shell-content`
+     keeps its padding; a page that wants the edges keeps undoing it with
+     negative margins as Annotate does today. */
+  .shell {
+    --col: var(--cc-column);
+  }
+
+  .shell[data-column="narrow"] {
+    --col: var(--cc-column-narrow);
+  }
+
+  .shell[data-column="bleed"] {
+    --col: 100%;
+  }
+
+  .shell-content,
+  .shell-large-title {
+    width: 100%;
+    max-width: var(--col);
+    margin-inline: auto;
+  }
+
+  /* The nav bar and the footer toolbar stay full-bleed (the glass strip
+     spans the window); their *contents* align to the column with one
+     padding expression and no DOM change (review S8, measured at 1440:
+     the leading button at x 376 against content at 384, the 24 px glyph
+     at 386). `100%` resolves against `.shell`'s content width, so the
+     scrollbar is excluded consistently. Each bar keeps its own compact
+     floor — `space-2` for the bar's icon buttons, `page-x` for the
+     footer's text actions — for the widths where the column is wider
+     than the window (600–712 px). The ambient wash keeps filling the
+     frame outside the column, so a wide window is not a black void with
+     a strip in it. */
+  .shell-topbar {
+    padding-left: max(
+      calc(var(--cc-space-2) + env(safe-area-inset-left)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+    padding-right: max(
+      calc(var(--cc-space-2) + env(safe-area-inset-right)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+  }
+
+  .shell-footer {
+    padding-left: max(
+      calc(var(--cc-page-x) + env(safe-area-inset-left)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+    padding-right: max(
+      calc(var(--cc-page-x) + env(safe-area-inset-right)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+  }
+
+  /* HIG: a button does not span a tablet. The primary capsule (Export)
+     caps at 400, centred, and the secondary block capsules (New Folder,
+     From library) with it, so the two never disagree on one screen. */
+  .btn-block {
+    max-width: 400px;
+    margin-inline: auto;
+  }
+
+  /* 3-up face and kind grids in the 720 column (216 px cards); `.face-grid-
+     dense` already is. Cards keep `aspect-ratio: 1`. The Part page's
+     expanded gallery switches to `auto-fill` in Part.css. */
+  .face-grid,
+  .face-grid-dense {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .shell[data-column="wide"] {
+    --col: var(--cc-column-wide);
+  }
+}
+
+/* Pointer devices only — never on touch (a touch context reports
+   `hover: none`, review B3). Rows, cards, chips and the hairline capsules
+   get `--glass-fill-hover`, one step *up* the surface scale, so rest →
+   hover → press reads dark → lighter → opaque surface-2 (review S1:
+   `--glass-fill-strong` composites *darker* than rest). Selected states
+   (`aria-pressed`, `aria-selected`, the empty dashed card) are never
+   repainted; the primary and live fills get the cursor only. Timing rides
+   the existing press transition (`.btn` already transitions
+   `background-color` at `--cc-motion-press`; a second `transition` here
+   would lose it). Press scales and focus rings unchanged. */
+@media (hover: hover) and (pointer: fine) {
+  .list-row:has(> .list-row-link):hover,
+  button.list-row:hover:not([aria-selected="true"]),
+  .face-card:hover:not(.face-card-empty),
+  .chip:hover:not([aria-pressed="true"]),
+  .btn-secondary:hover,
+  .btn-icon:hover {
+    background: var(--glass-fill-hover);
+  }
+
+  /* `button.list-row:active` (§4, 0-2-1) would lose to the hover selector
+     above (0-3-1): the press stays the opaque surface-2. */
+  button.list-row:hover:active {
+    background: var(--cc-surface-2);
+  }
+
+  .face-card,
+  .list-row-link {
+    cursor: pointer;
+  }
+}

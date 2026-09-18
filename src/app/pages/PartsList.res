@@ -1092,6 +1092,13 @@ let title = (model: model): string =>
   }
 let largeTitle = (model: model): bool => model.picker->Option.isNone && model.folder == ""
 
+// SPEC §8a A17 (review S2): the Shell's reading column at medium and
+// expanded — the create form and the folder picker take the narrow one
+// (560), the list itself the 720 column. `Main.view` maps it beside
+// `largeTitle`; compact ignores it.
+let column = (model: model): Shell.column =>
+  model.picker->Option.isSome || model.form->Option.isSome ? Shell.Narrow : Shell.Column
+
 // A13: Back to the parent folder — or to the root from a folder that
 // doesn't exist. None at the root, and none while the picker is open (its
 // leading slot is Cancel, and `Shell` renders Back over `leading`).

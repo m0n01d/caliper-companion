@@ -14,14 +14,23 @@ const outDir = process.argv[2] || 'docs/screenshots'
 const baseURL = process.argv[3] || 'http://localhost:3000'
 fs.mkdirSync(outDir, { recursive: true })
 
+// TOUR_VIEWPORT=1440x900 TOUR_DSF=1 shoots the same tour at another size
+// (SPEC §8a A17); the default stays the SPEC's phone viewport.
+const viewport = (() => {
+  const m = /^(\d+)x(\d+)$/.exec(process.env.TOUR_VIEWPORT || '')
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 390, height: 844 }
+})()
+// TOUR_ONLY=12,08,04 (A17): write only the shots whose name starts with one
+// of these ids, as `${W}x${H}-<name>.png`. The whole tour still runs —
+// later steps depend on earlier seeding — and every `shot()` still settles
+// the page, so the steps after a skipped shot see the same timing.
+const only = (process.env.TOUR_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean)
+const wanted = (name) => only.length === 0 || only.some((id) => name.startsWith(id))
+const fileFor = (name) => (only.length === 0 ? `${name}.png` : `${viewport.width}x${viewport.height}-${name}.png`)
+
 const browser = await chromium.launch()
 const context = await browser.newContext({
-  // TOUR_VIEWPORT=1440x900 TOUR_DSF=1 shoots the same tour at another size
-  // (A17 responsive work); the default stays the SPEC's phone viewport.
-  viewport: (() => {
-    const m = /^(\d+)x(\d+)$/.exec(process.env.TOUR_VIEWPORT || '')
-    return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 390, height: 844 }
-  })(),
+  viewport,
   deviceScaleFactor: Number(process.env.TOUR_DSF || 2),
   isMobile: true,
   hasTouch: true,
@@ -39,7 +48,8 @@ const shot = async (name) => {
       document.getAnimations().every((a) => a.playState !== 'running'),
   )
   await page.waitForTimeout(150)
-  const p = path.join(outDir, `${name}.png`)
+  if (!wanted(name)) return
+  const p = path.join(outDir, fileFor(name))
   await page.screenshot({ path: p })
   console.log('wrote', p)
 }
@@ -112,7 +122,9 @@ await expectVisible(byId('export'))
 const dl = page.waitForEvent('download')
 await byId('export').click()
 const d = await dl
-await d.saveAs(path.join(outDir, d.suggestedFilename()))
+// The zip lands beside the phone shots (the PR's export sample); a filtered
+// wide run writes only its PNGs.
+if (only.length === 0) await d.saveAs(path.join(outDir, d.suggestedFilename()))
 await shot('11-part-exported')
 await page.goto(`${baseURL}/#/`)
 
@@ -179,6 +191,12 @@ await page.locator('[data-testid="folder-rename"][data-path="Miata/Interior"]').
 await expectVisible(byId('folder-rename-input'))
 await shot('15-folder-rename')
 await page.goto(`${baseURL}/#/`)
+// Wait for the root to be mounted before typing (the same wait as `12`):
+// `hashchange` lands asynchronously and, since A16, inside a view
+// transition, so a `fill` issued straight after `goto` runs first and
+// `PartsList.FolderChanged("")` then clears the query — reliably at
+// 1440 × 900, where the transition's snapshot is bigger (A17-i found it).
+await expectVisible(page.locator('[data-testid="folder-row"][data-path="Miata"]'))
 await byId('parts-search').fill('clip')
 await expectVisible(byId('parts-section-header'))
 await shot('17-parts-search')
