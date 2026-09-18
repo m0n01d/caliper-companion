@@ -217,3 +217,104 @@ this section and `SPEC.md` acceptance criteria differ, the spec still wins.
 
 ### 11.3 What stays from §1–§10
 Principles (§1), the `cc-` tokens (§2 colours, spacing, radii — §11.1 overrides typeface and button shape), layout rules (§3), canvas overlay rules (§5, as amended by SPEC §8a A3), states (§6), content rules (§7), edge cases (§8), accessibility (§9). §10's open items are now decided: Calipers screen collapsed into Settings; Lucide; dark only.
+
+## 12. Size classes (SPEC §8a A17, 2026-09-18)
+
+Three widths of the layout viewport — HIG's compact / regular, spelled as three because the web has
+no split view until A17b. Plain `@media (min-width: …)` queries, no container queries; the two
+numbers live once in `theme.css`'s header and appear elsewhere only in `@media` prelude lines.
+Reviewed before the build in `docs/design/a17-adaptive-review.md`; the boards are
+`docs/design/mockups/adaptive-after-*.png`.
+
+| Class | Width | Devices | `--cc-page-x` |
+|---|---|---|---|
+| **compact** | < 600 px | every phone in portrait | 16 |
+| **medium** | 600–1023 px | iPad portrait (mini 744, iPad 820, Air / Pro 11 834), iPhone landscape (667–956), narrow windows | 20 |
+| **expanded** | ≥ 1024 px | iPad landscape (1133–1210), 13-inch iPads in both orientations (1024 / 1032 wide in portrait), desktop | 24 |
+
+Compact is §1–§11 exactly as they were: nothing binds under 600, and the 390 × 844 screenshots in
+`docs/screenshots/` are byte-identical before and after A17.
+
+### 12.1 The column
+
+The column is the Shell's, not the page's: `Shell ~column` (`Column | Narrow | Wide | Bleed`) lands
+as `data-column` on `.shell`, and `.shell-content` and the Large Title centre at that width
+(`--col`) with `margin-inline: auto`. The nav bar and the footer toolbar stay full-bleed — the glass
+strip spans the window — and their *contents* (leading / title / trailing; Move / Delete) align to
+the column with one padding expression. The ambient wash keeps filling the frame outside the column,
+so a wide window is not a black void with a strip in it.
+
+| Width | Token | Screens |
+|---|---|---|
+| 720 | `--cc-column` | Parts root / folder / search, Capture |
+| 560 | `--cc-column-narrow` | the create form, the folder picker, Settings, Debug |
+| 1120 (720 at medium) | `--cc-column-wide` | Part |
+| 100 % | `bleed` | Annotate |
+| 420 | `--cc-panel` | Annotate's side panel at expanded |
+
+`--cc-bar-height` (`--cc-tap-min` + `env(safe-area-inset-top)`) names the nav bar's height for the
+sticky offsets and the Annotate grid. At ≥ 600 `.btn-block` caps at 400 and centres — the primary
+capsule (Export) and the secondary block capsules (New Folder, From library) alike, so the two never
+disagree on one screen (HIG: a button does not span a tablet).
+
+### 12.2 Per screen
+
+- **Parts** (medium, expanded): the 720 column; rows, sections, New Folder and the Edit toolbar
+  unchanged inside it. The create form and the picker take the narrow column. A persistent sidebar
+  browser beside the detail is A17b.
+- **Part** — medium: the face grid 3-up (216 px cards in the 720 column); features and Export in the
+  column, Export capped at 400, the timer centred under it. Expanded: **two columns** in the wide
+  column — the gallery (`auto-fill` of ≥ 200 px cards: 3 × 212 at 1440, "+ Capture" last) and a
+  320–380 px aside holding the features group, Export and the timer, **sticky** at `bar + page-x`
+  with `align-self: start` (a grid child stretched to the gallery's row has no room to stick). Edit
+  mode's face list lands in the gallery column. `Part not found` / `Loading` stay single-column.
+- **Capture** (medium, expanded): the 720 column, the kind grid 3-up; the shutter block and From
+  library centred at 480. There is no live preview to enlarge — the shutter is a file input, and the
+  cards carry the captured / selected state a chip row would lose.
+- **Annotate** — medium: the stage grows to 55 % of the visual viewport, 300–720 px (649 on an 820 ×
+  1180 iPad; the 300 floor keeps an iPhone in landscape from getting less than compact); the panel
+  and the Dimensions list below it, edge to edge. Expanded **and landscape or square**
+  (`(min-aspect-ratio: 1/1)` — a 13-inch iPad in portrait stays stacked, where side by side would
+  put a landscape photo in a third of a 604 × 1322 cell): **side by side**. `.annotate` is a grid of
+  the stage and the 420 panel filling the visual viewport under the bar and fitting `.shell`
+  exactly — all four of `.shell-content`'s paddings undone, so the page has nothing to scroll; the
+  stage sits in the page margin (972 × 808 at 1440 × 900, 712 × 728 at 1180 × 820); the panel has
+  its own `overflow-y: auto`, a hairline on its left edge only, square corners, the tools strip at
+  its top, then Reading / Name / Kind / Tolerance / Save / Clear / Dimensions. The grid tracks
+  `--vv-height`, not `100dvh`: when the on-screen keyboard shows, iPadOS shrinks only
+  `visualViewport`, so the stage cell shrinks and the panel scrolls with the reading field at its
+  top; a hardware keyboard moves nothing. The canvas sizes from its box (`ResizeObserver`), the A6
+  fit re-fits, the snap radii stay CSS px through the fit scale. A portrait photo in the desktop
+  cell is still pillarboxed — inherent to a landscape cell, and 2.7 × taller than before. Wheel /
+  trackpad zoom at the cursor is A17b.
+- **Settings / Debug**: the narrow column.
+
+### 12.3 Pointer and keyboard
+
+Under `(hover: hover) and (pointer: fine)` — never on touch — rows, cards, chips and the hairline
+capsules hover to `--glass-fill-hover` (`surface-2` at the hairline alpha, one step *up* the surface
+scale, so rest → hover → press reads dark → lighter → opaque) and `cursor: pointer`; selected states
+(`aria-pressed`, `aria-selected`, the empty dashed card) are never repainted; the primary and live
+fills get the cursor only. Timing is the existing press transition. **Escape** closes whichever
+take-over or inline editor is open, outermost first — Parts: the picker's New Folder field, the
+picker, the create form, the Delete confirm strip, a row's rename, the folder rename, the root New
+Folder field; Part: the Remove confirm; Capture: the recapture confirm, then the custom card — each
+through the msg its own Cancel control sends, so focus lands where that Cancel puts it. One document
+listener (`WebApi.Keyboard`, a `Main` subscription in the shape of `Route.subscribe`); a control
+with its own Escape claims the key with `preventDefault`. Arrow keys in lists and the picker are
+A17b.
+
+### 12.4 What never changes
+
+- The **type scale** (§11.1): HIG does not scale body text by size class — the Large Title stays
+  34 px, the reading value 38 px, inputs ≥ 16 px.
+- The **tokens** (§2, §11.1): colours, spacing, radii, shapes. Only `--cc-page-x` steps (16 / 20 /
+  24) and the widths above are new.
+- The **blur budget** (§11.1 "Materials"): still exactly two blurred surfaces, the bar and the Edit
+  toolbar. The Annotate panel stays the hairline material with no filter in every column.
+- The **export PNG** and `features.json`: rendered from the photo, never the viewport — identical in
+  every class.
+- The **scroll model** (§3): `.shell` is the one scroll container; the Annotate panel's own scroll at
+  expanded is the single exception, and the page then has nothing left to scroll. No
+  `position: fixed`, no container queries, no `transform` or `overflow` on an ancestor of the sticky
+  bars.
