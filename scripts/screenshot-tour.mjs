@@ -101,7 +101,6 @@ const d = await dl
 await d.saveAs(path.join(outDir, d.suggestedFilename()))
 await shot('11-part-exported')
 await page.goto(`${baseURL}/#/`)
-await shot('12-parts-list')
 
 // SPEC §8a A12a: the folder picker from the create form — two nested
 // folders made through New Folder (each nests under the selection), then
@@ -120,9 +119,7 @@ await byId('folder-new-name').fill('Dashboard')
 await shot('13-folder-picker')
 
 // SPEC §8a A12b: finish that part in Miata / Interior, add a second one
-// there and an empty Archive (made in the picker, then Cancelled), then
-// Edit mode with two rows checked — the bottom toolbar reads Move 2 /
-// Delete 2 — and one folder header in inline rename.
+// there and an empty Archive (made in the picker, then Cancelled).
 await byId('folder-new-cancel').click()
 await byId('folder-picker-done').click()
 await byId('part-create').click()
@@ -143,12 +140,32 @@ await byId('folder-new-name').fill('Archive')
 await byId('folder-new-create').click()
 await byId('folder-picker-cancel').click()
 await page.getByRole('button', { name: 'Cancel' }).click()
+
+// SPEC §8a A13: the list is a folder browser. The root (Norcold, plus the
+// folder rows Archive and Miata); Miata / Interior as a pushed screen; Edit
+// mode there with both rows checked — the bottom toolbar reads Move 2 /
+// Delete 2; the Interior row in inline rename from inside Miata; and a
+// search from the root, whose results are the flat full-path sections.
+await page.goto(`${baseURL}/#/`)
+await expectVisible(page.locator('[data-testid="folder-row"][data-path="Miata"]'))
+await shot('12-parts-list')
+await page.goto(`${baseURL}/#/f/Miata/Interior`)
+await expectVisible(byId('part-row').first())
+await shot('16-parts-folder')
 await byId('parts-edit').click()
+await byId('part-select').nth(0).check()
 await byId('part-select').nth(1).check()
-await byId('part-select').nth(2).check()
 await page.evaluate(() => document.activeElement?.blur())
 await shot('14-parts-edit-toolbar')
+await byId('parts-edit').click()
+await page.goto(`${baseURL}/#/f/Miata`)
+await expectVisible(page.locator('[data-testid="folder-row"][data-path="Miata/Interior"]'))
+await byId('parts-edit').click()
 await page.locator('[data-testid="folder-rename"][data-path="Miata/Interior"]').click()
 await expectVisible(byId('folder-rename-input'))
 await shot('15-folder-rename')
+await page.goto(`${baseURL}/#/`)
+await byId('parts-search').fill('clip')
+await expectVisible(byId('parts-section-header'))
+await shot('17-parts-search')
 await browser.close()

@@ -113,17 +113,20 @@ test.describe('parts', () => {
   })
 })
 
-// SPEC §8a A10 — folders. The list groups parts into one inset section per
-// folder (root first, never with a header), a search field filters by name
-// or path, and the shared create/rename form's Folder row moves a part.
-// Named parts per docs/design/a10-folders-review.md S7 so "search `bezel`
-// filters to one" is a real assertion.
+// SPEC §8a A10 — folders. Every part carries a path; a search field filters
+// by name or path, and the shared create/rename form's Folder row moves a
+// part. Named parts per docs/design/a10-folders-review.md S7 so "search
+// `bezel` filters to one" is a real assertion. A13 made the list a folder
+// browser: one folder per screen (`#/`, `#/f/<path>`), `folder-row`s
+// (`data-path`) for the subfolders, and A10's flat full-path sections
+// survive as search results only.
 //
 // A12a: the Folder field is a picker. `pickFolder` walks a path's segments
 // — selecting the `folder-option` when it exists, else making it with New
 // Folder (a new folder nests under whatever is selected, so the walk keeps
 // the parent selected) — then taps Done.
 const optionFor = (page, path) => page.locator(`[data-testid="folder-option"][data-path="${path}"]`)
+const folderRow = (page, path) => page.locator(`[data-testid="folder-row"][data-path="${path}"]`)
 
 async function pickFolder(page, folder) {
   await page.getByTestId('part-folder-row').click()
@@ -163,7 +166,7 @@ async function createPartIn(page, name, folder) {
 }
 
 test.describe('parts — folders (SPEC §8a A10)', () => {
-  test('sections with counts, root first and headerless; search filters; rename moves and re-sorts', async ({
+  test('the root lists only its own parts and its subfolders; search is flat and global; rename moves into a folder', async ({
     page,
   }) => {
     await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
@@ -174,18 +177,22 @@ test.describe('parts — folders (SPEC §8a A10)', () => {
     // Root: no subtitle at all.
     await expect(page.locator('.shell-subtitle')).toHaveCount(0)
 
+    // A13: the root is a folder screen — Hinge pin and the Miata row (its
+    // meta counts direct children only), nothing from inside Miata, and no
+    // flat section anywhere.
     await page.goto('/')
-    await expect(page.getByTestId('part-row')).toHaveCount(3)
-    const sections = page.getByTestId('parts-section')
-    await expect(sections).toHaveCount(2)
-    // Root section first and headerless: exactly one header, the folder's.
-    await expect(page.getByTestId('parts-section-header')).toHaveCount(1)
-    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 2')
-    await expect(sections.nth(0).getByTestId('part-row')).toHaveCount(1)
-    await expect(sections.nth(0)).toContainText('Hinge pin')
-    await expect(sections.nth(1).getByTestId('part-row')).toHaveCount(2)
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('part-row')).toContainText('Hinge pin')
+    await expect(page.getByTestId('folder-row')).toHaveCount(1)
+    await expect(folderRow(page, 'Miata')).toContainText('Miata')
+    await expect(folderRow(page, 'Miata')).toContainText('1 folder')
+    await expect(page.getByTestId('parts-section')).toHaveCount(0)
+    // Both groups render, so both carry a header.
+    await expect(page.getByRole('heading', {name: 'Folders', level: 2})).toHaveCount(1)
+    await expect(page.getByRole('heading', {name: 'Parts', level: 2})).toHaveCount(1)
 
-    // Search: live, case-insensitive, name or path; sections preserved.
+    // Search: live, case-insensitive, name or path, every folder — A10's
+    // flat sections with full-path headers.
     const search = page.getByTestId('parts-search')
     await expect(search).toHaveAttribute('type', 'search')
     await search.fill('bezel')
@@ -200,13 +207,16 @@ test.describe('parts — folders (SPEC §8a A10)', () => {
     await page.getByTestId('parts-search-clear').click()
     await expect(search).toHaveValue('')
     await expect(search).toBeFocused()
-    await expect(page.getByTestId('part-row')).toHaveCount(3)
+    // Clearing returns to the root view.
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('parts-section')).toHaveCount(0)
+    await expect(folderRow(page, 'Miata')).toHaveCount(1)
 
     // The rename strip's Folder row opens the picker (A12a); choosing the
-    // existing folder moves the part: the root section disappears and the
-    // moved part re-sorts to the top of its new section (S6).
+    // existing folder moves the part out of the root, and it re-sorts to the
+    // top of its new folder (S6).
     await page.getByTestId('parts-edit').click()
-    await sections.nth(0).getByTestId('part-rename').click()
+    await page.getByTestId('part-rename').click()
     await expect(page.getByTestId('part-rename-input')).toHaveValue('Hinge pin')
     await expect(page.getByTestId('part-folder-row')).toContainText('None')
     await page.getByTestId('part-folder-row').click()
@@ -219,13 +229,15 @@ test.describe('parts — folders (SPEC §8a A10)', () => {
     await expect(page.getByTestId('part-folder-row')).toContainText('Miata / Interior')
     await expect(page.getByTestId('part-folder-row')).toBeFocused()
     await page.getByTestId('part-rename-save').click()
-    await expect(page.getByTestId('parts-section')).toHaveCount(1)
-    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 3')
-    await expect(page.getByTestId('part-row').first()).toContainText('Hinge pin')
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(folderRow(page, 'Miata')).toContainText('1 folder')
 
+    await page.goto('/#/f/Miata/Interior')
+    await expect(page.getByTestId('part-row')).toHaveCount(3)
+    await expect(page.getByTestId('part-row').first()).toContainText('Hinge pin')
     await page.reload()
-    await expect(page.getByTestId('parts-section')).toHaveCount(1)
-    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 3')
+    await expect(page.locator('.shell-title')).toHaveText('Interior')
+    await expect(page.getByTestId('part-row')).toHaveCount(3)
     await expect(page.getByTestId('part-row').first()).toContainText('Hinge pin')
   })
 })
@@ -299,21 +311,26 @@ test.describe('parts — folders — picker (SPEC §8a A12a)', () => {
     await page.getByTestId('part-create').click()
     await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
     await expect(page.locator('.shell-subtitle')).toHaveText('Miata / Interior')
+    // A13: the root shows the Miata row; the part sits two folders down.
     await page.goto('/')
-    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 1')
+    await expect(folderRow(page, 'Miata')).toContainText('1 folder')
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await page.goto('/#/f/Miata/Interior')
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
 
     // A root part, moved through the rename strip's own Folder row.
     await createPartIn(page, 'Hinge pin')
     await page.goto('/')
-    await expect(page.getByTestId('parts-section')).toHaveCount(2)
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
     await page.getByTestId('parts-edit').click()
-    await page.getByTestId('parts-section').nth(0).getByTestId('part-rename').click()
+    await page.getByTestId('part-rename').click()
     await page.getByTestId('part-folder-row').click()
     await optionFor(page, 'Miata/Interior').click()
     await page.getByTestId('folder-picker-done').click()
     await page.getByTestId('part-rename-save').click()
-    await expect(page.getByTestId('parts-section')).toHaveCount(1)
-    await expect(page.getByTestId('parts-section-header')).toHaveText('Miata / Interior · 2')
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await page.goto('/#/f/Miata/Interior')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
   })
 
   test('new-folder field: a/b and ? are rejected inline, a case variant snaps to the existing spelling; Cancel keeps the Name; a created folder persists', async ({
@@ -383,10 +400,10 @@ test.describe('parts — folders — picker (SPEC §8a A12a)', () => {
   })
 })
 
-// SPEC §8a A12b — folder management: Edit mode selects rows for the bottom
-// toolbar's Move (the picker, `ForMove`) and Delete (one confirm strip);
-// section headers rename inline (the subtree follows) and delete when
-// empty; an explicit leaf folder with no parts is a "· 0" section.
+// SPEC §8a A12b — folder management: Edit mode selects part rows for the
+// bottom toolbar's Move (the picker, `ForMove`) and Delete (one confirm
+// strip); subfolder rows (A13) rename inline (the subtree follows) and
+// delete when empty; an explicit empty folder is a row like any other.
 const folderButton = (page, id, path) => page.locator(`[data-testid="${id}"][data-path="${path}"]`)
 
 // A folder made in the picker is a real doc even if the picker is then
@@ -406,7 +423,7 @@ async function createEmptyFolder(page, name) {
 }
 
 test.describe('parts — folders — management (SPEC §8a A12b)', () => {
-  test('an empty folder is a · 0 section; Edit selects rows; Move 2 goes through the picker; Delete 1 through the toolbar', async ({
+  test('an empty folder is a row; Edit selects part rows; Move 2 goes through the picker; Delete 1 through the toolbar', async ({
     page,
   }) => {
     await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
@@ -414,47 +431,55 @@ test.describe('parts — folders — management (SPEC §8a A12b)', () => {
     await createPartIn(page, 'Door card clip')
     await createEmptyFolder(page, 'Archive')
 
-    // Root (headerless), Archive · 0 with its one Footnote row, Miata / Interior · 1.
-    const sections = page.getByTestId('parts-section')
-    await expect(sections).toHaveCount(3)
-    const headers = page.getByTestId('parts-section-header')
-    await expect(headers).toHaveCount(2)
-    await expect(headers.nth(0)).toHaveText('Archive · 0')
-    await expect(headers.nth(1)).toHaveText('Miata / Interior · 1')
-    await expect(page.getByTestId('parts-section-empty')).toHaveText('Empty folder')
-    await expect(sections.nth(1).getByTestId('parts-section-empty')).toHaveCount(1)
+    // Root (A13): two part rows over the folder rows Archive ("Empty") and
+    // Miata ("1 folder"), by leaf.
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    const folderRows = page.getByTestId('folder-row')
+    await expect(folderRows).toHaveCount(2)
+    await expect(folderRows.nth(0)).toHaveAttribute('data-path', 'Archive')
+    await expect(folderRows.nth(0)).toContainText('Empty')
+    await expect(folderRows.nth(1)).toHaveAttribute('data-path', 'Miata')
+    await expect(folderRows.nth(1)).toContainText('1 folder')
     await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
-    // Search hides an empty folder unless its path matches the query.
+    // Search finds a folder by its own name (a Folders section, meta = where
+    // it lives) and parts in flat full-path sections.
     await page.getByTestId('parts-search').fill('arch')
-    await expect(sections).toHaveCount(1)
-    await expect(headers).toHaveText(['Archive · 0'])
+    await expect(page.getByTestId('folders-list')).toBeVisible()
+    await expect(folderRows).toHaveCount(1)
+    await expect(folderRow(page, 'Archive')).toContainText('Top level')
+    await expect(page.getByTestId('parts-section')).toHaveCount(0)
     await expect(page.getByTestId('parts-search-empty')).toHaveCount(0)
     await page.getByTestId('parts-search').fill('bezel')
-    await expect(sections).toHaveCount(1)
-    await expect(headers).toHaveText(['Miata / Interior · 1'])
+    await expect(folderRows).toHaveCount(0)
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Miata / Interior · 1'])
     await page.getByTestId('parts-search-clear').click()
-    await expect(sections).toHaveCount(3)
+    await expect(folderRows).toHaveCount(2)
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
 
-    // Edit: rows are checkbox rows — no link anywhere in a section — and the
-    // toolbar's actions are disabled until something is checked.
+    // Edit: part rows are checkbox rows — no link in either group — folder
+    // rows carry a pencil and never a checkbox; the toolbar's actions are
+    // disabled until something is checked.
     await page.getByTestId('parts-edit').click()
-    await expect(page.getByTestId('parts-section').getByRole('link')).toHaveCount(0)
-    await expect(page.getByTestId('part-row')).toHaveCount(3)
+    await expect(page.getByTestId('parts-list').getByRole('link')).toHaveCount(0)
+    await expect(page.getByTestId('folders-list').getByRole('link')).toHaveCount(0)
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
     await expect(page.getByTestId('part-delete')).toHaveCount(0)
     await expect(page.getByTestId('parts-move')).toHaveText('Move')
     await expect(page.getByTestId('parts-move')).toBeDisabled()
     await expect(page.getByTestId('parts-delete')).toBeDisabled()
     const checks = page.getByTestId('part-select')
-    await expect(checks).toHaveCount(3)
+    await expect(checks).toHaveCount(2)
     await expect(checks.nth(0)).toHaveAttribute('aria-label', 'Select Door card clip')
+    await expect(page.getByTestId('folder-rename')).toHaveCount(2)
+    await expect(page.getByTestId('folders-list').getByRole('checkbox')).toHaveCount(0)
     // The body is the checkbox's label: tapping the title toggles.
-    await sections.nth(0).getByText('Door card clip').click()
+    await page.getByTestId('parts-list').getByText('Door card clip').click()
     await expect(checks.nth(0)).toBeChecked()
     await checks.nth(1).check()
     await expect(page.getByTestId('parts-move')).toHaveText('Move 2')
     await expect(page.getByTestId('parts-delete')).toHaveText('Delete 2')
     // The pencil is outside the label — it opens the rename strip, no toggle.
-    await sections.nth(0).getByTestId('part-rename').first().click()
+    await page.getByTestId('part-rename').first().click()
     await expect(page.getByTestId('part-rename-input')).toBeFocused()
     await page.getByTestId('part-rename-cancel').click()
     await expect(page.getByTestId('parts-move')).toHaveText('Move 2')
@@ -473,24 +498,35 @@ test.describe('parts — folders — management (SPEC §8a A12b)', () => {
     await page.getByTestId('parts-move').click()
     await optionFor(page, 'Archive').click()
     await page.getByTestId('folder-picker-done').click()
-    await expect(headers).toHaveText(['Archive · 2', 'Miata / Interior · 1'])
-    await expect(sections).toHaveCount(2)
-    await expect(page.getByTestId('parts-section-empty')).toHaveCount(0)
+    // The rows left the root; Archive's row counts them; Edit stays on —
+    // the folder rows are still here to edit.
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(folderRow(page, 'Archive')).toContainText('2 parts')
     await expect(page.getByTestId('parts-live')).toHaveText('Moved 2 parts to Archive')
     await expect(page.getByTestId('parts-move')).toBeFocused()
     await expect(page.getByTestId('parts-move')).toHaveText('Move')
     await expect(page.getByTestId('parts-edit')).toHaveText('Done')
-    // Moving a part into the folder it is already in announces nothing new.
+    await page.getByTestId('parts-edit').click()
+
+    // Inside Archive (the folder change clears the live text): moving a
+    // part into the folder it is already in announces nothing.
+    await folderRow(page, 'Archive').getByRole('link').click()
+    await expect(page).toHaveURL(/#\/f\/Archive$/)
+    await expect(page.locator('.shell-title')).toHaveText('Archive')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await expect(page.getByTestId('parts-live')).toHaveText('')
+    await page.getByTestId('parts-edit').click()
     await checks.nth(0).check()
     await page.getByTestId('parts-move').click()
     await optionFor(page, 'Archive').click()
     await page.getByTestId('folder-picker-done').click()
-    await expect(page.getByTestId('parts-live')).toHaveText('Moved 2 parts to Archive')
     await expect(page.getByTestId('parts-move')).toHaveText('Move')
+    await expect(page.getByTestId('parts-live')).toHaveText('')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
 
     // Delete one: the confirm strip sits in the toolbar, focus lands on its
     // Cancel; confirming removes the row and focuses Edit/Done.
-    await checks.nth(2).check()
+    await checks.nth(1).check()
     await expect(page.getByTestId('parts-delete')).toHaveText('Delete 1')
     await page.getByTestId('parts-delete').click()
     await expect(page.getByTestId('parts-move')).toHaveCount(0)
@@ -503,11 +539,8 @@ test.describe('parts — folders — management (SPEC §8a A12b)', () => {
     await expect(page.getByTestId('parts-delete')).toBeFocused()
     await page.getByTestId('parts-delete').click()
     await page.getByTestId('parts-delete-confirm').click()
-    await expect(page.getByTestId('part-row')).toHaveCount(2)
-    // The folder the deleted part lived in stays as an empty · 0 section.
-    await expect(sections).toHaveCount(2)
-    await expect(headers).toHaveText(['Archive · 2', 'Miata / Interior · 0'])
-    await expect(page.getByTestId('parts-section-empty')).toHaveCount(1)
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('folder-empty')).toHaveCount(0)
     await expect(page.getByTestId('parts-live')).toHaveText('Deleted 1 part')
     await expect(page.getByTestId('parts-edit')).toBeFocused()
     await expect(page.getByTestId('parts-edit')).toHaveText('Done')
@@ -515,112 +548,146 @@ test.describe('parts — folders — management (SPEC §8a A12b)', () => {
     await page.getByTestId('parts-edit').click()
     await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
     await page.reload()
-    await expect(headers).toHaveText(['Archive · 2', 'Miata / Interior · 0'])
-    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await expect(page.locator('.shell-title')).toHaveText('Archive')
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await page.getByRole('button', {name: 'Back'}).click()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(folderRow(page, 'Archive')).toContainText('1 part')
   })
 
-  test('folder rename: an intermediate folder is a header-only row while editing; the subtree follows; case-only saves; a sibling twin and a slash are refused inline', async ({
+  test('folder rename on the row: the subtree follows; case-only saves; a sibling twin and a slash are refused inline', async ({
     page,
   }) => {
     await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
     await createPartIn(page, 'Bracket', 'Archive')
+    await createPartIn(page, 'Hinge pin')
     await page.goto('/')
-    // Miata (subfolders, no direct parts) renders nothing outside Edit mode.
-    await expect(page.getByTestId('parts-section')).toHaveCount(2)
+    // Outside Edit mode the folder rows are links with no editors.
+    await expect(page.getByTestId('folder-row')).toHaveCount(2)
     await expect(page.getByTestId('parts-folder-header')).toHaveCount(0)
     await expect(page.getByTestId('folder-rename')).toHaveCount(0)
     await page.getByTestId('parts-edit').click()
-    await expect(page.getByTestId('parts-section')).toHaveCount(2)
-    await expect(page.getByTestId('parts-folder-header')).toHaveText('Miata')
-    await expect(page.getByTestId('folder-rename')).toHaveCount(3)
+    await expect(page.getByTestId('folder-rename')).toHaveCount(2)
     await expect(page.getByTestId('folder-delete')).toHaveCount(0)
-    // The heading's accessible name is the heading alone — the buttons are
-    // siblings, not children.
-    await expect(page.getByRole('heading', {name: 'Archive · 1'})).toHaveCount(1)
+    await expect(page.getByTestId('folder-row').getByRole('checkbox')).toHaveCount(0)
 
-    // Rename Miata → MX-5: prefilled, focused, Save disabled while unchanged.
+    // Rename Miata → MX-5 on its row: prefilled, focused, Save disabled while
+    // unchanged; the form sits in the row's place.
     await folderButton(page, 'folder-rename', 'Miata').click()
     const input = page.getByTestId('folder-rename-input')
     await expect(input).toBeFocused()
     await expect(input).toHaveValue('Miata')
     await expect(input).toHaveAttribute('enterkeyhint', 'done')
     await expect(page.getByTestId('folder-rename-save')).toBeDisabled()
-    await expect(page.getByTestId('parts-folder-header')).toHaveCount(0)
+    await expect(folderRow(page, 'Miata').getByTestId('folder-rename-form')).toHaveCount(1)
     await input.fill('a/b')
     await expect(page.getByTestId('folder-rename-error')).toContainText('Folder name "a/b" can use')
     await expect(page.getByTestId('folder-rename-save')).toBeDisabled()
     await input.fill('MX-5')
     await expect(page.getByTestId('folder-rename-error')).toHaveCount(0)
     await page.getByTestId('folder-rename-save').click()
-    await expect(page.getByTestId('parts-folder-header')).toHaveText('MX-5')
-    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 1', 'MX-5 / Interior · 1'])
+    await expect(folderRow(page, 'MX-5')).toContainText('MX-5')
+    await expect(folderRow(page, 'Miata')).toHaveCount(0)
     await expect(folderButton(page, 'folder-rename', 'MX-5')).toBeFocused()
     await expect(page.getByTestId('folder-rename-form')).toHaveCount(0)
 
     // One inline editor at a time: a folder rename closes a row's strip and
     // vice versa.
-    await page.getByTestId('part-rename').first().click()
+    await page.getByTestId('part-rename').click()
     await expect(page.getByTestId('part-rename-input')).toHaveCount(1)
-    await folderButton(page, 'folder-rename', 'MX-5/Interior').click()
+    await folderButton(page, 'folder-rename', 'MX-5').click()
     await expect(page.getByTestId('part-rename-input')).toHaveCount(0)
     await expect(page.getByTestId('folder-rename-form')).toHaveCount(1)
-    await page.getByTestId('part-rename').first().click()
+    await page.getByTestId('part-rename').click()
     await expect(page.getByTestId('folder-rename-form')).toHaveCount(0)
     await page.getByTestId('part-rename-cancel').click()
 
-    // Case-only rename saves (Enter submits); Cancel focuses the pencil.
-    await folderButton(page, 'folder-rename', 'MX-5/Interior').click()
-    await input.fill('interior')
-    await input.press('Enter')
-    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 1', 'MX-5 / interior · 1'])
-    await expect(folderButton(page, 'folder-rename', 'MX-5/interior')).toBeFocused()
+    // A sibling twin is refused inline; Cancel focuses the pencil.
     await folderButton(page, 'folder-rename', 'MX-5').click()
     await input.fill('archive')
     await page.getByTestId('folder-rename-save').click()
     await expect(page.getByTestId('folder-rename-error')).toHaveText(
       'A folder named "archive" already exists here.',
     )
-    await expect(page.getByTestId('parts-folder-header')).toHaveCount(0)
     await page.getByTestId('folder-rename-cancel').click()
-    await expect(page.getByTestId('parts-folder-header')).toHaveText('MX-5')
+    await expect(page.getByTestId('folder-rename-form')).toHaveCount(0)
     await expect(folderButton(page, 'folder-rename', 'MX-5')).toBeFocused()
-
-    // The part followed its folder: its page subtitle, and it all persisted.
     await page.getByTestId('parts-edit').click()
+
+    // The subtree followed: Interior lives under MX-5 now, where a case-only
+    // rename saves (Enter submits).
+    await folderRow(page, 'MX-5').getByRole('link').click()
+    await expect(page).toHaveURL(/#\/f\/MX-5$/)
+    await expect(folderRow(page, 'MX-5/Interior')).toContainText('1 part')
+    await page.getByTestId('parts-edit').click()
+    await folderButton(page, 'folder-rename', 'MX-5/Interior').click()
+    await input.fill('interior')
+    await input.press('Enter')
+    await expect(folderRow(page, 'MX-5/interior')).toHaveCount(1)
+    await expect(folderButton(page, 'folder-rename', 'MX-5/interior')).toBeFocused()
+    await page.getByTestId('parts-edit').click()
+
+    // The part followed its folder: its page subtitle, and it all persisted
+    // — Back from the part (after a reload) lands in that folder.
+    await folderRow(page, 'MX-5/interior').getByRole('link').click()
     await page.getByTestId('part-row').filter({hasText: 'Window switch bezel'}).getByRole('link').click()
     await expect(page.locator('.shell-subtitle')).toHaveText('MX-5 / interior')
-    await page.goto('/')
     await page.reload()
-    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 1', 'MX-5 / interior · 1'])
+    await expect(page.locator('.shell-subtitle')).toHaveText('MX-5 / interior')
+    await page.getByRole('button', {name: 'Back'}).click()
+    await expect(page).toHaveURL(/#\/f\/MX-5\/interior$/)
+    await expect(page.locator('.shell-title')).toHaveText('interior')
+    await expect(page.locator('.shell-subtitle')).toHaveText('MX-5')
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
   })
 
-  test('folder delete: only on an empty leaf, no confirm; deleting the last part exits Edit mode and leaves the folder as an empty section', async ({
+  test('folder delete: only on an empty leaf row, no confirm; deleting the last part exits Edit mode and leaves the folder empty', async ({
     page,
   }) => {
     await createPartIn(page, 'Bracket', 'Miata/Interior')
     await createEmptyFolder(page, 'Archive')
-    await expect(page.getByTestId('parts-section-header')).toHaveText(['Archive · 0', 'Miata / Interior · 1'])
+    await expect(page.getByTestId('folder-row')).toHaveCount(2)
     await page.getByTestId('parts-edit').click()
     await expect(page.getByTestId('folder-delete')).toHaveCount(1)
     await expect(folderButton(page, 'folder-delete', 'Archive')).toHaveAttribute('aria-label', 'Delete folder')
-    await expect(folderButton(page, 'folder-delete', 'Miata/Interior')).toHaveCount(0)
     await expect(folderButton(page, 'folder-delete', 'Miata')).toHaveCount(0)
     await folderButton(page, 'folder-delete', 'Archive').click()
-    await expect(page.getByTestId('parts-section-header')).toHaveText(['Miata / Interior · 1'])
+    await expect(page.getByTestId('folder-row')).toHaveCount(1)
+    await expect(folderRow(page, 'Archive')).toHaveCount(0)
     await expect(page.getByTestId('parts-live')).toHaveText('Deleted folder Archive')
     await expect(page.getByTestId('parts-edit')).toBeFocused()
+    await page.getByTestId('parts-edit').click()
 
-    // Deleting the last part: Edit leaves the bar, focus goes to the empty
-    // state's capsule, and the folder it lived in stays visible as a · 0
-    // section under the empty state (it is a real doc, never "vanished").
+    // Inside Miata: Interior holds a part, so it is not deletable.
+    await folderRow(page, 'Miata').getByRole('link').click()
+    await page.getByTestId('parts-edit').click()
+    await expect(folderButton(page, 'folder-rename', 'Miata/Interior')).toHaveCount(1)
+    await expect(folderButton(page, 'folder-delete', 'Miata/Interior')).toHaveCount(0)
+    await page.getByTestId('parts-edit').click()
+
+    // Deleting its last part from inside it: the view is empty, Edit leaves
+    // the bar, focus goes to the empty state's capsule, and the folder
+    // itself stays (it is a real doc, never "vanished").
+    await folderRow(page, 'Miata/Interior').getByRole('link').click()
+    await expect(page).toHaveURL(/#\/f\/Miata\/Interior$/)
+    await page.getByTestId('parts-edit').click()
     await page.getByTestId('part-select').check()
     await page.getByTestId('parts-delete').click()
     await page.getByTestId('parts-delete-confirm').click()
-    await expect(page.getByTestId('parts-empty')).toBeVisible()
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(page.getByTestId('folder-empty')).toHaveText('Empty folder')
     await expect(page.getByTestId('parts-edit')).toHaveCount(0)
+    await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
     await expect(page.getByTestId('new-part')).toBeFocused()
-    await expect(page.getByTestId('parts-section-header')).toHaveText(['Miata / Interior · 0'])
-    await expect(page.getByTestId('parts-section-empty')).toHaveCount(1)
+    await expect(page.getByTestId('parts-live')).toHaveText('Deleted 1 part')
+
+    // The root: the empty-state copy, the capsule, then the Miata row — and
+    // Edit, since a folder row is something to edit (review B3).
+    await page.goto('/#/')
+    await expect(page.getByTestId('parts-empty')).toBeVisible()
+    await expect(page.getByTestId('new-part')).toBeVisible()
+    await expect(folderRow(page, 'Miata')).toContainText('1 folder')
+    await expect(page.getByTestId('parts-edit')).toBeVisible()
 
     // Gone for good: the picker no longer lists Archive.
     await page.reload()
@@ -628,5 +695,190 @@ test.describe('parts — folders — management (SPEC §8a A12b)', () => {
     await page.getByTestId('part-folder-row').click()
     await expect(optionFor(page, 'Archive')).toHaveCount(0)
     await expect(optionFor(page, 'Miata/Interior')).toHaveCount(1)
+  })
+})
+
+// SPEC §8a A13 — drill-down: one folder per screen (`#/f/<path>`, a pushed
+// screen's bar), Back to the parent, reload in place, "+" preset to the
+// folder, New Folder under the lists, a global search whose results are
+// A10's flat sections, Edit mode inside a folder, and an unknown folder
+// rendered rather than redirected.
+test.describe('parts — folders — drill-down (SPEC §8a A13)', () => {
+  test('one folder per screen: rows, bar shape, Back, reload in place, "+" presets the folder, New Folder nests here', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    await createPartIn(page, 'Door card clip', 'Miata/Interior')
+    await createPartIn(page, 'Hinge pin')
+    await page.goto('/')
+    // Root: the static Large Title, the gear, no Back; one part row and one
+    // folder row — nothing from inside Miata.
+    await expect(page.locator('.shell-large-title')).toHaveCount(1)
+    await expect(page.getByTestId('settings-link')).toBeVisible()
+    await expect(page.getByRole('button', {name: 'Back'})).toHaveCount(0)
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('folder-row')).toHaveCount(1)
+    await expect(folderRow(page, 'Miata')).toContainText('1 folder')
+    await expect(page.getByTestId('part-row').filter({hasText: 'bezel'})).toHaveCount(0)
+    // A folder row is a real link.
+    const miataLink = folderRow(page, 'Miata').getByRole('link')
+    await expect(miataLink).toHaveAttribute('href', '#/f/Miata')
+    await miataLink.click()
+    await expect(page).toHaveURL(/#\/f\/Miata$/)
+    // In a folder the bar is every pushed screen's: the leaf as a centred
+    // Headline, no Large Title, no gear, a Back chevron; no subtitle when
+    // the parent is the root.
+    await expect(page.locator('.shell-title')).toHaveText('Miata')
+    await expect(page.locator('.shell-large-title')).toHaveCount(0)
+    await expect(page.locator('.shell-subtitle')).toHaveCount(0)
+    await expect(page.getByTestId('settings-link')).toHaveCount(0)
+    await expect(page.getByRole('button', {name: 'Back'})).toBeVisible()
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(folderRow(page, 'Miata/Interior')).toContainText('Interior')
+    await expect(folderRow(page, 'Miata/Interior')).toContainText('2 parts')
+    await expect(page.getByTestId('parts-search')).toBeVisible()
+    await folderRow(page, 'Miata/Interior').getByRole('link').click()
+    await expect(page).toHaveURL(/#\/f\/Miata\/Interior$/)
+    await expect(page.locator('.shell-title')).toHaveText('Interior')
+    await expect(page.locator('.shell-subtitle')).toHaveText('Miata')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await expect(page.getByTestId('folder-row')).toHaveCount(0)
+    // Alone, the Parts group carries no header.
+    await expect(page.getByRole('heading', {name: 'Parts', level: 2})).toHaveCount(0)
+    await page.getByRole('button', {name: 'Back'}).click()
+    await expect(page).toHaveURL(/#\/f\/Miata$/)
+    await expect(page.locator('.shell-title')).toHaveText('Miata')
+
+    // A reload in a folder renders that folder.
+    await page.goto('/#/f/Miata/Interior')
+    await page.reload()
+    await expect(page.locator('.shell-title')).toHaveText('Interior')
+    await expect(page.locator('.shell-subtitle')).toHaveText('Miata')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+
+    // "+" here presets the form's Folder row to this folder; Back from the
+    // new part lands here, with it on top.
+    await page.getByTestId('new-part').click()
+    await expect(page.getByTestId('part-folder-row')).toContainText('Miata / Interior')
+    await page.getByTestId('part-name').fill('Vent louvre')
+    await page.getByTestId('part-create').click()
+    await page.waitForURL(/#\/parts\/[^/]+\/?$/, {timeout: 10_000})
+    await expect(page.locator('.shell-subtitle')).toHaveText('Miata / Interior')
+    await page.getByRole('button', {name: 'Back'}).click()
+    await expect(page).toHaveURL(/#\/f\/Miata\/Interior$/)
+    await expect(page.getByTestId('part-row')).toHaveCount(3)
+    await expect(page.getByTestId('part-row').first()).toContainText('Vent louvre')
+
+    // New Folder under the lists nests here: the row appears ("Empty") and
+    // its link takes focus; both groups now render, so both carry a header.
+    await page.getByTestId('folder-new').click()
+    await expect(page.getByTestId('folder-new-name')).toBeFocused()
+    await page.getByTestId('folder-new-name').fill('Dashboard')
+    await page.getByTestId('folder-new-create').click()
+    await expect(folderRow(page, 'Miata/Interior/Dashboard')).toContainText('Dashboard')
+    await expect(folderRow(page, 'Miata/Interior/Dashboard')).toContainText('Empty')
+    await expect(folderRow(page, 'Miata/Interior/Dashboard').getByRole('link')).toBeFocused()
+    await expect(page.getByTestId('folder-new-name')).toHaveCount(0)
+    await expect(page.getByRole('heading', {name: 'Folders', level: 2})).toHaveCount(1)
+    await expect(page.getByRole('heading', {name: 'Parts', level: 2})).toHaveCount(1)
+    // It is a real doc: the parent's row counts it after a reload.
+    await page.goto('/#/f/Miata')
+    await page.reload()
+    await expect(folderRow(page, 'Miata/Interior')).toContainText('3 parts · 1 folder')
+  })
+
+  test('search is global: flat full-path sections for parts, folders by their own name, a folder result navigates and clears the query', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    await createPartIn(page, 'Door card clip', 'Miata/Interior')
+    await createPartIn(page, 'Hinge pin')
+    await page.goto('/')
+    const search = page.getByTestId('parts-search')
+    await search.fill('clip')
+    await expect(page.getByTestId('folder-row')).toHaveCount(0)
+    await expect(page.getByTestId('parts-section-header')).toHaveText(['Miata / Interior · 1'])
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('part-row')).toContainText('Door card clip')
+    await expect(page.getByTestId('folder-new')).toHaveCount(0)
+    // `inter` finds the folder by its leaf (meta = where it lives) and both
+    // parts by their path; `miata` finds Miata alone — never its
+    // descendants through it.
+    await search.fill('inter')
+    await expect(page.getByTestId('folders-list')).toBeVisible()
+    await expect(page.getByTestId('folder-row')).toHaveCount(1)
+    await expect(folderRow(page, 'Miata/Interior')).toContainText('Interior')
+    await expect(folderRow(page, 'Miata/Interior')).toContainText('Miata')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await search.fill('miata')
+    await expect(page.getByTestId('folder-row')).toHaveCount(1)
+    await expect(folderRow(page, 'Miata')).toContainText('Top level')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    // A root match is a headerless first section.
+    await search.fill('i')
+    await expect(page.getByTestId('parts-section')).toHaveCount(2)
+    await expect(page.getByTestId('parts-section-header')).toHaveCount(1)
+    await expect(page.getByTestId('parts-section').nth(0)).toContainText('Hinge pin')
+    // Tapping a folder result navigates there and clears the query.
+    await search.fill('inter')
+    await folderRow(page, 'Miata/Interior').getByRole('link').click()
+    await expect(page).toHaveURL(/#\/f\/Miata\/Interior$/)
+    await expect(page.getByTestId('parts-search')).toHaveValue('')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await expect(page.getByTestId('parts-section')).toHaveCount(0)
+    // The query is global from any folder: Hinge pin is found from inside
+    // Interior; clearing returns to this folder.
+    await search.fill('hinge')
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('part-row')).toContainText('Hinge pin')
+    await expect(page.getByTestId('parts-section-header')).toHaveCount(0)
+    await page.getByTestId('parts-search-clear').click()
+    await expect(page.locator('.shell-title')).toHaveText('Interior')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await expect(page.getByTestId('folder-new')).toBeVisible()
+  })
+
+  test('Edit inside a folder: Move to the root empties it and ends Edit mode; an unknown folder renders as missing, no redirect', async ({
+    page,
+  }) => {
+    await createPartIn(page, 'Window switch bezel', 'Miata/Interior')
+    await createPartIn(page, 'Door card clip', 'Miata/Interior')
+    await page.goto('/#/f/Miata/Interior')
+    await page.getByTestId('parts-edit').click()
+    await page.getByTestId('part-select').nth(0).check()
+    await page.getByTestId('part-select').nth(1).check()
+    await page.getByTestId('parts-move').click()
+    await expect(page.locator('.shell-title')).toHaveText('Move 2 Parts')
+    await optionFor(page, '').click()
+    await page.getByTestId('folder-picker-done').click()
+    // The view emptied, so Edit mode ended and focus went to "+".
+    await expect(page.getByTestId('part-row')).toHaveCount(0)
+    await expect(page.getByTestId('folder-empty')).toHaveText('Empty folder')
+    await expect(page.getByTestId('parts-live')).toHaveText('Moved 2 parts to the top level')
+    await expect(page.getByTestId('edit-toolbar')).toHaveCount(0)
+    await expect(page.getByTestId('parts-edit')).toHaveCount(0)
+    await expect(page.getByTestId('new-part')).toBeFocused()
+    await page.goto('/#/')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await expect(folderRow(page, 'Miata')).toContainText('1 folder')
+
+    // A hash naming no folder is rendered as one — the Footnote, no search,
+    // no "+", no Edit, no New Folder — and never redirected; Back leads to
+    // the root. Exact-string: the wrong case is unknown too.
+    await page.goto('/#/f/Nope')
+    await expect(page.locator('.shell-title')).toHaveText('Nope')
+    await expect(page.getByTestId('folder-missing')).toHaveText("This folder doesn't exist.")
+    await expect(page).toHaveURL(/#\/f\/Nope$/)
+    await expect(page.getByTestId('new-part')).toHaveCount(0)
+    await expect(page.getByTestId('parts-edit')).toHaveCount(0)
+    await expect(page.getByTestId('folder-new')).toHaveCount(0)
+    await expect(page.getByTestId('parts-search')).toHaveCount(0)
+    await page.reload()
+    await expect(page.getByTestId('folder-missing')).toBeVisible()
+    await page.getByRole('button', {name: 'Back'}).click()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await page.goto('/#/f/miata')
+    await expect(page.getByTestId('folder-missing')).toBeVisible()
   })
 })

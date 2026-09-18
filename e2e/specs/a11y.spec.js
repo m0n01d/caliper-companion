@@ -275,7 +275,7 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await page.goto('/')
     await expect(page.getByTestId('part-row')).toHaveCount(2)
     await page.getByTestId('parts-edit').click()
-    await expect(page.getByTestId('parts-section').getByRole('link')).toHaveCount(0)
+    await expect(page.getByTestId('parts-list').getByRole('link')).toHaveCount(0)
     await expect(page.getByTestId('edit-toolbar')).toBeVisible()
     await expectEveryButtonNamed(page)
 
@@ -299,5 +299,43 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await expect(page.getByTestId('part-row').first()).toHaveAttribute('role', 'listitem')
     const label = await first.getAttribute('aria-label')
     expect(label).toMatch(/^Select /)
+  })
+
+  // SPEC §8a A13: a folder screen is a pushed screen — Back is first in the
+  // DOM, so the first Tab lands on it, and the folder rows' links follow.
+  test('parts list — inside a folder: Tab reaches Back first, then the page; every button named', async ({page}) => {
+    await page.goto('/')
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-name').fill('A11y folder part')
+    await page.getByTestId('part-folder-row').click()
+    await page.getByTestId('folder-new').click()
+    await page.getByTestId('folder-new-name').fill('Miata')
+    await page.getByTestId('folder-new-create').click()
+    await expect(optionFor(page, 'Miata')).toHaveAttribute('aria-selected', 'true')
+    await page.getByTestId('folder-picker-done').click()
+    await page.getByTestId('part-create').click()
+    await expect(page).toHaveURL(/#\/parts\/[^/]+\/?$/)
+
+    await page.goto('/#/f/Miata')
+    await page.reload()
+    const backBtn = page.getByRole('button', {name: 'Back'})
+    await expect(backBtn).toBeVisible()
+    await expect(page.getByTestId('part-row')).toHaveCount(1)
+    await expect(page.getByTestId('settings-link')).toHaveCount(0)
+    await expectEveryButtonNamed(page)
+    await page.keyboard.press('Tab')
+    await expect(backBtn).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(backBtn).not.toBeFocused()
+    const tag = await page.evaluate(() => document.activeElement?.tagName)
+    expect(tag).not.toBe('BODY')
+
+    // Edit mode in a folder: the folder rows' pencils are named buttons too.
+    await page.getByTestId('parts-edit').click()
+    await page.getByTestId('folder-new').click()
+    await page.getByTestId('folder-new-name').fill('Interior')
+    await page.getByTestId('folder-new-name').press('Enter')
+    await expect(page.locator('[data-testid="folder-rename"][data-path="Miata/Interior"]')).toBeFocused()
+    await expectEveryButtonNamed(page)
   })
 })
