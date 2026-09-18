@@ -1098,91 +1098,215 @@ there, Graphite's `#83868B` 4.20:1, and Graphite's lighter ground leaves the was
 
 Owner: "lovely transitions to make the app feel more fluid… a little more polish before I show this
 thing off." Today the app has three transitions (press fills, the toggle knob, the face-card ring)
-and every route change is a hard cut. A16 adds motion in the HIG's register — `DESIGN.md` §5's
+and every route change is a hard cut. A16 adds motion in the HIG's register — `DESIGN.md` §6's
 rule stands: opacity and transform only, nothing bounces, everything zeroed under
-`prefers-reduced-motion` — with one deliberate exception to §5's 120–160 ms: page pushes and pops
-run at the HIG's ~350 ms, because they move a whole screen. A15 (Reduce glass) is unrelated and
-stays queued.
+`prefers-reduced-motion` (§6 also holds the 120–160 ms range) — with one deliberate exception:
+page pushes and pops run at the HIG's ~350 ms, because they move a whole screen. Reviewed before
+build: `docs/design/a16-motion-review.md` (2026-09-18); its blockers and shoulds are folded in
+below, and every "measured" figure is from that review's probe in the repo's own Playwright
+Chromium 148 (WebKit could not launch there — iOS is eyeballed on the phone). **Two waves, serial:
+A16a lands first, A16b after it.** A15 (Reduce glass) is unrelated and stays queued.
 
-**Tokens (`src/theme.css`):**
+**Tokens (`src/theme.css`) — A16a:**
 - [ ] `--cc-motion-nav: 350ms` (push / pop), `--cc-motion-sheet: 280ms` (take-overs), `--cc-motion:
   160ms` (existing; enter / settle), `--cc-motion-press: 80ms` (existing), `--cc-ease-out:
-  cubic-bezier(0.2, 0.8, 0.2, 1)` (enter, the §11.1 curve), `--cc-ease-in: cubic-bezier(0.4, 0, 1,
-  1)` (exit), `--cc-ease-standard: cubic-bezier(0.2, 0, 0, 1)` (§5, moves). No spring, no overshoot.
+  var(--cc-ease)` (an alias of the existing §11.1 curve `cubic-bezier(0.2, 0.8, 0.2, 1)` — one
+  curve, two names would drift), `--cc-ease-in: cubic-bezier(0.4, 0, 1, 1)` (exit),
+  `--cc-ease-standard: cubic-bezier(0.2, 0, 0, 1)` (§6, moves). No spring, no overshoot.
 
-**Page navigation (the View Transitions API, `document.startViewTransition`; iOS 18+ / Chrome
-111+; unsupported → the plain dispatch, no animation):**
-- [ ] `src/bindings/WebApi.res` gains `ViewTransition`: `startViewTransition: (unit => unit) =>
-  option<t>` (typed external, `None` when the API is missing), `finished: t => promise<unit>`;
-  and `ReactDOM.flushSync` (a typed external on `react-dom`) so the DOM update lands inside the
-  callback, which the API requires — React batches otherwise. `Route.subscribe`'s `hashchange`
-  listener becomes: compute `direction = Route.compare(prev, next)` → set
-  `document.documentElement.dataset.nav = "push" | "pop" | "fade"` → `startViewTransition(() =>
-  flushSync(() => dispatch(msg)))` → on `finished` (or immediately when unsupported) remove
-  `data-nav`. `Route.depth`: `Parts(folder)` = 1 + `Folder.depth(folder)`; `Settings` = 2; `Debug`
-  = 3; `Part(_)` = 10; `Capture(_)` / `Annotate(_, _)` = 11. Deeper → `push`, shallower → `pop`,
-  equal → `fade`. The Back chevron, folder rows and `Route.push` all go through `hashchange`, so
-  they all animate; the browser's own back/forward too.
-- [ ] CSS (`global.css`): `::view-transition-old(root)` / `::view-transition-new(root)` keyframes
-  per `html[data-nav]`: **push** — new slides in from 100 % → 0 with `--cc-ease-out`, old slides
-  0 → −30 % and dims to 0.6 (UIKit's parallax); **pop** — mirrored (old slides out to 100 %, new
-  slides −30 % → 0 and brightens); **fade** — 200 ms crossfade. Both layers `--cc-motion-nav`.
-  The sticky nav bar is part of the root snapshot (no separate `view-transition-name`; a
-  persistent-bar effect is A16b if wanted). `@media (prefers-reduced-motion: reduce)` →
-  `::view-transition-group(*) { animation: none }` (instant swap, no crossfade — the API's default
-  crossfade would otherwise still run).
-- [ ] The annotate canvas keeps painting during a transition (it is inside the snapshot; nothing to
-  do), and `Canvas.setScrollTop` on `FolderChanged` runs inside the callback so the new screen is
-  snapshotted at the top.
+**A16a — Page navigation (the View Transitions API, `document.startViewTransition`; iOS 18+ /
+Chrome 111+ / Firefox 144+ per caniuse; unsupported → the plain dispatch, no attribute, no
+animation):**
+- [ ] `src/bindings/WebApi.res` gains `ViewTransition` — `type t`, `@get startFn: Dom.document =>
+  Nullable.t<fn>` (feature detection; also sees a test's `addInitScript` wrapper), `@send start:
+  (Dom.document, unit => unit) => t = "startViewTransition"` (`@send`, so `this` is the document),
+  `@get finished: t => promise<unit>` — a `Document` module with `setAttribute` / `removeAttribute`
+  on `documentElement` for `data-nav`, and `@module("react-dom") external flushSync: (unit => unit)
+  => unit` (**not** in `@rescript/react`). `flushSync` is what makes React commit inside the
+  callback; React batches otherwise.
+- [ ] New `src/app/Motion.res` (`Tea.res` stays DOM-free) — the one animated dispatch:
+  ```rescript
+  let gen = ref(0)
+  let transition = (~nav: string, dispatch: 'msg => unit, msg: 'msg): unit =>
+    if !WebApi.ViewTransition.supported() { dispatch(msg) } else {
+      gen := gen.contents + 1
+      let mine = gen.contents
+      WebApi.Document.setDataNav(nav) // before `start`: the old capture and the CSS must see it
+      let clear = _ => { if gen.contents == mine { WebApi.Document.removeDataNav() }; Promise.resolve() }
+      WebApi.ViewTransition.start(WebApi.ViewTransition.document, () => WebApi.flushSync(() => dispatch(msg)))
+      ->WebApi.ViewTransition.finished->Promise.then(clear)->Promise.catch(clear)->ignore
+    }
+  ```
+  Why this shape (review B2, measured): the update callback is **asynchronous** — it runs at the
+  next rendering opportunity, after microtasks, `setTimeout(0)` and rAF (3–38 ms), so the model
+  lags the URL by about one frame. Two hash changes in flight (a Back double-tap): the first
+  transition's `ready` rejects `AbortError`, **its callback still runs, its `finished` fulfils,
+  and only then does the second callback run** — a cleanup keyed on "my `finished`" would strip the
+  second transition's `data-nav` before its animations exist (measured: the pseudos fall back to
+  the UA 250 ms crossfade). Hence the generation counter: clear only if no newer transition has
+  started. `finished` **rejects** when the callback throws (`dispatch` → `update`), so `clear` runs
+  on both branches. `Tea.use` is `useState` + a model ref and runs cmds synchronously inside
+  `dispatch` (before the commit) — the same order as today, so nothing regresses; a cmd that calls
+  `Route.push` from inside the callback starts a second transition that skips this one (its
+  callback still runs) — acceptable.
+- [ ] `Route.subscribe`'s `hashchange` listener keeps `let prev = ref(current())` (it has no state
+  today) and on each change computes `next = current()`, `nav = direction(prev.contents, next)`,
+  sets `prev := next`, then `Motion.transition(~nav, dispatch, toMsg(next))`. `Route.depth`:
+  `Parts(folder)` = 1 + `Folder.depth(folder)`; `Settings` = 2; `Debug` = 3; `Part(_)` = 10;
+  `Capture(_)` = 11; **`Annotate(_, _)` = 12** (capture → annotate is the most-travelled forward
+  step, `Capture.res` pushes it after every capture; at equal depth it would fade). Deeper →
+  `push`, shallower → `pop`, equal → `fade` (same-depth sibling folders reached from search, both
+  ways). `direction` and `depth` live in `Route`, not `Motion`. The Back chevron, folder rows,
+  `Route.push` and the browser's own back/forward all go through `hashchange`, so they all animate.
+  Settings is only reachable from the root's leading slot and Debug only from Settings, so the
+  depth table is right for every pair the UI can produce.
+- [ ] Scroll (review S3): `Main` renders **one** `<Shell>`, so `.shell` — the scroll container —
+  and its `scrollTop` persist across pages; a push from a scrolled list would snapshot the new
+  screen scrolled. `PartsList.scrollToTop` moves to `Shell.res` as `Shell.scrollToTop:
+  Tea.cmd<'msg>`; `PartsList.FolderChanged` keeps using it and the cross-page `RouteChanged`
+  branch in `Main.update` batches it too (pushes and pops alike — the returning list re-inits
+  anyway). It runs inside `dispatch`, before the commit, which is fine because the element persists;
+  the new screen is therefore snapshotted at the top. The annotate canvas keeps painting during a
+  transition (the new view is a live capture; nothing to do).
+- [ ] CSS (`global.css`), keyed on `html[data-nav]` (`push` | `pop` | `fade`, nothing else) and the
+  `(root)` pseudos only — the sticky bar is part of the root snapshot (a persistent-bar effect is a
+  later A16c), and **nothing in A16 ever transforms `.shell` or `.app-frame`** (a transform on an
+  ancestor of the sticky bar or footer would make them scroll away). Keyframes: `cc-nav-in` (from
+  `translateX(100%)`), `cc-nav-out` (to `translateX(-30%)` + opacity 0.6 — UIKit's parallax),
+  `cc-nav-back-in` (from `translateX(-30%)` + 0.6), `cc-nav-back-out` (to `translateX(100%)`),
+  `cc-fade-in` / `cc-fade-out`. **push**: old `cc-nav-out`, new `cc-nav-in`; **pop**: old
+  `cc-nav-back-out`, new `cc-nav-back-in`, plus `z-index: 1` on the old layer so the leaving screen
+  slides out *over* the returning one (the pseudos are positioned; the builder confirms the
+  stacking by eye in the `no-preference` run); both layers `var(--cc-motion-nav) var(--cc-ease-out)
+  both` — one curve for both layers so they stay locked. **fade**: 200 ms, old `--cc-ease-in`,
+  new `--cc-ease-out`. Setting `animation` on the pseudos also replaces the UA's `plus-lighter`
+  blend animation (measured: only the author animations remain), so opaque slides composite
+  normally.
+- [ ] Reduced motion (review B1, measured): the API still runs under `prefers-reduced-motion`
+  (Chromium played the UA crossfade to 311 ms with no CSS), and a rule on
+  `::view-transition-group(*)` alone does **not** stop the nav slides — `html[data-nav="push"]
+  ::view-transition-old(root)` outranks the bare pseudo in the cascade (measured: the push slide
+  ran to 442 ms under `reduce` with the group-only rule). So, after the nav rules:
+  `@media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important } }` — Chrome's canonical rule; the
+  transition then lasts ≈ 2 frames and is a cut. The existing `*, *::before, *::after` zero-duration
+  block never reaches these pseudos.
 
-**Take-overs and in-page state (CSS enter animations on mount; no exit animations — an unmount
-is a cut, and the route transition above covers the big exits):**
-- [ ] Create form and the folder picker (`.parts-form`, `.folder-picker`): enter by sliding up 24 px
-  and fading in over `--cc-motion-sheet` `--cc-ease-out` (`@keyframes cc-rise`).
+**A16a — Take-overs and in-page state (CSS enter animations on mount; no exit animations — an
+unmount is a cut, and the route transition above covers the big exits):**
+- [ ] Create form and the folder picker enter by sliding up 24 px and fading in over
+  `--cc-motion-sheet` `--cc-ease-out` (`@keyframes cc-rise`). Elements: the picker root
+  `.folder-picker` (exists), and the create form's outermost element, which has no class today —
+  the form renders `Ui.ListGroup` rows `.parts-form-row` / `.parts-form-field`; wrap it in one
+  `<div className="parts-form">` and animate that. **Only take-overs rise**: nothing inside a
+  `.list-group` gets a transform (the group clips overflow; a rising row paints over its
+  neighbour).
 - [ ] Edit mode: `.shell-footer` (the toolbar) rises from `translateY(100%)` over
-  `--cc-motion-sheet`; each row's `.part-select` circle enters with `cc-rise`-style fade + 8 px
-  slide from the left over `--cc-motion`, staggered 20 ms per row up to 8 rows (`--i` custom
-  property from the view, `animation-delay: calc(var(--i) * 20ms)`); leaving Edit mode is a cut.
-- [ ] Rows appearing (a created part, a new folder row, a moved part arriving) and picker options:
-  `cc-rise` over `--cc-motion`, no stagger. Removed rows: a cut.
-- [ ] Segmented control: the selected fill moves between options instead of jumping —
-  `view-transition-name: cc-segment` on the `[aria-pressed="true"]` option and the change dispatched
-  through `startViewTransition` (a `Tea.transition(dispatch, msg)` helper that wraps any dispatch
-  the same way `Route.subscribe` does, used by the Kind segmented control, the units segmented
-  control and the Snap pill). Unsupported → jump, as today.
-- [ ] Press feedback: every `.btn`, `.chip`, `.list-row-link`, `.face-card`, `.folder-row` gets
-  `transform: scale(0.97)` on `:active` over `--cc-motion-press` (transform only; the existing
-  pressed fills stay). Rows and cards: 0.985. Nothing else moves on press.
-- [ ] Face-card check badge: on first paint after a capture, scale 0.6 → 1 and fade over
-  `--cc-motion` (`cc-pop`, `--cc-ease-out`, no overshoot — §5). The captured ring fades in with it.
-- [ ] Annotate: the snap ring scales 1.3 → 1 and fades over `--cc-motion` when it lands (§5
-  "handles appear with a 120 ms scale-from-0.6" already applies to handles — keep); a saved
-  dimension's pill "settles" 1.04 → 1 over `--cc-motion`; the reading field, when it takes focus
-  after p2, gets a one-shot 2 px ring fade (`cc-ring-fade`, 400 ms) so the eye lands where the
-  keyboard is about to type. Canvas motion is drawn by `Draw.res` with a `now`-based ease (the
-  canvas has no CSS), reduced-motion read once via `matchMedia` → skip the ease.
+  `--cc-motion-sheet` `--cc-ease-out` via `animation` on mount — the footer exists only while
+  editing (`Shell.res` renders it from the footer slot), so mount is the hook. Its blurred
+  `::before` riding a transforming element is the allowed pattern (liquid-glass-web.md:
+  animate transform of a pre-blurred layer; check once on the phone). Leaving Edit mode is a cut.
+  The selection-circle stagger is A16b.
+- [ ] Press feedback: `.btn`'s transition line already eases `transform` over `--cc-motion` (160 ms)
+  — change it to `transform var(--cc-motion-press) linear` and add `transform: scale(0.97)` on
+  `:active`, so the scale is just the added value. `.chip` (0.97), `.face-card` and `.folder-row`
+  (0.985) get `transition: transform var(--cc-motion-press) linear` (they have none today) and the
+  scale. Rows: `.list-row-link` is the text-only `<a>` beside the thumbnail, so scale the row —
+  `.list-row:has(> .list-row-link:active) { transform: scale(0.985) }` (Safari 15.4+). Existing
+  pressed fills and opacities stay. Nothing else moves on press.
 - [ ] Live-region text and focus targets are unchanged: motion never delays a focus move (focus
-  cmds run before the animation starts, not on `finished`).
+  cmds run inside `dispatch`, before the animation starts, not on `finished`). `focusWhenReady`'s
+  rAF retries land on an element that is still rising — `focus()` works on a transformed element
+  and Safari's focus scroll is at most 24 px early, then the element arrives.
+- [ ] **Cut (review S6, no TEA trigger):** "rows appearing" (a created part navigates to its Part
+  page; a moved part leaves the screen you are on) and the face-card check-badge pop (a capture
+  navigates to Annotate) — the row or badge is next seen on a fresh page init after an async load,
+  so every row and every badge would animate on every visit, under the route slide. Also cut:
+  picker-option stagger (double motion inside a rising sheet). If wanted later: a `justAdded:
+  option<id>` model marker cleared on the next `FolderChanged`.
 
-**Reduced motion and tests:**
-- [ ] `prefers-reduced-motion: reduce` → the existing zero-duration block plus the
-  `::view-transition-group(*)` rule above and the canvas ease skip. `prefers-reduced-transparency`
-  and `prefers-contrast` are untouched.
-- [ ] Playwright: `e2e/playwright.config.js` sets `use.reducedMotion: 'reduce'` globally so every
-  existing spec stays deterministic (Chromium honours it for CSS and for `startViewTransition`'s
-  crossfade via the rule above). One new spec, `e2e/specs/motion.spec.js`, opens a context with
-  `reducedMotion: 'no-preference'` and asserts: `document.startViewTransition` is called once per
-  route change (a `page.addInitScript` counter wrapping the API); `html[data-nav]` reads `push`
-  going Parts → Part and `pop` on Back, and is absent after `finished`; the Kind segmented change
-  sets a `view-transition-name` on the pressed option; the Edit toolbar has a non-`none` animation
-  name on entry; with `reducedMotion: 'reduce'` the same route change sets no `data-nav` animation
-  (the attribute may exist; the computed `animation-name` on the pseudo is `none`). The suite
-  count today is 58; report the new count.
-- [ ] `DESIGN.md` §5 gains the two nav/sheet durations as the stated exceptions and the token
+**A16b — after A16a lands (serial; both touch `global.css` and the LOGBOOK):**
+- [ ] Segmented control (review B3 — **no `view-transition-name` anywhere in A16**, and no wrapped
+  dispatch: nothing in A16b needs `Motion.transition`; the Snap pill and the hidden units
+  `<select>` are unchanged): `Ui.Segmented` renders `<span className="segmented-indicator"
+  aria-hidden="true" />` first and carries `data-index` / `data-count` (the `@as("data-…")`
+  record trick already used for `data-path`). CSS: `.segmented { position: relative }`,
+  `.segmented-option { position: relative; z-index: 1 }`, `.segmented-option[aria-pressed="true"]
+  { background: transparent }` (label colour unchanged), `.segmented-indicator { position:
+  absolute; top: 2px; bottom: 2px; left: 2px; border-radius: inherit; background:
+  var(--cc-live-fill); transition: transform var(--cc-motion) var(--cc-ease-standard) }`, widths
+  `[data-count="n"]` = `calc((100% - 4px - (n − 1) × 4px) / n)` for n = 2, 3, 4 (options are
+  `flex: 1 1 0`, so equal), offsets `[data-index="i"]` = `translateX(calc(i × 100% + i × 4px))`.
+  Reduced motion: the existing zero-duration block. Why not the API: two elements with one name
+  make `ready` reject `InvalidStateError` and turn *every* transition on that page into a cut
+  (measured), a named element is lifted out of the root snapshot during pushes, and the page is
+  non-interactive for the transition's length.
+- [ ] Selection circles: each row's `.part-select` enters with a `cc-rise`-style fade + 8 px slide
+  from the left over `--cc-motion`, staggered 20 ms per row up to 8 rows via
+  `.part-row-selectable:nth-child(2…8) .part-select { animation-delay: 20…140ms }` — pure CSS, no
+  `--i` from the view (JSX `style` cannot carry a custom property without an unsafe helper).
+- [ ] Annotate canvas (drawn by `Draw.res`; the canvas has no CSS and cannot read the tokens, so
+  durations are the existing constants): the **snap ring** keeps A5's geometry (grows 1 → 1.6 and
+  fades, `ringMs` 150) and `Draw.snapRing` maps `progress` through `Viewport.ease` (the §11.1
+  curve) — one line; the "now-based ease" already exists as the `frames` cmd (a per-animation rAF
+  loop, generation-guarded, single-ticks under reduced motion). **Pill settle**: a saved
+  dimension's pill settles 1.04 → 1 over 160 ms — `settle: option<{id, gen, progress}>` on the
+  model, `SettleTick` through `frames(~ms=160)`, `Draw.pill ~scale` for that dimension only, drawn
+  after `restore` like the Dimmed pill; the one A16b item to drop first (model plumbing for 4 px).
+  **Reading field**: when it takes focus after p2, `[data-testid="reading"]:focus { animation:
+  cc-ring-fade 400ms }` — a one-shot 2 px ring fade so the eye lands where the keyboard is about
+  to type (restarts on each focus; fine). §6's "handles appear with a 120 ms scale-from-0.6" is
+  **not implemented today** (`Draw.handle` has no progress) and is struck, not "kept".
+
+**Reduced motion and tests (A16a):**
+- [ ] `prefers-reduced-motion: reduce` → the existing zero-duration block, the `!important`
+  view-transition rule above, and the canvas ease skip (already: `frames` single-ticks).
+  `prefers-reduced-transparency` and `prefers-contrast` are untouched.
+- [ ] Playwright: `e2e/playwright.config.js` sets `use.reducedMotion: 'reduce'` globally. That
+  emulates the media feature only — the API still runs (≈ 2 frames under our rule) and the model
+  lags the URL by ~1 frame; no existing assertion observes either (below). One new spec,
+  `e2e/specs/motion.spec.js` (chromium-only, like `export.spec.js`), opens a context with
+  `reducedMotion: 'no-preference'` and records **in-page** via `context.addInitScript`:
+  `window.__vt = []; const orig = Document.prototype.startViewTransition;
+  Document.prototype.startViewTransition = function (cb) { const rec = {nav:
+  document.documentElement.dataset.nav ?? null, names: null}; window.__vt.push(rec); const t =
+  orig.call(this, cb); t.ready.then(() => { rec.names = getComputedStyle(document.documentElement,
+  '::view-transition-old(root)').animationName }, () => { rec.names = 'skipped' }); return t }`.
+  The pseudo's computed `animation-name` is only readable between `ready` and `finished` (≈ 2
+  frames under `reduce`), so the test asserts the log, never the live pseudo. Assertions: one
+  `__vt` entry per route change; `nav` is `push` going Parts → Part and `pop` on Back; `names`
+  contains `cc-nav-out` under `no-preference`; in a second context with `reducedMotion: 'reduce'`
+  the same route change logs `names === 'none'` (the attribute may exist); `html` has no
+  `data-nav` once `finished` (negated `toHaveAttribute`, retrying); the Edit toolbar has a
+  non-`none` `animation-name` on entry; and **one `no-preference` A6 case** — place a pair and
+  assert `data-autofit` passes through `fitting` — because the global `reduce` single-ticks
+  `frames`, so this is the only e2e that still exercises the rAF loop. The suite count today is
+  58 (57 `test(` declarations plus `export.spec.js`'s two-background loop); report the new count.
+- [ ] **Existing e2e that must change: none.** Every assertion after a hash change is `page.url()`
+  (synchronous — the URL is already set), `waitForURL` / `toHaveURL`, a retrying `expect`, or an
+  auto-waiting locator action; the four `document.activeElement` reads in `a11y.spec.js` follow a
+  `reload()` and a visibility wait (no view transition on a full load). `annotate.spec.js`'s two
+  `emulateMedia({reducedMotion: 'reduce'})` calls become redundant under the global setting — keep
+  them.
+- [ ] `DESIGN.md` §6 gains the two nav/sheet durations as the stated exceptions and the token
   names; §11.1 "Interaction feel" lists the press scale; `docs/testids.md` unchanged unless a
   hook needs an id; LOGBOOK section listing every animation with its duration, easing and the
   reduced-motion behaviour.
-- [ ] **Not in A16**: a persistent nav bar across pushes (shared-element `view-transition-name` on
-  the bar — A16b), the face-thumbnail → annotate hero transition (A16b), swipe-back gesture (the
-  browser's own edge swipe works in Safari standalone and already fires `hashchange` → `pop`), any
-  JS animation library, spring physics.
+- [ ] **Build plan and risk.** A16a (sonnet): `theme.css`, `global.css`, `WebApi.res`,
+  `Motion.res` (new), `Route.res`, `Main.res`, `Shell.res`, `PartsList.res` (form wrapper,
+  `Shell.scrollToTop`), `PartsList.css`, `playwright.config.js`, `motion.spec.js` (new),
+  `DESIGN.md`, LOGBOOK. Risk: tokens none; `Motion.res` medium (the async callback and the counter
+  — the measured behaviour above is the contract); direction low; scroll reset low; nav CSS
+  low-medium (pop stacking, eyeball on the phone); reduced-motion rule low (measured); take-over
+  and footer rises low (blur on a moving layer: one phone check); press scale low; Playwright
+  config low (no existing spec races); `motion.spec.js` medium (timing-sensitive — assert the log,
+  not the live DOM). A16b (sonnet, after a): `Ui.res`, `global.css` (segmented), `PartsList.css`
+  (stagger), `Draw.res`, `Annotate.res` / `Annotate.css`, LOGBOOK. Risk: indicator low; stagger
+  low; ring ease trivial; pill settle moderate (drop first); ring fade trivial. **Drop for
+  "show it off"**: rows appearing, picker-option stagger, check-badge pop, pill settle, Snap-pill
+  transition, handle scale-in — none is seen in a fresh install's first two minutes.
+- [ ] **Not in A16**: a persistent nav bar across pushes and the face-thumbnail → annotate hero
+  transition (both need `view-transition-name`; a later A16c), `Motion.transition` for in-page
+  state, a `history.state` index for same-depth Back (review J2; optional if it ever matters),
+  swipe-back gesture (the browser's own edge swipe works in Safari standalone and already fires
+  `hashchange` → `pop`), any JS animation library, spring physics.
