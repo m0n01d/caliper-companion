@@ -945,6 +945,7 @@ textarea:disabled {
    blob inside a horizontal .list-row). `.segmented-inline` (Ui.Segmented's
    `~inline` prop) opts back into content width. */
 .segmented {
+  position: relative; /* A16b: the indicator's containing block */
   display: flex;
   width: 100%;
   min-height: var(--cc-tap-min);
@@ -966,6 +967,8 @@ textarea:disabled {
    `text-overflow: ellipsis` to actually trigger instead of the option
    silently wrapping to a clipped second line. */
 .segmented-option {
+  position: relative; /* A16b: the labels paint over the indicator */
+  z-index: 1;
   flex: 1 1 0;
   min-width: 0;
   min-height: calc(var(--cc-tap-min) - 6px);
@@ -986,9 +989,65 @@ textarea:disabled {
    stays the one ivory capsule on Annotate (review S2). A literal, not a
    token: it is the only 16 % surface in the app. */
 .segmented-option[aria-pressed="true"] {
-  /* S2: the selected segment is "on" — live fill, ground label (5.80:1). */
-  background: var(--cc-live-fill);
+  /* S2: the selected segment is "on" — live fill, ground label (5.80:1).
+     A16b: the fill is the indicator below; the option itself stays flat so
+     the capsule can glide. The label colour is unchanged. */
+  background: transparent;
   color: var(--cc-accent-ink);
+}
+
+/* SPEC §8a A16b (review B3): one selected capsule, `.segmented-indicator`,
+   rendered first by Ui.Segmented and moved on a transform — not the View
+   Transitions API (two elements with one `view-transition-name` reject
+   `ready` and turn every transition on the page into a cut, and a named
+   element is lifted out of the root snapshot during a push). The group's
+   `data-count` sets the width and `data-index` the offset: options are
+   `flex: 1 1 0` inside 2 px padding and 4 px gaps, so each is
+   (100% − 4px − (n − 1) × 4px) / n wide and the i-th starts i widths plus
+   i gaps in. `100%` in the translate is the indicator's own width. Reduced
+   motion: §12's zero-duration block. */
+.segmented-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  border-radius: inherit;
+  background: var(--cc-live-fill);
+  transition: transform var(--cc-motion) var(--cc-ease-standard);
+}
+
+.segmented[data-count="2"] .segmented-indicator {
+  width: calc((100% - 4px - 1 * 4px) / 2);
+}
+
+.segmented[data-count="3"] .segmented-indicator {
+  width: calc((100% - 4px - 2 * 4px) / 3);
+}
+
+.segmented[data-count="4"] .segmented-indicator {
+  width: calc((100% - 4px - 3 * 4px) / 4);
+}
+
+.segmented[data-index="0"] .segmented-indicator {
+  transform: translateX(0);
+}
+
+.segmented[data-index="1"] .segmented-indicator {
+  transform: translateX(calc(1 * 100% + 1 * 4px));
+}
+
+.segmented[data-index="2"] .segmented-indicator {
+  transform: translateX(calc(2 * 100% + 2 * 4px));
+}
+
+.segmented[data-index="3"] .segmented-indicator {
+  transform: translateX(calc(3 * 100% + 3 * 4px));
+}
+
+/* No option selected (a key outside `options`; no caller does this today):
+   no capsule rather than one parked on the first option. */
+.segmented[data-index="-1"] .segmented-indicator {
+  display: none;
 }
 
 .segmented-option:focus-visible {
