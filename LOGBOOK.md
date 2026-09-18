@@ -2446,3 +2446,99 @@ Main + Part; the page; e2e + docs + screenshots); not pushed.
   16 / 32 / 64 / 128 (Chromium render). Remove and re-add the home-screen app to pick it up.
 - **Open, owner's call:** `generator.name` in `features.json` ("Caliper Companion" → "Snapkin"
   would touch the golden and the skill's check); repo rename.
+
+## 2026-09-18 — A14b: mono canvas/export overlays, the m2 icon, the legibility test
+
+Built on `agent/a14b-overlays` off `a71a3f2` (SPEC.md's post-review A14 text), disjoint from
+**A14a**'s tokens/materials/headers work (`theme.css`, `global.css`, `Annotate.css`/`Capture.css`,
+`Icon.res:164`, `Ui.res`, `PartsList.res`, `Part.res:428`, `index.html`, `manifest.json` — untouched
+here). Per SPEC §8a A14's "Build split" and `docs/design/a14-glass-review.md` §4 (B4/B5/S1/S5).
+
+- **Overlay palette.** New `src/app/Overlay.res`: `ink #F2F2F0 · inkOn #0E0F11 · halo
+  rgba(14,15,17,.85) · scrim rgba(14,15,17,.8) · live #C9CBCE · savedAlpha 0.7` — the app-level
+  home the review called for (S5), so `export/Render.res` doesn't import "backwards" out of
+  `annotate/`. Every literal in `Draw.res:24-30` and `Render.res:205-209` now reads it.
+  - `Draw.colourFor` collapses to `ink` for every style: Pending, Selected and Dimmed no longer
+    differ by hue (the old accent-orange/live-blue split), only by the pill and by `alphaFor`'s
+    group alpha (`Overlay.savedAlpha`, was 0.6). `handle` draws a constant `ink` disc / `inkOn`
+    ring+dot regardless of style (ring/dot in the style colour would vanish into an `ink` disc
+    now that the disc itself is always `ink`). `snapRing` keeps `Overlay.live` — the one place it
+    still paints. `pill`: Pending = `ink` fill / `inkOn` border+label (17:1); Selected/Dimmed =
+    `scrim` fill / `ink` label.
+  - **`dimension`'s Dimmed pill is deferred past `restore`.** The overlay table wants a Dimmed
+    dimension's pill drawn *after* its `savedAlpha` (0.7) group closes, at alpha 1 — a 100 %
+    label on a 70 % `scrim` pill inside the group is 3.9:1 on white, not the 9.4:1 the reviewed
+    numbers assume. Implementation: a `ref(None)` queues `(text, at)` for Dimmed inside the alpha
+    group instead of calling `pill` there; `pill` is then called on the queued value right after
+    `ctx->restore`. Pending/Selected already run that group at alpha 1, so drawing their pill in
+    place (unchanged) is equivalent — only Dimmed needed the deferral.
+  - `Render.res` (export, no per-style distinction — one always-on style): `haloColor`/`lineColor`
+    now `Overlay.halo`/`Overlay.ink`; `pillFillColor` `Overlay.ink`; `pillTextColor`/
+    `pillBorderColor` `Overlay.inkOn`. **Deviation:** the overlay table's Export row lists Handle
+    as "`ink` / `inkOn`", but `Render.res`'s handle is a single filled circle via `fillHaloed`
+    (same call as the arrowheads, no separate ring/dot layer the canvas has) — adding an `inkOn`
+    ring there would be new geometry, and "the export PNG geometry stays unchanged, only colours
+    move" is explicit in this agent's brief. Kept the handle as `ink` fill only; the review's own
+    prose version of this row (`a14-glass-review.md` §4 B4) lists "line `ink`, pill `ink`/`inkOn`,
+    border `inkOn`" with no separate handle mention, which reads as the same call.
+  - `RenderTest.res`: added the tabled case, `contrastRatio(Overlay.inkOn, Overlay.ink) >= 4.5`,
+    as its own `describe` block (checks the `Overlay` constants directly, decoupled from whichever
+    `Render.pill*Color` binding happens to alias them). **270 → 276 unit tests** (using this
+    session's actual pre-A14 count, 275 → 276; `npx vitest run` clean).
+- **Export legibility test** (`e2e/specs/export.spec.js`, SPEC §8a A3/A14b). `sampleLegibility`
+  now returns `{sawInk, sawHalo}`. `isHalo` unchanged (`r/g/b < 70`, kept at 70 not 60 for the
+  documented rounding margin). `isInk` replaces the old amber window
+  (`R>200 && G∈[100,190] && B<90`) with `[r,g,b].every(c => c >= 225 && c <= 250) && max−min <= 12`
+  — tight enough that the white photo itself (255,255,255) can't pass with no line drawn, which an
+  unbounded `>= 200` window would let through. `sawInk` is true only when an ink pixel in the
+  sampled column has a halo pixel at some smaller y *and* some larger y (white → halo → ink →
+  halo → white), not merely "ink and halo both present somewhere" — implemented as a single top-
+  to-bottom pass tracking whether a halo has been seen above, checked against `column.slice(i +
+  1).some(isHalo)` below. Test titles "amber line…" → "ink line…"; comment block rewritten.
+- **Icon** (`scripts/make-icons.mjs`), the m2 mark ("the lens alone",
+  `docs/design/branding-snapkin.md` §7): replaces the orange napkin+lens with a closed ring (r 300
+  at 512,512; stroke 64 → outer r 332, inner r 268), a horizontal ⌀ line x 316–708 at y 512 (same
+  64 stroke, round caps — "one ink, one weight"), filled arrowheads 112×96 tips at x 252/772 bases
+  at 364/660, no ticks; ink `#F2F2F0` on `#0E0F11`. Numbers are `a14-glass-review.md` S1's
+  corrected geometry — the pre-review spec draft's stroke-72/±212-line/open-chevron numbers left a
+  16 px cap-to-ring gap that rendered as θ at favicon size, and its "safe area" comment was 51 % of
+  the box, not 80 %; fixed to "the maskable 80 % circle, r 410" (the ring's outer edge clears it by
+  78 px). Regenerated `public/favicon.svg` (`rx 224`), `icon-192.png`, `icon-512.png`,
+  `apple-touch-icon.png`; looked at the two PNGs — one closed ring, one line, two filled
+  arrowheads, nothing else, legible down to 180 px.
+- **Screenshots.** Full tour (`node scripts/screenshot-tour.mjs docs/screenshots
+  http://localhost:4361`) against a `vite preview` of this branch. Changed: `06-annotate-pending`
+  and `07-annotate-saved` (mono lines/handles/pills in place of accent-orange/live-blue — looked at
+  `07`, confirms); `10-debug` changed incidentally (a non-deterministic on-screen counter, not a
+  colour). Unchanged, as expected: `05-annotate-loaded` (shot before any dimension exists, nothing
+  to recolour) and `11-part-exported` (its face-card thumbnails are static photo crops with a
+  status badge — they never call `Draw.res`, and the actual dimensioned render, `Render.res`'s PNG
+  inside the downloaded `.ccpart.zip`, isn't itself screenshotted; its ink/halo composite is what
+  the legibility test measures instead). Deleted the `.ccpart.zip` the export step drops in the
+  output dir. Surrounding chrome is still Dark Sky in this worktree, as expected — A14a's own
+  branch carries the tokens/materials.
+- **Docs**, scoped to this agent's brief (not SPEC's full Docs bullet — DESIGN §4/§5's per-control
+  rewrites and `docs/testids.md` describe A14a's components and were left for that agent / merge
+  reconciliation): `DESIGN.md` §2 token table replaced with the Glass column plus `--glass-*` and
+  the text-3-never-on-bare-ground rule; §11.1 Materials rewritten around the two blurred surfaces
+  + hairline-elsewhere rule (`a14-glass-review.md` B1/B2); §11.2 notes the Parts Folders/Parts
+  headers and Part's "Features · n" are hidden, not removed (G5). `palettes-2026-09-17.md` gets a
+  one-line "superseded by A14" pointer. `branding-snapkin.md` gains §8 "Adopted": the Glass column
+  shipped over §7's own Graphite recommendation (S3's `text-3` contrast finding), what else
+  shipped vs. stayed a mock. SPEC.md §13 gains the "Reduce glass" / A15 open question.
+- **Verified.** `npx rescript build` clean under `+a` after every source change. `npx vitest run`
+  **276/276** (275 + the new `Overlay` contrast case). Chromium e2e, `E2E_PORT=4361 npx playwright
+  test --config=e2e/playwright.config.js --project=chromium`, **58/58 green twice**
+  (`--workers=1`; see the hazard note below), including both legibility tests (white and black
+  photos) against the new `isInk`/`isHalo` predicate.
+- **Hazard hit, not a regression.** The default worker count crashed `chrome-headless-shell` with
+  a real `SIGSEGV` (signal 11) twice, on two different, unrelated tests each time
+  (`parts.spec.js`'s A10 rename test, then `shell.spec.js`'s Settings/Debug test) — never on this
+  branch's own `export.spec.js` or `Overlay`-adjacent tests. A concurrent agent's own `vite
+  preview`/Chromium processes were running in this same sandbox at the time (port 4360, a sibling
+  `a14-glass` worktree) — read as sandbox resource contention, not a code defect. `--workers=1`
+  reproduced clean, twice, with no other change.
+- **Not verified.** No device/Safari pass (Chromium only, per this branch's scope). The blur-count
+  table and the built-CSS contrast measurements SPEC's Docs bullet also asks for are about
+  `global.css`'s materials, which this agent didn't touch — left to A14a / the conductor's merge
+  pass, which also reconciles this entry with A14a's own LOGBOOK section.
