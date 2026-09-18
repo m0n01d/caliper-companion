@@ -28,10 +28,42 @@ let scrollToTop: Tea.cmd<'msg> = Tea.Effect(
     },
 )
 
+// SPEC §8a A17 (review S2): the reading column is the Shell's, not the
+// page's — `.shell-content` is one element here that a page cannot reach,
+// and the pages want three widths. `Main.view` maps each page to one of
+// these beside `largeTitle`; global.css §16 reads it as `data-column` on
+// `.shell` and sets `--col` from it (720 / 560 / 1120-at-expanded / 100%).
+// Nothing at compact: every column rule sits under a `min-width` query.
+type column = Column | Narrow | Wide | Bleed
+
+let columnName = (column: column): string =>
+  switch column {
+  | Column => "column"
+  | Narrow => "narrow"
+  | Wide => "wide"
+  | Bleed => "bleed"
+  }
+
+// `.shell` carries `data-column`, which `JsxDOM.domProps` cannot express —
+// so the root goes through the jsx-runtime call with exactly the
+// attributes it needs, the `PathDiv` route (PartsList.res, `Ui.Segmented`).
+module Root = {
+  type props = {
+    className: string,
+    @as("data-column") dataColumn: string,
+    children: React.element,
+  }
+
+  @module("react/jsx-runtime") external jsx: (string, props) => React.element = "jsx"
+
+  let make = (props: props): React.element => jsx("div", props)
+}
+
 @react.component
 let make = (
   ~title: string,
   ~back: option<Route.t>,
+  ~column: column=Column,
   ~actions: option<React.element>=?,
   ~largeTitle: bool=false,
   ~subtitle: option<string>=?,
@@ -43,49 +75,53 @@ let make = (
   | Some(text) => <p className="shell-subtitle"> {React.string(text)} </p>
   | None => React.null
   }
-  <div className="shell">
-    <header className="shell-topbar">
-      <div className="shell-topbar-leading">
-        {switch (back, leading) {
-        | (Some(route), _) =>
-          <button
-            type_="button"
-            className="btn btn-icon shell-back"
-            ariaLabel="Back"
-            onClick={_ => Tea.run(Route.push(route), _msg => ())}>
-            <Icon name=ChevronLeft />
-          </button>
-        // Root screens have nowhere to go back to, so the leading slot is
-        // free for one navigation control (HIG: a bar button on the root).
-        | (None, Some(el)) => el
-        | (None, None) => React.null
-        }}
-      </div>
-      <div className="shell-topbar-center">
-        {largeTitle
-          ? React.null
-          : <>
-              <h1 className="shell-title"> {React.string(title)} </h1>
-              subtitleEl
-            </>}
-      </div>
-      <div className="shell-topbar-actions">
-        {switch actions {
-        | Some(el) => el
-        | None => React.null
-        }}
-      </div>
-    </header>
-    {largeTitle
-      ? <div className="shell-large-title">
-          <h1 className="shell-title shell-title-large"> {React.string(title)} </h1>
-          subtitleEl
+  Root.make({
+    className: "shell",
+    dataColumn: columnName(column),
+    children: <>
+      <header className="shell-topbar">
+        <div className="shell-topbar-leading">
+          {switch (back, leading) {
+          | (Some(route), _) =>
+            <button
+              type_="button"
+              className="btn btn-icon shell-back"
+              ariaLabel="Back"
+              onClick={_ => Tea.run(Route.push(route), _msg => ())}>
+              <Icon name=ChevronLeft />
+            </button>
+          // Root screens have nowhere to go back to, so the leading slot is
+          // free for one navigation control (HIG: a bar button on the root).
+          | (None, Some(el)) => el
+          | (None, None) => React.null
+          }}
         </div>
-      : React.null}
-    <main className="shell-content"> children </main>
-    {switch footer {
-    | Some(el) => <div className="shell-footer"> el </div>
-    | None => React.null
-    }}
-  </div>
+        <div className="shell-topbar-center">
+          {largeTitle
+            ? React.null
+            : <>
+                <h1 className="shell-title"> {React.string(title)} </h1>
+                subtitleEl
+              </>}
+        </div>
+        <div className="shell-topbar-actions">
+          {switch actions {
+          | Some(el) => el
+          | None => React.null
+          }}
+        </div>
+      </header>
+      {largeTitle
+        ? <div className="shell-large-title">
+            <h1 className="shell-title shell-title-large"> {React.string(title)} </h1>
+            subtitleEl
+          </div>
+        : React.null}
+      <main className="shell-content"> children </main>
+      {switch footer {
+      | Some(el) => <div className="shell-footer"> el </div>
+      | None => React.null
+      }}
+    </>,
+  })
 }

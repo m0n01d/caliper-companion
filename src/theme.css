@@ -8,6 +8,25 @@
    `--glass-*` names). Ternpike's palette is gone; nothing here is inherited
    from it. */
 
+/* ── Size classes (SPEC §8a A17, docs/design/a17-adaptive-review.md) ────
+   Three widths of the layout viewport — HIG's compact / regular, spelled
+   as three because the web has no split view until A17b:
+
+     compact   <  600 px    every phone in portrait: the layout as it was,
+                            untouched — nothing below binds under 600
+     medium    600–1023 px  iPad portrait (mini 744, iPad 820, Air / Pro 11
+                            834), iPhone landscape (667–956), narrow windows
+     expanded  ≥ 1024 px    iPad landscape (1133–1210), 13-inch iPads in
+                            both orientations (1024 / 1032 wide in
+                            portrait), desktop
+
+   600 and 1024 live here, once; elsewhere they appear only as the literal
+   in an `@media (min-width: …)` prelude line (the page-margin steps at the
+   end of this file, global.css §16, Part.css, Capture.css). Plain width
+   queries, no container queries (review S4). The type scale does not
+   change by class — HIG does not scale body text, the Large Title stays
+   34 px. */
+
 :root {
   /* Dark only (DESIGN.md §11.1 "Colour"): form controls, scrollbars and the
      UA stylesheet render in their dark variants. */
@@ -93,7 +112,13 @@
   --cc-space-4: 16px;
   --cc-space-5: 20px;
   --cc-space-6: 24px;
-  --cc-page-x: 16px;
+  --cc-page-x: 16px; /* 20 at medium, 24 at expanded: the `@media` steps at the end of this file */
+  /* A17 columns — the Shell's reading column. `Main` picks one per page
+     (`Shell.column`), global.css §16 reads it as `data-column`. */
+  --cc-column: 720px; /* lists, Capture (`Column`) */
+  --cc-column-narrow: 560px; /* the create form, the folder picker, Settings, Debug (`Narrow`) */
+  --cc-column-wide: 1120px; /* the Part page at expanded (`Wide`; 720 at medium) */
+  --cc-panel: 420px; /* Annotate's side panel at expanded (A17-ii) */
 
   --cc-radius-sm: 10px; /* thumbnails, small buttons */
   --cc-radius: 12px; /* inputs, inner elements of a 16 px container (concentric: 16 − 4) */
@@ -103,6 +128,10 @@
   --cc-radius-capsule: 999px;
 
   --cc-tap-min: 44px; /* every interactive element */
+  /* The nav bar's height (A17): the bar is one `--cc-tap-min` row under
+     its safe-area padding. Sticky offsets under the bar (the Part aside)
+     and A17-ii's Annotate grid read this; nothing named it before. */
+  --cc-bar-height: calc(var(--cc-tap-min) + env(safe-area-inset-top));
   --cc-btn-height: 50px; /* capsule primary/secondary buttons (§11.1 "Shape") */
   --cc-shutter: 76px;
 
@@ -116,6 +145,7 @@
      groups, the panel — whose only backdrop is the frame's ambient wash. */
   --glass-fill: rgba(28, 29, 32, 0.55); /* the hairline material: cc-surface at 55%, never blurred */
   --glass-fill-strong: rgba(14, 15, 17, 0.7); /* cc-ground at 70%, the two blurred sticky surfaces */
+  --glass-fill-hover: rgba(38, 39, 43, 0.55); /* cc-surface-2 at the hairline alpha: the pointer hover fill (A17, review S1) — one step UP from `--glass-fill`, and press continues to opaque surface-2 */
   --glass-stroke: rgba(242, 242, 240, 0.18); /* cc-text at 18%, hairline edge (G7) */
   --glass-highlight: rgba(242, 242, 240, 0.28); /* top inset highlight */
   --glass-blur: 24px;
@@ -145,3 +175,18 @@
    `color-scheme: dark` forced, so that block would fire on every phone set to
    light appearance and put a 55%-white bar under off-white text. Add it back
    together with a light theme, not before. */
+
+/* Size classes (the table in this file's header): the page margin steps
+   16 → 20 → 24. Tokens only — the column, bar and grid rules that read
+   them are global.css §16. */
+@media (min-width: 600px) {
+  :root {
+    --cc-page-x: 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --cc-page-x: 24px;
+  }
+}

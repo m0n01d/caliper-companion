@@ -190,9 +190,22 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
   | PartsList(pageModel) => PartsList.footer(pageModel, ~dispatch=m => dispatch(PartsListMsg(m)))
   | _ => None
   }
+  // SPEC §8a A17 (review S2): the Shell's reading column at medium and
+  // expanded (global.css §16; nothing at compact). The Parts list is the
+  // 720 column, narrow (560) while its create form or folder picker is up;
+  // Part is wide (1120 at expanded, 720 at medium) for the two-column
+  // gallery + aside; Capture the 720 column; Settings and Debug narrow;
+  // Annotate bleeds — its own side-by-side grid is A17-ii.
+  let column = switch model.page {
+  | PartsList(pageModel) => PartsList.column(pageModel)
+  | Part(_) => Shell.Wide
+  | Capture(_) => Shell.Column
+  | Annotate(_) => Shell.Bleed
+  | Settings(_) | Debug(_) => Shell.Narrow
+  }
 
   <div className="app-frame">
-    <Shell title back ?subtitle ?actions largeTitle ?leading ?footer> {body} </Shell>
+    <Shell title back column ?subtitle ?actions largeTitle ?leading ?footer> {body} </Shell>
     <A2hsHint />
   </div>
 }
