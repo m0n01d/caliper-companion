@@ -9,25 +9,17 @@
 //
 // Legibility on any photo (SPEC §8a A3): every stroke is drawn twice — a
 // near-black halo at 2.5× the width underneath, then the colour on top —
-// so accent reads on a bright part and live on a dark one. The exported PNG
+// so ink reads on a bright part and on a dark one alike. The exported PNG
 // (export/) uses the same rule at image resolution; this is the live copy.
 //
-// Colours are DESIGN.md §2 tokens by value: a canvas can't read CSS custom
-// properties, and getComputedStyle on every redraw isn't worth it for a
-// handful of constants.
+// Colours are the `Overlay` module (SPEC §8a A14b; DESIGN.md §2/§5 tokens by
+// value) — a canvas can't read CSS custom properties, and getComputedStyle
+// on every redraw isn't worth it for a handful of constants.
 
 type style =
   | Dimmed // a saved dimension on this face, not selected
   | Selected // the saved dimension being edited
   | Pending // the dimension being placed
-
-let accent = "#FF7F2A" // cc-accent — the active dimension
-let accentInk = "#2A1200" // cc-accent-ink — text on the accent pill
-let live = "#5AC1F2" // cc-live — saved dimensions
-let handleFill = "#EEF1F5" // cc-text — handle disc
-let halo = "rgba(21,24,29,0.85)" // cc-ground at 85 % (SPEC §8a A3)
-let scrim = "rgba(23,26,30,0.8)" // cc-scrim — saved pill
-let ground = "#15181D" // cc-ground — the active pill's border
 
 let lineWidth = 2.0
 let extensionWidth = 1.5
@@ -56,14 +48,18 @@ let image = (
   ctx->Canvas.Ctx.drawImage(bitmap, vp.tx, vp.ty, imageW *. vp.scale, imageH *. vp.scale)
 }
 
+// Mono overlays (SPEC §8a A14b overlay table): the line, extensions and
+// arrowheads paint `Overlay.ink` regardless of style — Pending, Selected
+// and Dimmed differ only in the pill (`pill`) and in the group alpha
+// (`alphaFor`) below. `Overlay.live` survives only as the snap ring's
+// colour (`snapRing`).
 let colourFor = (style: style): string =>
   switch style {
-  | Dimmed | Selected => live
-  | Pending => accent
+  | Dimmed | Selected | Pending => Overlay.ink
   }
 
-// Saved, unselected dimensions sit back at 60 % (halo included).
-let alphaFor = (style: style): float => style == Dimmed ? 0.6 : 1.0
+// Saved, unselected dimensions sit back at Overlay.savedAlpha (halo included).
+let alphaFor = (style: style): float => style == Dimmed ? Overlay.savedAlpha : 1.0
 
 // Stroke `path` twice: the halo underneath at haloFactor × width, then the
 // colour. `path` re-issues the geometry (beginPath is done here).
@@ -76,7 +72,7 @@ let stroked = (
 ): unit => {
   ctx->Canvas.Ctx.setLineDash(dash)
   ctx->Canvas.Ctx.setLineWidth(width *. haloFactor)
-  ctx->Canvas.Ctx.setStrokeStyle(halo)
+  ctx->Canvas.Ctx.setStrokeStyle(Overlay.halo)
   ctx->Canvas.Ctx.beginPath
   path()
   ctx->Canvas.Ctx.stroke
@@ -93,7 +89,7 @@ let stroked = (
 let filled = (ctx: Canvas.Ctx.t, ~colour: string, path: unit => unit): unit => {
   ctx->Canvas.Ctx.setLineDash([])
   ctx->Canvas.Ctx.setLineWidth(lineWidth *. haloFactor)
-  ctx->Canvas.Ctx.setStrokeStyle(halo)
+  ctx->Canvas.Ctx.setStrokeStyle(Overlay.halo)
   ctx->Canvas.Ctx.beginPath
   path()
   ctx->Canvas.Ctx.closePath
@@ -108,28 +104,32 @@ let filled = (ctx: Canvas.Ctx.t, ~colour: string, path: unit => unit): unit => {
 let circle = (ctx: Canvas.Ctx.t, p: Viewport.pt, r: float): unit =>
   ctx->Canvas.Ctx.arc(p.x, p.y, r, 0.0, 2.0 *. Math.Constants.pi)
 
-// DESIGN.md §5 handle: 22 px disc in cc-text, 3 px ring and 6 px centre dot
-// in the style's colour; the ring gets the halo, the dot sits on the disc.
-let handle = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~style: style): unit => {
-  let colour = colourFor(style)
+// DESIGN.md §5 handle: 22 px disc in `Overlay.ink`, 3 px ring and 6 px
+// centre dot in `Overlay.inkOn` (with the disc's own colour the ring and
+// dot would vanish into it, SPEC §8a A14b overlay table) — mono, so this no
+// longer varies by style; only Pending and Selected ever call `handle`
+// (`dimension` below), both at alpha 1, so it draws at full alpha
+// unconditionally. `~style` stays on the signature to match those call
+// sites and the one in `Annotate.res`.
+let handle = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~style as _: style): unit => {
   ctx->Canvas.Ctx.save
-  ctx->Canvas.Ctx.setGlobalAlpha(alphaFor(style))
+  ctx->Canvas.Ctx.setGlobalAlpha(1.0)
   ctx->Canvas.Ctx.setLineDash([])
   ctx->Canvas.Ctx.setLineWidth(handleRing *. haloFactor)
-  ctx->Canvas.Ctx.setStrokeStyle(halo)
+  ctx->Canvas.Ctx.setStrokeStyle(Overlay.halo)
   ctx->Canvas.Ctx.beginPath
   circle(ctx, p, handleRadius)
   ctx->Canvas.Ctx.stroke
-  ctx->Canvas.Ctx.setFillStyle(handleFill)
+  ctx->Canvas.Ctx.setFillStyle(Overlay.ink)
   ctx->Canvas.Ctx.beginPath
   circle(ctx, p, handleRadius)
   ctx->Canvas.Ctx.fill
   ctx->Canvas.Ctx.setLineWidth(handleRing)
-  ctx->Canvas.Ctx.setStrokeStyle(colour)
+  ctx->Canvas.Ctx.setStrokeStyle(Overlay.inkOn)
   ctx->Canvas.Ctx.beginPath
   circle(ctx, p, handleRadius)
   ctx->Canvas.Ctx.stroke
-  ctx->Canvas.Ctx.setFillStyle(colour)
+  ctx->Canvas.Ctx.setFillStyle(Overlay.inkOn)
   ctx->Canvas.Ctx.beginPath
   circle(ctx, p, handleDotRadius)
   ctx->Canvas.Ctx.fill
@@ -140,7 +140,8 @@ let handle = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~style: style): unit => {
 // second circle growing from the handle's edge to `ringGrowth` × its radius
 // while it fades out. `progress` is 0..1; Annotate.res drives it from the
 // same frame machinery as the A6 viewport tween (and skips it under reduced
-// motion). Accent over the halo, like every pending stroke.
+// motion). `Overlay.live` over the halo — the one place `live` still paints
+// (SPEC §8a A14b overlay table).
 let ringGrowth = 1.6
 
 let snapRing = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~progress: float): unit => {
@@ -149,7 +150,7 @@ let snapRing = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~progress: float): unit => {
   ctx->Canvas.Ctx.save
   ctx->Canvas.Ctx.setGlobalAlpha(1.0 -. k)
   ctx->Canvas.Ctx.setLineCap("round")
-  stroked(ctx, ~width=lineWidth, ~colour=accent, ~dash=[], () => circle(ctx, p, r))
+  stroked(ctx, ~width=lineWidth, ~colour=Overlay.live, ~dash=[], () => circle(ctx, p, r))
   ctx->Canvas.Ctx.restore
 }
 
@@ -192,12 +193,16 @@ let pillSize = (ctx: Canvas.Ctx.t, text: string, ~style: style): (float, float) 
   )
 }
 
-// The value pill, centred on `at`. Active: accent, 28 px, cc-accent-ink mono
-// 15 with a 1 px near-black border. Saved: cc-scrim with live mono 12.
+// The value pill, centred on `at` (SPEC §8a A14b overlay table). Pending:
+// `Overlay.ink` fill, 28 px, `Overlay.inkOn` label and 1 px border (17:1).
+// Selected/Dimmed: `Overlay.scrim` fill, `Overlay.ink` label, mono 12 — a
+// Dimmed pill is only ever passed to this function after `dimension`'s
+// alpha group has been restored (see `dimension` below), so its label is
+// never scaled by `Overlay.savedAlpha`.
 let pill = (ctx: Canvas.Ctx.t, text: string, ~at: Viewport.pt, ~style: style): unit => {
   let (fill, ink) = switch style {
-  | Pending => (accent, accentInk)
-  | Selected | Dimmed => (scrim, live)
+  | Pending => (Overlay.ink, Overlay.inkOn)
+  | Selected | Dimmed => (Overlay.scrim, Overlay.ink)
   }
   let (w, h) = pillSize(ctx, text, ~style)
   ctx->Canvas.Ctx.setTextAlign("center")
@@ -208,7 +213,7 @@ let pill = (ctx: Canvas.Ctx.t, text: string, ~at: Viewport.pt, ~style: style): u
   if style == Pending {
     ctx->Canvas.Ctx.setLineDash([])
     ctx->Canvas.Ctx.setLineWidth(1.0)
-    ctx->Canvas.Ctx.setStrokeStyle(ground)
+    ctx->Canvas.Ctx.setStrokeStyle(Overlay.inkOn)
     ctx->Canvas.Ctx.stroke
   }
   ctx->Canvas.Ctx.setFillStyle(ink)
@@ -236,6 +241,13 @@ let dimension = (
     ctx->Canvas.Ctx.lineTo(b.x, b.y)
   })
 
+  // A Dimmed pill is queued here and drawn after `restore` below, at alpha
+  // 1 (SPEC §8a A14b overlay table): inside the alpha group a 100 % label
+  // on a 70 % `Overlay.scrim` pill is 3.9:1 on white. Pending and Selected
+  // already run this alpha group at 1.0 (`alphaFor`), so drawing their
+  // pill in place is equivalent — only Dimmed needs the deferral.
+  let dimmedPill = ref(None)
+
   let len = Viewport.distance(a, b)
   if len > 0.0 {
     // Unit direction a→b and a unit normal, chosen to point up the screen
@@ -260,11 +272,20 @@ let dimension = (
       let (w, h) = pillSize(ctx, t, ~style)
       let off =
         lineWidth /. 2.0 +. pillClearance +. Math.abs(nx) *. w /. 2.0 +. Math.abs(ny) *. h /. 2.0
-      pill(ctx, t, ~at={x: mid.x +. nx *. off, y: mid.y +. ny *. off}, ~style)
+      let at: Viewport.pt = {x: mid.x +. nx *. off, y: mid.y +. ny *. off}
+      switch style {
+      | Dimmed => dimmedPill := Some((t, at))
+      | Selected | Pending => pill(ctx, t, ~at, ~style)
+      }
     | None => ()
     }
   }
   ctx->Canvas.Ctx.restore
+
+  switch dimmedPill.contents {
+  | Some((t, at)) => pill(ctx, t, ~at, ~style)
+  | None => ()
+  }
 
   switch style {
   | Dimmed => ()

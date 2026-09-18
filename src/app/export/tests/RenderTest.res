@@ -1,7 +1,8 @@
 // RenderTest — the pure geometry in Render.res (SPEC §5 canvas cap, M5
-// bullet 1; SPEC §8a A3's halo/amber legibility scheme). Only the DOM-free
-// half: no canvas exists in vitest's `node` environment (vitest.config.js),
-// so the actual drawing is exercised by e2e/specs/export.spec.js instead.
+// bullet 1; SPEC §8a A3's halo/ink legibility scheme, A14b's mono
+// `Overlay` palette). Only the DOM-free half: no canvas exists in vitest's
+// `node` environment (vitest.config.js), so the actual drawing is
+// exercised by e2e/specs/export.spec.js instead.
 
 open Vitest
 
@@ -227,6 +228,18 @@ describe("Render.contrastRatio (SPEC §8a A3 bullet 3: pill/text contrast >= 4.5
 
   test("the pill fill/text colours clear WCAG AA (>= 4.5:1)", () => {
     let ratio = Render.contrastRatio(Render.pillFillColor, Render.pillTextColor)
+    expect(ratio >= 4.5)->toBeTruthy
+  })
+})
+
+// SPEC §8a A14b: `Overlay.inkOn` is the label/border colour drawn on top of
+// `Overlay.ink` fills (the active canvas pill, the export pill) — this is
+// the module-level guarantee `Render.contrastRatio` exists to check,
+// independent of which of Render's `pill*Color` bindings currently point
+// at which `Overlay` constant.
+describe("Overlay contrast (SPEC §8a A14b)", () => {
+  test("inkOn on ink clears WCAG AA (>= 4.5:1)", () => {
+    let ratio = Render.contrastRatio(Overlay.inkOn, Overlay.ink)
     expect(ratio >= 4.5)->toBeTruthy
   })
 })
