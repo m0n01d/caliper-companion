@@ -42,10 +42,15 @@ const shot = async (name) => {
   // in this real-Chromium context — settle here, in the tour, never in the
   // app: wait until no view transition is in flight (`data-nav` is cleared
   // on `finished`) and no CSS animation or transition is still running.
+  // Time-based ones only: the nav bar's scroll-driven glass fade
+  // (global.css §2, `cc-bar-glass`) sits on a ScrollTimeline and reports
+  // `running` for as long as the page exists.
   await page.waitForFunction(
     () =>
       !document.documentElement.hasAttribute('data-nav') &&
-      document.getAnimations().every((a) => a.playState !== 'running'),
+      document
+        .getAnimations()
+        .every((a) => !(a.timeline instanceof DocumentTimeline) || a.playState !== 'running'),
   )
   await page.waitForTimeout(150)
   if (!wanted(name)) return

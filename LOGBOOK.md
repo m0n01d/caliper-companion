@@ -3089,3 +3089,38 @@ through `--vv-height` (and the panel's `overscroll-behavior: contain` in Safari)
   it is a call for the owner, not this pass.
 - `rescript format` rewrites files this repo does not format; the ReScript edits are
   hand-formatted to match their neighbours, as in A17-i.
+
+## 2026-09-18 — UX polish: depth, shape, release motion, scroll-edge bar (claude/caliper-companion-ux-polish)
+
+Owner request, two passes, CSS only (no ReScript, no markup, no test-id change). The full list is
+DESIGN.md §13; the calls worth remembering:
+
+- **Why it read as boxy:** every surface shared one bright 1 px outline over one fill (a
+  wireframe), empty tiles were dashed drop-zones, and the bare `button` rule's inset highlight drew
+  a ghost capsule round every unselected segmented option and every `<button>` list row. Fixed at
+  the source (`box-shadow: none` on `.segmented-option` / `.list-row`), then strokes halved and
+  depth added.
+- **§6 amended:** "nothing bounces, no spring" → two overshoot curves on small things only
+  (`--cc-ease-spring`, `--cc-ease-glide`), and an asymmetric press (80 ms in, 320 ms out) — the
+  release transition lives on the base rule, the press one on `:active`.
+- **A14 reversed in two places:** the switch's on-track is the live fill (was ivory track + ground
+  knob), and a captured face card has no live ring (badge only) — on Part every card is captured.
+- **Scroll-edge bar:** resting state `opacity: 0` with keyframes going *to* 1 — a page too short to
+  scroll has an inactive scroll timeline where the animation contributes nothing (measured: with
+  `from { opacity: 0 }` the short Parts list kept full glass while Annotate's was clear). Measured
+  0 / 0.5 / 1 at scroll 0 / 12 / 200; 1 throughout under reduced motion; 0 on a non-scrolling page.
+- **Bug fixed in passing:** `.parts-search-clear` was centred with `translateY(-50%)`, which the
+  `.btn:active` scale replaced — the button jumped 22 px on press. Now auto margins.
+- **`scripts/screenshot-tour.mjs`:** the settle check ignores non-`DocumentTimeline` animations —
+  a scroll-driven animation reports `running` forever and hung the tour.
+- **Tests:** vitest 283 / 283; Chromium e2e 71 / 73 with 2 workers. The two failures
+  (`parts.spec.js:86` wedge toggle persists, `annotate.spec.js:600` snap pill survives a reload)
+  are a **pre-existing flake**: the untouched base built from `git archive HEAD` fails the same
+  pair 7 / 12 under `--repeat-each=6 --workers=1`, this branch 6 / 12 — a settings write racing
+  `page.reload()` / `goto`. Not fixed here. WebKit not run. `docs/screenshots/` (17 phone, 8 wide)
+  regenerated.
+- **Environment:** the asdf default Node (20.3.0) is below ReScript 12's floor (20.11); everything
+  here ran with `ASDF_NODEJS_VERSION=22.16.0`. An `npm install` under 20.3 silently skips
+  `@rescript/darwin-arm64`.
+- **To eyeball on the phone:** the scroll-edge bar in Safari 26, the knob stretch and shutter press
+  under a real finger, and whether 9 % strokes hold up outdoors.

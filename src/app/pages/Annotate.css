@@ -37,6 +37,19 @@
   border-radius: var(--cc-radius-photo);
   background: var(--cc-photo-mat);
   overflow: hidden;
+  /* Polish pass: the stage floats like a photo card. Its neutral inset
+     edge is `::after` below — over the canvas, where an inset shadow on the
+     stage itself would be painted under it. */
+  box-shadow: var(--cc-shadow-card);
+}
+
+.annotate-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  pointer-events: none;
 }
 
 .annotate-stage-empty {
@@ -197,13 +210,16 @@
   animation: cc-ring-fade 400ms var(--cc-ease-out);
 }
 
+/* Polish pass 2026-09-18: the ring lands on the field's resting focus halo
+   (global.css §6, 14 % ink) instead of fading to nothing — the halo would
+   otherwise pop back in when the one-shot ends. */
 @keyframes cc-ring-fade {
   from {
     box-shadow: 0 0 0 4px var(--cc-accent);
   }
 
   to {
-    box-shadow: 0 0 0 4px transparent;
+    box-shadow: 0 0 0 4px rgba(242, 242, 240, 0.14);
   }
 }
 
@@ -284,9 +300,13 @@
   margin-top: var(--cc-space-2);
 }
 
+/* Polish pass 2026-09-18: the same filled-well ink step the fields above it
+   use (6 % over the panel) rather than opaque `surface-2`, at the inner
+   16 px radius, and flat — a group inside the sheet does not float. */
 .annotate-dimensions .list-group {
-  background: var(--cc-surface-2);
-  border-radius: var(--cc-radius);
+  background: var(--glass-fill-field);
+  border-radius: var(--cc-radius-lg);
+  box-shadow: none;
 }
 
 .annotate-dim-empty {

@@ -76,15 +76,42 @@
   position: relative;
 }
 
+/* Polish pass 2026-09-18: UISearchBar's shape — a capsule with a leading
+   magnifier. The glyph is a background image (the `select` chevron's
+   pattern in global.css §6, `text-3` stroke), so no markup and no test id
+   changes; 42 px of left padding clears it. */
 .parts-search input[type="search"] {
   padding-right: 48px;
+  padding-left: 42px;
+  border-radius: var(--cc-radius-capsule);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238C8F94' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 14px center;
+  background-size: 18px 18px;
 }
 
+/* Polish pass 2026-09-18: centred by auto margins, not `translateY(-50%)` —
+   the `.btn:active` press scale replaced that transform, so the button
+   jumped half its height down on every press. Bare glyph, no glass disc:
+   it sits inside the field's own capsule. */
 .parts-search-clear {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   right: 2px;
-  transform: translateY(-50%);
+  margin-block: auto;
+}
+
+.parts-search .parts-search-clear.btn-icon {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--cc-text-2);
+}
+
+.parts-search .parts-search-clear.btn-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* A10: one folder section per distinct path. The inset grouped sections
@@ -126,8 +153,9 @@
   width: 100%;
   min-height: var(--cc-tap-min);
   padding: var(--cc-space-2) 14px;
-  background: var(--cc-field);
-  border: 1px solid var(--glass-stroke); /* A14: drawn like the field above it — `field` + the stroke */
+  background: var(--glass-fill-field); /* drawn like the field above it (global.css §6, polish pass: the filled well) */
+  border: 1px solid var(--glass-stroke);
+  box-shadow: none;
   border-radius: var(--cc-radius);
   color: var(--cc-text);
   font: var(--cc-text-body);
@@ -263,9 +291,11 @@
     border-color var(--cc-motion-press) linear;
 }
 
+/* Polish pass: selected is an "on" state, so it takes the live fill (S2) —
+   UIKit's blue selection disc — with the same ground tick (5.8:1). */
 .part-select:checked::before {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
+  background: var(--cc-live-fill);
+  border-color: var(--cc-live-fill);
 }
 
 .part-select:checked::after {

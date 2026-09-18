@@ -318,3 +318,38 @@ A17b.
   expanded is the single exception, and the page then has nothing left to scroll. No
   `position: fixed`, no container queries, no `transform` or `overflow` on an ancestor of the sticky
   bars.
+
+## 13. Polish pass — depth, shape and release (2026-09-18, owner request)
+
+The owner's brief: "smooth and buttery … modern and native … almost too boxy and boring". This
+section **overrides §2, §4, §6 and §11 where they differ**; tokens are in `src/theme.css`, rules in
+`src/global.css` (each marked "polish pass").
+
+- **Depth over outlines.** `--glass-stroke` 18 → 9 % and `--glass-highlight` 28 → 16 %
+  (`prefers-contrast: more` still lifts the stroke to 28 %). Groups, photo cards and the Annotate
+  stage float on `--cc-shadow-card`; the primary / danger capsules, the shutter and the segmented
+  thumb on `--cc-shadow-raised`. Dividers are the translucent stroke, not opaque `cc-border`.
+- **Shape.** Card / photo radius 16 → 24, field 12 → 14, thumbnail 10 → 12, the Annotate sheet 30
+  (`--cc-radius-sheet`). Search is a capsule with a leading magnifier.
+- **Filled wells.** Fields, the segmented track and the panel's Dimensions group are
+  `--glass-fill-field` (6 % ink) instead of the dark `cc-field` well with a bright edge. Focus is
+  the border at full ink plus a 4 px 14 % halo, eased in.
+- **No dashed placeholders.** An empty face tile is the hairline material with its glyph in a
+  48 px filled disc; the selected kind takes a live wash and a live disc. **Captured loses its live
+  ring** (check badge + photo carry it; the ring now means *selected* only). The face-card scrim is
+  an eased fade, not a solid band.
+- **"On" is live everywhere**: the switch track and the Edit-mode selection disc join the Snap
+  pill, the selected segment and pressed chips (S2).
+- **Disabled primary** is a quiet filled well with a `text-2` label, not the ivory slab at 40 %.
+- **Motion — amends §6's "nothing bounces, no spring".** Press goes in at `--cc-motion-press`
+  (80 ms) and releases over `--cc-motion-release` (320 ms). Two curves pass 1, on small things
+  only, never a page or a sheet: `--cc-ease-spring` for a released press (capsules 0.96, chips
+  0.95, face cards 0.96, the check badge's pop-in) and `--cc-ease-glide` (2 % past the stop) for the
+  segmented thumb and the switch knob (`--cc-motion-glide`, 300 ms). The knob stretches 6 px while
+  held; the shutter's disc shrinks inside a still ring. Pressed rows light up
+  (`--glass-fill-pressed`) instead of dimming. All of it is zeroed by §12's reduced-motion block.
+- **Scroll-edge nav bar.** The bar is clear at rest and fades to the blurred glass over the first
+  24 px of scroll — a CSS scroll-driven animation on the glass pseudo-child (`cc-bar-glass`), no JS.
+  Always-on glass where `animation-timeline` is unsupported and under reduced motion, reduced
+  transparency and `prefers-contrast: more`.
+- **Ambient light.** A third wash on the frame: 7 % of the live blue from the top-right.

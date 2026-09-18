@@ -44,7 +44,7 @@
   align-items: start;
   min-height: var(--cc-tap-min);
   padding: var(--cc-space-3) var(--cc-space-4);
-  border-bottom: 1px solid var(--cc-border);
+  border-bottom: 1px solid var(--glass-stroke); /* polish pass: the translucent hairline, as `.list-row`'s divider */
 }
 
 .feature-row:last-child {
