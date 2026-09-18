@@ -540,7 +540,9 @@ let renderTimer = (model: model): React.element => {
     }
   | Some(_) | None => "Timer starts at first capture"
   }
-  <p className="t-footnote mono muted" dataTestId="timer"> {React.string(text)} </p>
+  // `part-timer`: centred under the capped Export at medium and expanded
+  // (Part.css, SPEC §8a A17 boards); left-aligned at compact as before.
+  <p className="t-footnote mono muted part-timer" dataTestId="timer"> {React.string(text)} </p>
 }
 
 // SPEC §8a A17 (review S3): the root is `.part-columns` — a plain

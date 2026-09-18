@@ -89,6 +89,17 @@
   font: var(--cc-text-footnote);
 }
 
+/* ── SPEC §8a A17: medium and expanded ────────────────────────────────── */
+/* The Hands-on timer sits under Export: at compact both span the column
+   (left-aligned); from medium the capsule is capped at 400 and centred
+   (global.css §16), so the timer centres with it — the `adaptive-after-*`
+   boards' look. */
+@media (min-width: 600px) {
+  .part-timer {
+    text-align: center;
+  }
+}
+
 /* ── SPEC §8a A17: the expanded two-column Part page ──────────────────── */
 /* Below 1024 `.part-columns` is the plain `.stack-lg` it always was (the
    medium 3-up grid is global.css §16's). At expanded the Shell gives Part
