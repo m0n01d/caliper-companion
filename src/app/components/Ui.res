@@ -158,11 +158,24 @@ module Segmented = {
 module ListGroup = {
   // The header line on its own, exposed so a page can render a header-only
   // row without a `.list-group` container (A12b: a folder with subfolders
-  // but no direct parts, while editing).
+  // but no direct parts, while editing). `~hidden` (A14 G5) clips it with
+  // `visually-hidden`: gone from the screen, still the group's name in the
+  // accessibility tree — so two adjacent `role="list"`s stay told apart by
+  // VoiceOver and every `getByRole('heading')` count is unchanged.
   module Header = {
     @react.component
-    let make = (~text: string, ~testId: option<string>=?, ~trailing: option<React.element>=?) => {
-      let heading = <h2 className="list-group-header" dataTestId=?testId> {React.string(text)} </h2>
+    let make = (
+      ~text: string,
+      ~testId: option<string>=?,
+      ~trailing: option<React.element>=?,
+      ~hidden: bool=false,
+    ) => {
+      let heading =
+        <h2
+          className={hidden ? "list-group-header visually-hidden" : "list-group-header"}
+          dataTestId=?testId>
+          {React.string(text)}
+        </h2>
       switch trailing {
       | Some(el) =>
         <div className="list-group-header-row">
@@ -177,6 +190,7 @@ module ListGroup = {
   @react.component
   let make = (
     ~header: option<string>=?,
+    ~headerHidden: bool=false,
     ~headerTestId: option<string>=?,
     ~headerTrailing: option<React.element>=?,
     ~headerEl: option<React.element>=?,
@@ -189,7 +203,8 @@ module ListGroup = {
     <section className="list-group-section">
       {switch (headerEl, header) {
       | (Some(el), _) => el
-      | (None, Some(text)) => <Header text testId=?headerTestId trailing=?headerTrailing />
+      | (None, Some(text)) =>
+        <Header text testId=?headerTestId trailing=?headerTrailing hidden=headerHidden />
       | (None, None) => React.null
       }}
       <div className="list-group" role=?{asList ? Some("list") : role} dataTestId=?testId>

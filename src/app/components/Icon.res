@@ -162,7 +162,7 @@ let make = (~name: name, ~size: int=24, ~label: option<string>=?) => {
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="1.5" // A14 G6: thin Lucide strokes; `.face-card-check svg` still wins at 3 (CSS beats the attribute)
     strokeLinecap="round"
     strokeLinejoin="round"
     focusable="false"
