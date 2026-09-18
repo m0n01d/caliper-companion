@@ -2709,3 +2709,78 @@ here). Per SPEC §8a A14's "Build split" and `docs/design/a14-glass-review.md` �
 - **Unchanged.** Blur budget, the ivory primary, the icon, `features.json`, the export geometry.
 - **Verified.** rescript build clean; vitest 276/276 (the `RenderTest` contrast case now measures
   ink #38ABDF vs inkOn #0E0F11 = 7.36); Chromium e2e 58/58; tour regenerated.
+
+## 2026-09-18 — A16a motion: push/pop page transitions, take-over rises, press scale (agent/a16-motion)
+
+SPEC §8a A16a, built to `docs/design/a16-motion-review.md` (B1–B4, S1–S9 folded in). A16b (the
+segmented indicator, the selection-circle stagger, the canvas eases) is not here.
+
+- **Tokens** (`theme.css`): `--cc-motion-nav 350ms`, `--cc-motion-sheet 280ms`, `--cc-ease-out`
+  (= `--cc-ease`, one curve two names), `--cc-ease-in cubic-bezier(0.4, 0, 1, 1)`,
+  `--cc-ease-standard cubic-bezier(0.2, 0, 0, 1)`. `--cc-motion` 160 and `--cc-motion-press` 80
+  unchanged. No spring, no overshoot.
+- **Runtime.** `WebApi.Document` (`data-nav` on `documentElement`), `WebApi.ViewTransition`
+  (`startFn` feature check, `@send start`, `finished`), `WebApi.flushSync` (`react-dom`).
+  `Motion.res` is the spec's generation-counted dispatch verbatim: `data-nav` set before `start`,
+  cleared on both `finished` branches only if no newer transition began; unsupported → plain
+  dispatch, no attribute. `Route.depth` (Parts 1 + folder depth, Settings 2, Debug 3, Part 10,
+  Capture 11, **Annotate 12**), `Route.direction: (t, t) => Push | Pop | Fade`, `directionAttr`
+  → `push` / `pop` / `fade`; `Route.subscribe` keeps `prev` and dispatches through
+  `Motion.transition`, so the chevron, folder rows, `Route.push` and the browser's own
+  back/forward all animate. `Shell.scrollToTop` (moved from `PartsList`; written as
+  `Tea.Effect(fn)` — a constructor over a lambda — because `Tea.effect(...)` at top level would
+  be weakly typed under the value restriction, `cmd` being invariant through `array`) is batched
+  on every cross-page `RouteChanged` in `Main` and still by `FolderChanged`.
+- **Every animation** (all zeroed under `prefers-reduced-motion`: CSS by global.css §12's 0 ms
+  block, the view-transition pseudos by §15's `animation: none !important` — the API still runs
+  and the swap is a ≈ 2-frame cut):
+
+  | What | Duration | Easing | Reduced motion |
+  |---|---|---|---|
+  | Push: old root `cc-nav-out` (→ −30 %, opacity 0.6), new root `cc-nav-in` (from +100 %) | 350 ms | `--cc-ease-out`, `both` | `animation: none !important` |
+  | Pop: old `cc-nav-back-out` (→ +100 %, `z-index: 1`, over the new), new `cc-nav-back-in` (from −30 %, 0.6) | 350 ms | `--cc-ease-out`, `both` | same |
+  | Fade (same depth): old `cc-fade-out`, new `cc-fade-in` | 200 ms | old `--cc-ease-in`, new `--cc-ease-out` | same |
+  | Create form `.parts-form`, folder picker `.folder-picker`: `cc-rise` (24 px up + fade) on mount | 280 ms | `--cc-ease-out` | 0 ms |
+  | Edit toolbar `.shell-footer`: `cc-rise-footer` (from `translateY(100%)`) on mount | 280 ms | `--cc-ease-out` | 0 ms |
+  | Press: `.btn` 0.97, `.chip` 0.97, `.face-card` 0.985, `.list-row:has(> .list-row-link:active)` 0.985 (the row, not the text-only link) | 80 ms | linear | 0 ms |
+
+  Nothing transforms `.shell` or `.app-frame`; the nav CSS is on the `(root)` pseudos only. No
+  exit animations (an unmount is a cut). The press scale is `.btn:active`, not `button:active` —
+  bare buttons (segmented options, `button.list-row`) must not move. There is no `.folder-row`
+  class: folder rows are `.list-row` + `.list-row-link`, so the `:has` rule covers them.
+- **Measured** (scratchpad probe, the repo's Playwright Chromium, 390×844, the spec's
+  `addInitScript` recorder plus timestamps): **push** `ready` 20–32 ms after the call, `finished`
+  379–400 ms; old(root) `animation-name: cc-nav-out`, new(root) `cc-nav-in`, `animation-duration
+  0.35s`. **Pop** `cc-nav-back-out` / `cc-nav-back-in`, old `z-index: 1`, `finished` 379–400 ms;
+  a screenshot 150 ms into a pop shows the leaving Part screen sliding out *over* the dimmed,
+  parallaxed Parts screen (and mid-push the new screen over the old). **Reduce:** both names
+  `none`, `animation-duration 0s`, `finished` 42–50 ms after the call (`ready` at 18–30 ms — the
+  swap itself is ≈ 2 frames). **Double Back** (Capture → two `history.back()` in one task): the
+  first transition's `ready` rejects `AbortError` and its `finished` fulfils at 4 ms (callback
+  still ran), the second runs its full pop (378 ms), `data-nav` is null afterwards under both
+  settings — the counter works. Under `reduce` the coalesced second `hashchange` saw the same
+  route twice (`Parts("") → Parts("")`) and logged a `fade` — harmless (two identical
+  snapshots), noted. **Entrances:** `.shell-footer` `cc-rise-footer 0.28s cubic-bezier(0.2, 0.8,
+  0.2, 1)`, still `position: sticky`; `.parts-form` / `.folder-picker` `cc-rise 0.28s`; `.btn`
+  `transition: background-color, opacity, transform 0.08s linear`.
+- **Playwright.** `reducedMotion` is not a first-class test option (only `colorScheme` is) — set
+  directly under `use` it is *silently ignored* (measured: `matchMedia` false, the push logged
+  `cc-nav-out`), so the config sets `use.contextOptions.reducedMotion: 'reduce'` and the spec's
+  `test.use` overrides go through `contextOptions` too. `motion.spec.js` (chromium only): push /
+  pop logged with the nav slides under `no-preference`; the same pair logs `none` under `reduce`;
+  `html` loses `data-nav` (retrying); the toolbar, form and picker have a non-`none`
+  `animation-name` on entry; and the one `no-preference` A6 case — a MutationObserver on the
+  canvas records every `data-autofit` value, which passes through `fitting` to `fitted`. That
+  case waits for `data-nav` to clear before tapping: a page is non-interactive while a transition
+  runs (the pseudo-tree takes the pointer events), and the first draft's taps were swallowed by
+  the 350 ms Capture → Annotate push. No existing spec changed.
+- **Tour.** `scripts/screenshot-tour.mjs`'s `shot` now waits until no `data-nav` is set and no
+  animation is `running` before its 150 ms settle — the tour waits, never the app.
+- **Docs.** `DESIGN.md` §6 (the two exceptions, the token names, the handle scale-in struck) and
+  §11.1 "Interaction feel" (the press scale).
+- **Verified.** rescript build clean; vitest 276 → 281 (`RouteTest`: depth and direction for
+  every pair the UI can produce, Capture → Annotate = push, Settings → Debug → Back); Chromium
+  e2e 58 → 62, green twice; the tour (into a temp dir, not committed) renders `02`, `13` and
+  `14` fully settled — no shot catches a rise or a slide mid-way. WebKit cannot launch here
+  (e2e/README.md) — the iOS 18 push/pop, the footer's blur riding the rise, and the pop stacking
+  are to be eyeballed once on the phone.
