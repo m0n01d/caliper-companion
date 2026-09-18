@@ -1,4 +1,4 @@
-// Caliper Companion service worker — ported from ternpike/public/sw.js with
+// Snapkin service worker — ported from ternpike/public/sw.js with
 // the SKIP_CACHE allowlist and the push-notification handlers removed: v0
 // makes no network calls of its own (SPEC §5), so there is nothing to skip,
 // and no push feature to receive for. Everything else — the atomic critical

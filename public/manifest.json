@@ -1,6 +1,6 @@
 {
-  "name": "Caliper Companion",
-  "short_name": "Calipers",
+  "name": "Snapkin",
+  "short_name": "Snapkin",
   "description": "Annotated-photo caliper capture for reverse engineering small parts.",
   "start_url": "./",
   "scope": "./",

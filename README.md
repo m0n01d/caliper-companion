@@ -1,4 +1,8 @@
-# caliper-companion
+# Snapkin
+
+Repo `caliper-companion` — the product is **Snapkin** (renamed 2026-09-18): snap a photo, jot the
+dimensions on it like a napkin sketch, export to Fusion. Older docs and the `features.json` schema
+id keep the old name on purpose (the export contract and the on-device database name never change).
 Annotated-photo caliper capture for reverse engineering small parts. Exports features.json for the Fusion 360 MCP.
 
 ## Develop

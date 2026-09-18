@@ -35,7 +35,7 @@ let make = () => {
       <span className="a2hs-hint-icon"> <Icon name=Share size=20 /> </span>
       <p className="a2hs-hint-text">
         {React.string(
-          "Tap Share, then \"Add to Home Screen\" — Caliper Companion works offline once installed.",
+          "Tap Share, then \"Add to Home Screen\" — Snapkin works offline once installed.",
         )}
       </p>
       <Ui.Button variant=Plain size=Small onClick={dismiss} testId="a2hs-later">

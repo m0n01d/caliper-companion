@@ -1,4 +1,7 @@
-# Caliper Companion
+# Snapkin (repo: caliper-companion)
+
+> Product name is **Snapkin** since 2026-09-18. Never rename the PouchDB database
+> (`Store.make(~name="caliper-companion")`) or the `features.json` schema id — both are contracts.
 
 Annotated-photo caliper capture for reverse engineering small parts. Photograph each face, tap two
 edges, type the caliper reading, name the feature. Exports a dimensioned PNG per face and a

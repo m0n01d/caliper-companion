@@ -5,7 +5,7 @@
 
 switch ReactDOM.querySelector("#root") {
 | Some(root) => ReactDOM.Client.createRoot(root)->ReactDOM.Client.Root.render(<Main />)
-| None => Console.error("Caliper Companion: #root not found")
+| None => Console.error("Snapkin: #root not found")
 }
 
 // `WebApi.ServiceWorker.container` is `undefined` (Nullable → None) in any
@@ -16,7 +16,7 @@ switch WebApi.ServiceWorker.container->Nullable.toOption {
   ->WebApi.ServiceWorker.register(Env.base ++ "sw.js")
   ->Promise.then(_registration => Promise.resolve())
   ->Promise.catch(err => {
-    Console.error2("Caliper Companion: service worker registration failed", err)
+    Console.error2("Snapkin: service worker registration failed", err)
     Promise.resolve()
   })
   ->ignore

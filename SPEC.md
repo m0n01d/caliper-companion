@@ -1,5 +1,9 @@
 # Caliper Companion — v0 spec (mobile web PWA, Ternpike stack)
 
+> **Name:** the product is **Snapkin** (2026-09-18). "Caliper Companion" below is the working title it
+> was specced under; identifiers that carry it (`features.json` schema id, the PouchDB database name,
+> `.ccpart.zip`) are contracts and stay.
+
 **Status:** ready for Claude Code · **Owner:** Dwight · **Target:** installable PWA, one user, two weeks
 **Supersedes:** `caliper-companion-spec-v0.md` (Swift). Same product, same JSON contract, different runtime.
 
