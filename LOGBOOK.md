@@ -2880,3 +2880,107 @@ no new dependency, nothing `position: fixed`, nothing bounces, no permanent fram
   a transformed capsule standing in for a laid-out one; imperceptible, noted.
   WebKit cannot launch here — the glide, the stagger and the ring fade are to be eyeballed once
   on the phone.
+
+## 2026-09-18 — A17-i adaptive layout: size classes, the Shell column, Part's two columns, hover (agent/a17-adaptive)
+
+SPEC §8a A17-i on `8dbcb48`, with `docs/design/a17-adaptive-review.md` (B1, S1–S4, S8, S9, S10)
+applied. A17-ii (Annotate medium / expanded, Escape, `adaptive.spec.js`, wide `07`, DESIGN §12)
+is not here. No new dependency, no `%raw`, no `position: fixed`, no container query, no
+`transform` / `overflow` on any ancestor of the two sticky bars or the new sticky aside — `.shell`
+stays the one scroll container.
+
+**What changed.**
+- `theme.css`: the size-class table (compact < 600 / medium 600–1023 / expanded ≥ 1024) as the
+  header's comment block; 600 and 1024 appear elsewhere only in `@media` preludes (theme.css's
+  page-x steps, global.css §16, Part.css, Capture.css). Tokens `--cc-column` 720,
+  `--cc-column-narrow` 560, `--cc-column-wide` 1120, `--cc-panel` 420 (A17-ii's),
+  `--cc-bar-height` = `tap-min + safe-area-top`, `--glass-fill-hover` = `rgba(38, 39, 43, .55)`;
+  `--cc-page-x` 16 → 20 → 24 by class. Type scale untouched.
+- `Shell.res`: `~column: column=Column` (`Column | Narrow | Wide | Bleed`) → `data-column` on
+  `.shell`, rendered through a jsx-runtime record component (`Shell.Root`, the `PathDiv` route —
+  `JsxDOM.domProps` cannot express a data attribute). `PartsList.column` (narrow while the create
+  form or the folder picker is up, else the 720 column) sits beside `largeTitle`; `Main.view` maps
+  Part → `Wide`, Capture → `Column`, Settings / Debug → `Narrow`, Annotate → `Bleed`.
+- `global.css` §16 (new, after §15): `--col` from `data-column` (wide is 720 at medium, 1120 at
+  ≥ 1024), `.shell-content` / `.shell-large-title` at `width: 100%; max-width: var(--col);
+  margin-inline: auto`; the bar and the footer stay full-bleed and their contents align to the
+  column with the review's S8 expression; `.btn-block` capped at 400 and centred; `.face-grid` /
+  `.face-grid-dense` 3-up at ≥ 600; the hover block under `(hover: hover) and (pointer: fine)`.
+- `Part.res` (review S3): root `.stack-lg.part-columns`; the Found branch is
+  `.part-gallery` (grid, or Edit mode's list) + `.part-aside.stack-lg` (features, Export, timer).
+  `Part.css` at ≥ 1024: the `minmax(0, 1fr) minmax(320px, 380px)` grid with `align-items: start`,
+  the error `p` spanning both, the gallery's grid `auto-fill minmax(200px, 1fr)`, the aside sticky
+  at `bar-height + page-x` with `align-self: start`.
+- `Part.res` / `Part.css`: the Hands-on timer `<p>` gains `part-timer` and centres at ≥ 600 —
+  the `adaptive-after-*` boards centre it under the capped Export; at compact it stays
+  left-aligned under the full-width capsule as before (the 390 `08` is byte-identical).
+- `Capture.css` at ≥ 600: `.shutter-block` centred at 480. `Settings.res` / `Debug.res`:
+  nothing — the narrow column is the Shell's. Debug keeps its 13 viewport rows (no size-class row
+  added; `shell.spec.js:36` unchanged).
+- `scripts/screenshot-tour.mjs`: `TOUR_ONLY=12,08,04` writes only those shots as
+  `${W}x${H}-<name>.png`; the whole tour still runs and every `shot()` still settles the page, so
+  later steps see the same timing; a filtered run does not save the export zip.
+- `scripts/screenshot-tour.mjs`, the `17-parts-search` step: **a pre-existing race, found because
+  the 1440 run hits it every time.** `page.goto('#/')` from `#/f/Miata` and the `fill('clip')`
+  right after it: `hashchange` lands asynchronously and, since A16, inside a view transition,
+  so the fill runs first, the results even render, and then `Main.RouteChanged` →
+  `PartsList.FolderChanged("")` (PartsList.res:621–630) sets `query: ""` and the field empties.
+  At 1440 × 900 the transition's snapshot is bigger, the window wider, and
+  `expectVisible(parts-section-header)` times out; at 390 it is a coin toss (today's first phone
+  run shot the cleared state). Reproduced on the untouched `8dbcb48` built in a second worktree
+  and served on :4396: the same `TimeoutError` at the same step after 16 shots. Fix: wait for the
+  root's `Miata` folder row before typing — the wait the `12` step already uses. With it the
+  390 `17` is byte-identical to the committed one (A14's `ce817a6`).
+
+**Measured (Playwright Chromium, the probe in the A17-i report; `hasTouch: false, isMobile:
+false` at 1440, the project's touch at 820 and 390).**
+
+| Screen | Before (the spec's `adaptive-before-*` state) | After 1440 × 900 | After 820 × 1180 |
+|---|---|---|---|
+| Parts root (`12`) | rows 1408 wide edge to edge (1440), 788 (820); bar gear at x 8 | `.shell-content` 720 at x 360, centre offset 0; Large Title at 384; rows 670 wide at x 385; leading button x 376, its 24 px glyph at 386 (review S8: 376 / 386); New Folder 400 at x 520 (centred) | 720 at x 50 (centre offset 0); button 62 / glyph 72; New Folder 400 at x 210 |
+| Create form / picker | full width | `data-column="narrow"`, 560 at x 440 | 560 at x 130 |
+| Part (`08`) | two 696 px cards, features + Export below the fold (1440); 386 px squares (820) | `data-column="wide"`, content 1120 at x 160; `.part-columns` grid `668px 380px`; three 212 px cards + "Capture" (the four `.face-card`s); aside 380 at (876, 68), `position: sticky; top: 68px`; Export 380 wide (≤ 400); Back button at x 176 | 720 at x 50, `.part-columns` stays `flex`; grid `216px 216px 216px`; Export 400 at x 210 |
+| Part sticky (B1) | — | `.shell.scrollTop = 1000` (gallery given `min-height: 3000px` for the probe): aside top **68** = bar 44 + page-x 24; the gallery's top −932 (B1's stretch figure, now the gallery's, not the aside's) | n/a (single column) |
+| Capture (`04`) | 2-up 696 px kind cards (1440), 386 (820) | 720 column at x 360; kind grid `213.3px × 3`; shutter block 480 at x 480 (centred); From library 195 wide | grid `216px × 3`; shutter block 480 at x 170 |
+| Settings / Debug | full width | 560 at x 440; 13 viewport rows | 560 at x 130 |
+| Hover | none | part row `background` transparent → `rgba(38, 39, 43, 0.55)` on `hover()`; `.list-row-link` cursor `pointer` | unchanged under touch (`hover: none`) |
+| 390 × 844 | — | every box identical to before: content 390 at 0, leading 8 / glyph 18, h1 at 16, grid `171px 171px`, Export 358, `.part-columns` `flex` — `data-column` is present but inert |
+
+**Screenshots.** Phone tour (390 × 844, DSF 2) into a temp dir against `docs/screenshots/`:
+`12`, `08`, `04`, `13`, `14` byte-identical (and `01`–`05`, `07`, `09`, `15`–`17`); `06`, `10`, `11`
+differ in the time-dependent pixels only (a 7 × 10 px box at the timer digit for `11`; Debug's
+readouts at y 125–135 for `10`; the reading field's caret area for `06`) — nothing in
+`docs/screenshots/*.png` is touched. Wide, `TOUR_DSF=1`, `TOUR_ONLY=12,08,04`, both runs end to end:
+`docs/screenshots/wide/desktop/1440x900-{12-parts-list,08-part-features,04-capture}.png` and
+`docs/screenshots/wide/ipad/820x1180-{12-parts-list,08-part-features,04-capture}.png`, looked at
+against `adaptive-after-desktop-parts`, `-desktop-part`, `-ipad-portrait-part`: the column, the
+bar contents, the 3 × 212 / 3 × 216 cards, the aside at y 68, Export 380 / 400, and the centred
+timer all match; the Back chevron sits at x 186 on the desktop Part shot where the board drew it
+at ≈ 198 — the board's bar used the 720 column's inset, the app uses the wide column's
+(`(1440 − 1120) / 2 + 24 − 8 = 176` for the button), consistent with the Parts bar. No zip left
+behind.
+
+**Tests.** `npx rescript build` clean (warnings are errors); vitest 283 / 283 unchanged; the full
+Chromium suite `E2E_PORT=4395 … --project=chromium --workers=1` 65 / 65, run twice after the
+tokens / pages commits and twice more on the final build (timer class, tour wait). No spec
+changed; `shell.spec.js` still counts 13 Debug rows. WebKit cannot launch in this sandbox
+(`e2e/README.md`) — iPadOS Safari's rendering of the `max()` bar padding, the sticky aside inside
+the `.shell` scroller and `(hover: hover)` with a trackpad are to be eyeballed on the iPad.
+
+**Deviations and calls.**
+- The footer keeps its compact floor (`page-x`) in the shared bar / footer padding expression
+  where the spec has `space-2` for both: with `space-2` the Move / Delete pair would sit 12 px
+  further out than at compact for the 600–712 px band (iPhone landscape), where the 720 column is
+  wider than the window. Above that the two expressions agree.
+- The hover rule adds `button.list-row:hover:active { background: var(--cc-surface-2) }` — the
+  spec's `button.list-row:hover:not([aria-selected="true"])` (0-3-1) outranks
+  `button.list-row:active` (0-2-1), so a press would have shown the 55 % fill, not the opaque
+  surface-2 the spec describes as the press. `.face-card:hover` excludes `.face-card-empty`, as
+  the spec's own "the empty dashed card is never repainted" asks.
+- The tour's wide files are `${W}x${H}-<full shot name>.png` (e.g. `1440x900-12-parts-list.png`)
+  rather than the bare id — the id is the prefix, so the spec's `${W}x${H}-${id}` still matches
+  as a glob, and the file says what it is.
+- The timer centring at ≥ 600 is not in the spec's text; it is on every board, and a left-aligned
+  footnote 160 px from a centred capsule read as a mistake. Compact unchanged.
+- `rescript format` rewrites files this repo does not format (239 lines of churn in
+  `PartsList.res`); the ReScript edits here are hand-formatted to match their neighbours.
