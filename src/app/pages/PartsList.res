@@ -9,12 +9,9 @@
 // captured face.
 //
 // A10 (SPEC §8a, docs/design/a10-folders-review.md): every part carries a
-// folder path. The list is one inset grouped section per distinct folder
-// (root first and always headerless, so a list with no folders renders
-// exactly as it did before A10), a live search field filters by name or
-// path, and one `PartForm` (Name + Folder + chips of existing folders)
-// serves both create and the inline rename — editing the folder is how a
-// part moves. Grouping and filtering are derived in `view` from
+// folder path. A live search field filters by name or path, and one
+// `PartForm` serves both create and the inline rename — editing the folder
+// is how a part moves. Grouping and filtering are derived in `view` from
 // `model.parts`; Store never sees a raw path.
 //
 // A12a (SPEC §8a, docs/design/a12-folders-review.md): folders are explicit
@@ -27,15 +24,23 @@
 // migration after `PartsLoaded` prefix-snaps A10 part paths against each
 // other and makes sure every one of them has a doc.
 //
-// A12b (SPEC §8a): Edit mode selects. Every row becomes a checkbox row (no
-// link, no chevron; the body is the checkbox's label, the pencil a sibling)
-// and a bottom toolbar in the Shell's footer slot carries Move (the A12a
-// picker, `ForMove`) and Delete (one confirm strip, `Store.deleteParts`) —
-// the per-row delete and its strip are gone. Section headers gain Rename
-// (an inline one-segment form, `Store.renameFolder`, the subtree follows)
-// and, on an empty leaf, Delete. Leaf folders with no parts render as
-// "<display> · 0" sections with one "Empty folder" row; a folder with
-// subfolders but no direct parts is a header-only row while editing.
+// A12b (SPEC §8a): Edit mode selects. Every part row becomes a checkbox
+// row (no link, no chevron; the body is the checkbox's label, the pencil a
+// sibling) and a bottom toolbar in the Shell's footer slot carries Move
+// (the A12a picker, `ForMove`) and Delete (one confirm strip,
+// `Store.deleteParts`) — the per-row delete and its strip are gone.
+//
+// A13 (SPEC §8a, docs/design/a13-drilldown-review.md): the list is a
+// **folder browser** — one folder per screen (`#/` and `#/f/<path>`,
+// `model.folder`), a Folders group of chevron rows over a Parts group of
+// the parts sitting directly in it, Back to the parent. A folder change is
+// `FolderChanged` on the *same* mounted page (Main calls it directly off
+// `RouteChanged`), which keeps the loaded parts and images and clears the
+// per-screen state. A10's flat sections with full-path headers survive as
+// **search results** only (the query is global: every folder, whatever the
+// current one). A12b's folder rename / delete moved from the section
+// headers onto the subfolder rows in Edit mode, and the picker's New Folder
+// capsule now also sits under the lists in the folder view.
 
 // What both forms edit (review S4). `path` is the folder the picker chose:
 // already normalised, validated and snapped, never raw text (A12a).
@@ -70,9 +75,9 @@ type picker = {
   newFolder: option<string>,
 }
 
-// A12b: the header rename form. `error` is a store refusal (`Exists`),
-// shown until the draft changes; the live `Folder.validateSegment` rule is
-// derived in the view.
+// A12b: the folder rename form (A13: on a subfolder row). `error` is a
+// store refusal (`Exists`), shown until the draft changes; the live
+// `Folder.validateSegment` rule is derived in the view.
 type folderEdit = {
   path: string,
   draft: string,
@@ -100,12 +105,11 @@ type model = {
   // DESIGN.md §9 "Live region" — see `Ui.Live`'s doc comment for why "" is
   // silence, not absence.
   announcement: string,
-  // A10: the search field's text. Page-local, so it resets on navigation
-  // (`Main.pageForRoute` re-inits this page per route change — review N4,
-  // accepted for v0.1; `Route.Parts` may gain a `q` later if it bites).
+  // A10: the search field's text. Page-local; A13 clears it on every folder
+  // change (`FolderChanged`) and a full route change re-inits the page.
   query: string,
   // A12a: every explicit folder path (`folder:` docs), from `FoldersLoaded`
-  // after the one-shot migration and grown by what the picker creates.
+  // after the one-shot migration and grown by what New Folder creates.
   folders: array<string>,
   // A12a: `Some` while the folder picker has taken over the page.
   picker: option<picker>,
@@ -114,10 +118,21 @@ type model = {
   selected: array<string>,
   // A12b: the toolbar's Delete confirm strip is open.
   confirmingDelete: bool,
-  // A12b: the inline folder-rename editor on one section header. One inline
-  // editor at a time (review S9): opening it resets `rowStates`, and a
-  // row's `RenameStart` closes it.
+  // A12b: the inline folder-rename editor on one subfolder row. One inline
+  // editor at a time (review S9): opening it resets `rowStates` and closes
+  // the New Folder field; a row's `RenameStart` closes it.
   folderEdit: option<folderEdit>,
+  // A13: the folder this screen shows (`""` = root), from the route.
+  folder: string,
+  // A13 (review B2): `FoldersLoaded` / `FoldersFailed` has landed. Whether
+  // a folder *exists* is judged only once both loads are in — `folders` is
+  // `[]` until the migration's round trips finish, one hop after
+  // `PartsLoaded`, and judging earlier flashes "doesn't exist" on a reload
+  // of an empty explicit folder.
+  foldersLoaded: bool,
+  // A13 (review S2): the folder view's New Folder draft — `Some` while its
+  // field is open under the lists. The picker keeps its own.
+  newFolder: option<string>,
 }
 
 type msg =
@@ -128,6 +143,8 @@ type msg =
   | FoldersLoaded(array<string>, array<Types.part>)
   | FoldersFailed(string)
   | PartImageLoaded(string, option<string>)
+  // A13: the route moved to another folder while this page is mounted.
+  | FolderChanged(string)
   | EditToggled
   | QueryChanged(string)
   | QueryCleared
@@ -155,7 +172,7 @@ type msg =
   | DeleteConfirm
   | PartsDeleted(array<string>)
   | DeleteFailed(string)
-  // A12b: folder rename / delete on a section header.
+  // A12b: folder rename / delete (A13: on a subfolder row).
   | FolderRenameStart(string)
   | FolderRenameChanged(string)
   | FolderRenameCancel
@@ -170,6 +187,8 @@ type msg =
   | PickerSelect(string)
   | PickerDone
   | PickerCancel
+  // A12a / A13: the New Folder field — the picker's while it is open, the
+  // folder view's otherwise.
   | NewFolderOpen
   | NewFolderChanged(string)
   | NewFolderCancel
@@ -263,16 +282,41 @@ let focusTestId = (id: string): Tea.cmd<msg> => focusSelector(`[data-testid="${i
 let focusFolderOption = (path: string): Tea.cmd<msg> =>
   focusSelector(`[data-testid="folder-option"][data-path="${path}"]`)
 
-// A12b: one folder's header pencil — several sections carry the same
+// A12b: one folder row's pencil — several rows carry the same
 // `folder-rename` id, told apart by `data-path`.
 let focusFolderRename = (path: string): Tea.cmd<msg> =>
   focusSelector(`[data-testid="folder-rename"][data-path="${path}"]`)
+
+// A13 (review S6): a folder row's *link* — the testid sits on the row's
+// outer `<div>`, the focusable element is the `<a>` inside it.
+let focusFolderRowLink = (path: string): Tea.cmd<msg> =>
+  focusSelector(`[data-testid="folder-row"][data-path="${path}"] a`)
+
+// A13 (review S5): a folder change starts the new screen at the top.
+// `.shell` is the one `overflow-y: auto` container (global.css).
+let scrollToTop: Tea.cmd<msg> = Tea.effect(_dispatch =>
+  switch Canvas.querySelector(".shell") {
+  | Some(el) => Canvas.setScrollTop(el, 0)
+  | None => ()
+  }
+)
 
 // "2 parts" / "1 part" — the toolbar labels, titles and live texts.
 let countNoun = (n: int, noun: string): string =>
   Int.toString(n) ++ " " ++ noun ++ (n == 1 ? "" : "s")
 
-let init = (): (model, Tea.cmd<msg>) => (
+// A13 (review S3): a folder row's meta — its *direct* children, halves
+// joined with " · ", a zero half omitted: "2 parts · 1 folder", "1 part",
+// "3 folders", "Empty". Never descendants (A12b's invariant survives).
+let folderMeta = (~parts: int, ~folders: int): string =>
+  switch (parts, folders) {
+  | (0, 0) => "Empty"
+  | (p, 0) => countNoun(p, "part")
+  | (0, f) => countNoun(f, "folder")
+  | (p, f) => countNoun(p, "part") ++ " · " ++ countNoun(f, "folder")
+  }
+
+let init = (~folder: string): (model, Tea.cmd<msg>) => (
   {
     loaded: false,
     parts: [],
@@ -289,6 +333,9 @@ let init = (): (model, Tea.cmd<msg>) => (
     selected: [],
     confirmingDelete: false,
     folderEdit: None,
+    folder,
+    foldersLoaded: false,
+    newFolder: None,
   },
   Tea.fromPromise(() => Store.listParts(store()), parts => PartsLoaded(parts), e => LoadFailed(
     describeError(e),
@@ -393,14 +440,20 @@ let migrateFoldersCmd = (parts: array<Types.part>): Tea.cmd<msg> =>
     e => FoldersFailed(describeError(e)),
   )
 
-// A12a: what the picker lists (root aside) — explicit folder docs ∪ the
-// loaded parts' paths ∪ their ancestors ∪ the current selection, as a
-// depth-first flat tree. The same set is what a new folder name snaps
-// against, so `interior` under `Miata` finds the existing `Interior`.
+// Every folder the page knows — explicit folder docs ∪ the loaded parts'
+// paths ∪ their ancestors — as a depth-first flat tree. Parts' paths are
+// unioned in so a folder in use is browsable before `FoldersLoaded` lands
+// (and stays so should the migration fail).
+let knownFolders = (model: model): array<string> =>
+  Folder.tree(Array.concat(model.folders, foldersOf(model.parts)))
+
+// A12a: what the picker lists (root aside) — the known folders plus the
+// current selection. The same set is what a new folder name snaps against,
+// so `interior` under `Miata` finds the existing `Interior`.
 let pickerPaths = (model: model, picker: picker): array<string> =>
   Folder.tree(Array.concat(Array.concat(model.folders, foldersOf(model.parts)), [picker.selected]))
 
-// Explicit folders after the picker created some: docs ∪ created ∪ the
+// Explicit folders after New Folder created some: docs ∪ created ∪ the
 // path itself (a per-doc 409 means it exists even if it isn't in `created`).
 let withFolders = (folders: array<string>, added: array<string>): array<string> =>
   Array.concat(folders, added)
@@ -436,63 +489,86 @@ let matchesQuery = (query: string, part: Types.part): bool => {
   String.includes(String.toLowerCase(Folder.display(part.path)), q)
 }
 
-// A12b (review S5): what a section is.
-type sectionKind =
-  // Rows of parts (the ones matching the query).
-  | Parts
-  // An explicit leaf folder with no parts and no subfolders — the deletable
-  // set: header "<display> · 0" and one "Empty folder" row.
-  | EmptyLeaf
-  // A folder with subfolders but no direct parts: nothing outside Edit
-  // mode, a header-only row (rename, no container) while editing.
-  | Intermediate
+// A13 (review S4): a folder is found by its **own** name only — never
+// through an ancestor's, or `miata` would list every descendant of Miata.
+let folderLeafMatches = (query: string, path: string): bool =>
+  String.includes(String.toLowerCase(Folder.leaf(path)), query->String.trim->String.toLowerCase)
 
-type section = {path: string, rows: array<Types.part>, kind: sectionKind}
+// ---- A13: the folder view and the search results, derived in `view` -----
 
-// The same case-insensitive substring match `matchesQuery` gives a part's
-// path, for a folder on its own (A12b: search hides an empty folder unless
-// its path matches).
-let folderMatchesQuery = (query: string, path: string): bool => {
-  let q = query->String.trim->String.toLowerCase
-  q == "" ||
-  String.includes(String.toLowerCase(path), q) ||
-  String.includes(String.toLowerCase(Folder.display(path)), q)
+// Both loads are in (review B2) — before that the body is "Loading parts…"
+// and the bar carries no actions, whatever the folder.
+let ready = (model: model): bool => model.loaded && model.foldersLoaded
+
+// A folder *exists* when it is the root, or it has a doc, or any part sits
+// in it or under it (`Folder.isUnder` — the half that keeps a pre-migration
+// ancestor with no doc yet browsable). Exact-string: `#/f/miata` is unknown
+// when the folder is `Miata` — no snap, no redirect.
+let folderExists = (model: model, path: string): bool =>
+  path == "" ||
+  Array.includes(model.folders, path) ||
+  model.parts->Array.some(p => p.path == path || Folder.isUnder(p.path, ~folder=path))
+
+let byLeaf = (a: string, b: string): Ordering.t =>
+  String.compare(String.toLowerCase(Folder.leaf(a)), String.toLowerCase(Folder.leaf(b)))
+
+// The direct subfolders of `path`, by lower-cased leaf.
+let childrenOf = (known: array<string>, path: string): array<string> =>
+  known->Array.filter(p => Folder.parent(p) == path)->Array.toSorted(byLeaf)
+
+// The parts sitting directly in `path`, in `parts` order (updatedAt desc).
+let partsIn = (parts: array<Types.part>, path: string): array<Types.part> =>
+  parts->Array.filter(p => p.path == path)
+
+// What the current folder's screen lists (the query aside).
+type folderView = {children: array<string>, rows: array<Types.part>}
+
+let folderViewOf = (model: model): folderView => {
+  children: childrenOf(knownFolders(model), model.folder),
+  rows: partsIn(model.parts, model.folder),
 }
 
-// Root first (only when it has rows — after a move empties it, the section
-// is gone), then folders sorted case-insensitively. Grouping is exact-
-// string: `Folder.snap` keeps spellings unique on save (review S2), so the
-// uppercase `.list-group-header` can't show two look-alike sections. Row
-// order inside a section is `parts` order (updatedAt desc). A12b: the
-// folder set is every known path — explicit docs ∪ the parts' paths ∪ their
-// ancestors, whatever the query — classified per `sectionKind`; a folder
-// whose parts all fail the query is hidden (A10), an empty one shows only
-// when the query is blank or matches its path. Counts are direct parts only.
-let sectionsOf = (model: model): array<section> => {
+// Edit / Done is offered while the view has something to edit (review B3),
+// and Edit mode ends when a move or delete leaves it with nothing (S7).
+let viewHasRows = (model: model): bool => {
+  let {children, rows} = folderViewOf(model)
+  Array.length(children) > 0 || Array.length(rows) > 0
+}
+
+// A13 (review S7): after `PartsMoved` / `PartsDeleted` / `FolderDeleted`,
+// Edit mode stays on while the view still has rows; otherwise it resets and
+// focus goes to `new-part` (the bar icon, or the empty state's capsule when
+// no part is left anywhere) instead of A12b's own target.
+let afterRowsLeft = (model: model, ~otherwise: string): (model, Tea.cmd<msg>) =>
+  model.editing && !viewHasRows(model)
+    ? ({...model, editing: false}, focusTestId("new-part"))
+    : (model, focusTestId(otherwise))
+
+// Search results (A10's shape): first the folders whose leaf matches, in
+// tree order; then one flat section per folder holding the matching parts —
+// root first and headerless, then folders case-insensitively, rows in
+// `parts` order. Every folder, whatever the current one.
+type section = {path: string, rows: array<Types.part>}
+type results = {folders: array<string>, sections: array<section>}
+
+let resultsOf = (model: model): results => {
+  let folders =
+    knownFolders(model)->Array.filter(p => folderLeafMatches(model.query, p))->Array.toSorted(Folder.compareTree)
   let visible = model.parts->Array.filter(part => matchesQuery(model.query, part))
-  let root = visible->Array.filter(p => p.path == "")
-  let known = Folder.tree(Array.concat(model.folders, foldersOf(model.parts)))
-  let hasSub = (path: string): bool => known->Array.some(q => Folder.isUnder(q, ~folder=path))
-  let hasParts = (path: string): bool => model.parts->Array.some(p => p.path == path)
+  let root = partsIn(visible, "")
   let folderSections =
-    known
+    foldersOf(visible)
     ->Array.toSorted((a, b) => String.compare(String.toLowerCase(a), String.toLowerCase(b)))
-    ->Array.filterMap(path => {
-      let rows = visible->Array.filter(p => p.path == path)
-      if Array.length(rows) > 0 {
-        Some({path, rows, kind: Parts})
-      } else if hasParts(path) || !folderMatchesQuery(model.query, path) {
-        None
-      } else if hasSub(path) {
-        model.editing ? Some({path, rows: [], kind: Intermediate}) : None
-      } else {
-        Some({path, rows: [], kind: EmptyLeaf})
-      }
-    })
-  Array.length(root) > 0
-    ? Array.concat([({path: "", rows: root, kind: Parts}: section)], folderSections)
-    : folderSections
+    ->Array.map(path => {path, rows: partsIn(visible, path)})
+  {
+    folders,
+    sections: Array.length(root) > 0
+      ? Array.concat([({path: "", rows: root}: section)], folderSections)
+      : folderSections,
+  }
 }
+
+let searching = (model: model): bool => String.trim(model.query) != ""
 
 let emptyDraft: formDraft = {name: "", path: ""}
 
@@ -508,11 +584,15 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
         Array.concat(parts->Array.map(p => loadFirstFaceImageCmd(p.id)), [migrateFoldersCmd(parts)]),
       ),
     )
-  | LoadFailed(msg) => ({...model, loaded: true, error: Some(msg)}, Tea.none)
+  // The migration only ever runs off `PartsLoaded`, so nothing else would
+  // mark the folders loaded — without this the error line would sit under
+  // "Loading parts…" for good.
+  | LoadFailed(msg) => ({...model, loaded: true, foldersLoaded: true, error: Some(msg)}, Tea.none)
   | FoldersLoaded(folders, saved) => (
       {
         ...model,
         folders,
+        foldersLoaded: true,
         parts: Array.length(saved) == 0
           ? model.parts
           : model.parts
@@ -521,12 +601,36 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       },
       Tea.none,
     )
-  | FoldersFailed(msg) => ({...model, error: Some(msg)}, Tea.none)
+  // Folders then derive from the parts' paths alone; the error line shows.
+  | FoldersFailed(msg) => ({...model, foldersLoaded: true, error: Some(msg)}, Tea.none)
   | PartImageLoaded(partId, Some(url)) =>
     let next = Dict.copy(model.partImages)
     Dict.set(next, partId, url)
     ({...model, partImages: next}, Tea.none)
   | PartImageLoaded(_, None) => (model, Tea.none)
+  // A13 (review S5): the same page re-targeted. Kept: what was loaded
+  // (`loaded`, `parts`, `error`, `partImages`, `folders`, `foldersLoaded`).
+  // Cleared: everything that belongs to one screen — the form, the row and
+  // folder editors, Edit mode and its selection and strip, the query, the
+  // picker, the New Folder draft, the live text.
+  | FolderChanged(folder) => (
+      {
+        ...model,
+        folder,
+        form: None,
+        rowStates: Dict.make(),
+        rowError: None,
+        editing: false,
+        announcement: "",
+        query: "",
+        picker: None,
+        selected: [],
+        confirmingDelete: false,
+        folderEdit: None,
+        newFolder: None,
+      },
+      scrollToTop,
+    )
   // Done clears the selection and any open editor or strip (P1's
   // no-leftover-state rule); so does a query change, for the selection.
   | EditToggled => (
@@ -537,15 +641,22 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
         selected: [],
         confirmingDelete: false,
         folderEdit: None,
+        newFolder: None,
       },
       Tea.none,
     )
   | QueryChanged(query) => ({...model, query, selected: [], confirmingDelete: false}, Tea.none)
   | QueryCleared => ({...model, query: ""}, focusTestId("parts-search"))
+  // A13 (review B3): the form's Folder row starts at the folder on screen.
   | NewPartClicked => (
       {
         ...model,
-        form: Some({draft: emptyDraft, units: Types.Mm, error: None, submitting: false}),
+        form: Some({
+          draft: {...emptyDraft, path: model.folder},
+          units: Types.Mm,
+          error: None,
+          submitting: false,
+        }),
       },
       focusTestId("part-name"),
     )
@@ -605,12 +716,13 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       ->Option.map(p => ({name: p.name, path: p.path}: formDraft))
       ->Option.getOr(emptyDraft)
     (
-      // One inline editor at a time (A12b, review S9): a folder rename
-      // closes.
+      // One inline editor at a time (A12b, review S9): a folder rename and
+      // the New Folder field close.
       {
         ...model,
         rowStates: setRowState(model, id, Renaming(draft)),
         folderEdit: None,
+        newFolder: None,
         rowError: None,
       },
       focusTestId("part-rename-input"),
@@ -644,7 +756,7 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       {
         ...model,
         // `putPart` returns the bumped `updatedAt`, so the edited part
-        // re-sorts to the top of its (possibly new) section rather than
+        // re-sorts to the top of its (possibly new) folder rather than
         // sitting at its stale position until reload (review S6).
         parts: model.parts
         ->Array.map(p => p.id == part.id ? part : p)
@@ -666,28 +778,28 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       Tea.none,
     )
   // `moveParts` returns only the parts it rewrote (bumped `updatedAt`), so
-  // they re-sort to the top of their new section; the live text counts
+  // they re-sort to the top of their new folder; the live text counts
   // those only — moving into the current folder announces nothing. The
-  // selection clears either way; Edit mode stays on.
+  // selection clears either way; Edit mode stays on while the view still
+  // has rows (A13: moving everything out of a folder ends it — `PickerDone`
+  // already sent focus to Move, so nothing more to do otherwise).
   | PartsMoved(moved, path) =>
     let count = Array.length(moved)
-    (
-      {
-        ...model,
-        parts: model.parts
-        ->Array.map(p => moved->Array.find(m => m.id == p.id)->Option.getOr(p))
-        ->Array.toSorted(byUpdatedAtDesc),
-        folders: path == "" ? model.folders : withFolders(model.folders, [path]),
-        selected: [],
-        rowError: None,
-        announcement: count == 0
-          ? model.announcement
-          : `Moved ${countNoun(count, "part")} to ${path == ""
-                ? "the top level"
-                : Folder.display(path)}`,
-      },
-      Tea.none,
-    )
+    let next = {
+      ...model,
+      parts: model.parts
+      ->Array.map(p => moved->Array.find(m => m.id == p.id)->Option.getOr(p))
+      ->Array.toSorted(byUpdatedAtDesc),
+      folders: path == "" ? model.folders : withFolders(model.folders, [path]),
+      selected: [],
+      rowError: None,
+      announcement: count == 0
+        ? model.announcement
+        : `Moved ${countNoun(count, "part")} to ${path == "" ? "the top level" : Folder.display(path)}`,
+    }
+    next.editing && !viewHasRows(next)
+      ? ({...next, editing: false}, focusTestId("new-part"))
+      : (next, Tea.none)
   | MoveFailed(msg) => ({...model, rowError: Some(msg)}, Tea.none)
   // The strip replaces the Move/Delete pair, so the tapped button is gone:
   // focus lands on the strip's Cancel — the safe one.
@@ -707,31 +819,29 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       ),
     )
   // DESIGN.md §9 "Focus management" (review S8): the rows are gone, so
-  // focus goes to Edit/Done, which survives while parts remain; with none
-  // left Edit leaves the bar (`actions`), `editing` resets, and focus goes
-  // to the empty state's `new-part` capsule.
+  // focus goes to Edit/Done, which survives while the view keeps a row;
+  // with none left Edit leaves the bar (`actions`), `editing` resets, and
+  // focus goes to `new-part` (A13, review S7).
   | PartsDeleted(ids) =>
-    let parts = model.parts->Array.filter(p => !Array.includes(ids, p.id))
-    let none = Array.length(parts) == 0
-    (
+    afterRowsLeft(
       {
         ...model,
-        parts,
+        parts: model.parts->Array.filter(p => !Array.includes(ids, p.id)),
         selected: [],
         confirmingDelete: false,
-        editing: none ? false : model.editing,
         rowError: None,
         announcement: `Deleted ${countNoun(Array.length(ids), "part")}`,
       },
-      focusTestId(none ? "new-part" : "parts-edit"),
+      ~otherwise="parts-edit",
     )
   | DeleteFailed(msg) => ({...model, confirmingDelete: false, rowError: Some(msg)}, Tea.none)
-  // ---- A12b: folder rename / delete on the section header -----------------
+  // ---- A12b: folder rename / delete on a subfolder row ------------------
   | FolderRenameStart(path) => (
       {
         ...model,
         folderEdit: Some({path, draft: Folder.leaf(path), error: None}),
         rowStates: Dict.make(),
+        newFolder: None,
         confirmingDelete: false,
         rowError: None,
       },
@@ -768,7 +878,9 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     }
   // The store rewrote the subtree; the page rebases its own copies the same
   // way (`updatedAt` stays as loaded until the next reload — only the meta
-  // line could tell) and sections re-derive from the new spellings.
+  // line could tell) and the rows re-derive from the new spellings. The
+  // renamed row is a child of the folder on screen, so `folder` itself is
+  // never under `from`.
   | FolderRenamed(from, to, Ok()) =>
     let rebase = (p: string): string => Folder.rebase(p, ~from, ~to)
     (
@@ -806,14 +918,15 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
         e => FolderDeleteFailed(describeError(e)),
       ),
     )
-  | FolderDeleted(path, Ok()) => (
+  | FolderDeleted(path, Ok()) =>
+    afterRowsLeft(
       {
         ...model,
         folders: model.folders->Array.filter(p => p != path),
         announcement: `Deleted folder ${Folder.display(path)}`,
         rowError: None,
       },
-      focusTestId("parts-edit"),
+      ~otherwise="parts-edit",
     )
   | FolderDeleted(_, Error(_)) => (
       {...model, rowError: Some("Couldn't delete that folder.")},
@@ -875,34 +988,50 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     | Some({target: ForMove(_)}) => ({...model, picker: None}, focusTestId("parts-move"))
     | Some(_) | None => ({...model, picker: None}, focusTestId("part-folder-row"))
     }
-  | NewFolderOpen => (
-      {...model, picker: model.picker->Option.map(p => {...p, newFolder: Some("")})},
-      focusTestId("folder-new-name"),
-    )
-  | NewFolderChanged(draft) => (
-      {...model, picker: model.picker->Option.map(p => {...p, newFolder: Some(draft)})},
-      Tea.none,
-    )
-  | NewFolderCancel => (
-      {...model, picker: model.picker->Option.map(p => {...p, newFolder: None})},
-      focusTestId("folder-new"),
-    )
-  // `join` under the selection, `snap` against everything the picker knows
-  // (so `interior` under `Miata` selects the existing `Interior` instead of
-  // making a twin), then `ensureFolder`. `Error` only reaches here if a
-  // submit slips past the disabled Create; the depth cap disables the
-  // capsule before the field can even open.
-  | NewFolderCreate =>
+  // ---- A12a / A13: the New Folder field ---------------------------------
+  // Under the picker's list while it is open; under the folder view's
+  // lists otherwise (A13, review S2), where opening it closes any row or
+  // folder rename — one inline editor at a time.
+  | NewFolderOpen =>
     switch model.picker {
-    | Some({selected, newFolder: Some(draft)} as picker)
-      if Folder.depth(selected) < Folder.maxDepth =>
+    | Some(_) => (
+        {...model, picker: model.picker->Option.map(p => {...p, newFolder: Some("")})},
+        focusTestId("folder-new-name"),
+      )
+    | None => (
+        {...model, newFolder: Some(""), rowStates: Dict.make(), folderEdit: None, rowError: None},
+        focusTestId("folder-new-name"),
+      )
+    }
+  | NewFolderChanged(draft) =>
+    switch model.picker {
+    | Some(_) => (
+        {...model, picker: model.picker->Option.map(p => {...p, newFolder: Some(draft)})},
+        Tea.none,
+      )
+    | None => ({...model, newFolder: Some(draft)}, Tea.none)
+    }
+  | NewFolderCancel =>
+    switch model.picker {
+    | Some(_) => (
+        {...model, picker: model.picker->Option.map(p => {...p, newFolder: None})},
+        focusTestId("folder-new"),
+      )
+    | None => ({...model, newFolder: None}, focusTestId("folder-new"))
+    }
+  // `join` under the selection (the picker's, or the folder on screen),
+  // `snap` against everything the page knows (so `interior` under `Miata`
+  // finds the existing `Interior` instead of making a twin — prefix-wise,
+  // so the result is always a direct child of the parent), then
+  // `ensureFolder`. `Error` only reaches here if a submit slips past the
+  // disabled Create; the depth cap disables the capsule before the field
+  // can even open.
+  | NewFolderCreate =>
+    let create = (~parent: string, ~draft: string, ~existing: array<string>) =>
       switch Folder.validateSegment(draft) {
       | Error(_) => (model, Tea.none)
       | Ok(name) =>
-        let path = Folder.snap(
-          Folder.join(~parent=selected, ~name),
-          ~existing=pickerPaths(model, picker),
-        )
+        let path = Folder.snap(Folder.join(~parent, ~name), ~existing)
         (
           model,
           Tea.fromPromise(
@@ -912,42 +1041,81 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
           ),
         )
       }
+    switch (model.picker, model.newFolder) {
+    | (Some({selected, newFolder: Some(draft)} as picker), _)
+      if Folder.depth(selected) < Folder.maxDepth =>
+      create(~parent=selected, ~draft, ~existing=pickerPaths(model, picker))
+    | (None, Some(draft)) if Folder.depth(model.folder) < Folder.maxDepth =>
+      create(~parent=model.folder, ~draft, ~existing=knownFolders(model))
     | _ => (model, Tea.none)
     }
-  // The created (or snapped-onto) folder becomes the selection; the field
-  // closes and focus moves to its option. It is a real folder from here on
-  // — Cancelling the picker afterwards does not undo it.
-  | NewFolderCreated(path, created) => (
-      {
-        ...model,
-        folders: withFolders(model.folders, Array.concat(created, [path])),
-        picker: model.picker->Option.map(p => {...p, selected: path, newFolder: None}),
-        rowError: None,
-      },
-      focusFolderOption(path),
-    )
+  // The created (or snapped-onto) folder becomes the picker's selection and
+  // its option takes focus; in the folder view the field closes and focus
+  // lands on the new row — its link, or its pencil in Edit mode (review
+  // S6). It is a real folder from here on — Cancelling the picker
+  // afterwards does not undo it.
+  | NewFolderCreated(path, created) =>
+    let folders = withFolders(model.folders, Array.concat(created, [path]))
+    switch model.picker {
+    | Some(_) => (
+        {
+          ...model,
+          folders,
+          picker: model.picker->Option.map(p => {...p, selected: path, newFolder: None}),
+          rowError: None,
+        },
+        focusFolderOption(path),
+      )
+    | None => (
+        {...model, folders, newFolder: None, rowError: None},
+        model.editing ? focusFolderRename(path) : focusFolderRowLink(path),
+      )
+    }
   | NewFolderFailed(msg) => ({...model, rowError: Some(msg)}, Tea.none)
   }
 
 // A12a (review B3): while the picker is open the bar carries a centred
 // Headline "Choose Folder" between Cancel and Done, the HIG picker shape;
-// otherwise the root's static Large Title "Parts".
+// otherwise the root's static Large Title "Parts" — or, in a folder (A13,
+// review S1), the centred Headline of the folder's leaf name over its
+// parent path, every other pushed screen's shape.
 let title = (model: model): string =>
   switch model.picker {
   | Some({target: ForMove(ids)}) => `Move ${countNoun(Array.length(ids), "Part")}`
   | Some(_) => "Choose Folder"
-  | None => "Parts"
+  | None => model.folder == "" ? "Parts" : Folder.leaf(model.folder)
   }
-let largeTitle = (model: model): bool => model.picker->Option.isNone
-let back = (_model: model): option<Route.t> => None
+let largeTitle = (model: model): bool => model.picker->Option.isNone && model.folder == ""
 
-let subtitle = (_model: model): option<string> => None
+// A13: Back to the parent folder — or to the root from a folder that
+// doesn't exist. None at the root, and none while the picker is open (its
+// leading slot is Cancel, and `Shell` renders Back over `leading`).
+let back = (model: model): option<Route.t> =>
+  switch model.picker {
+  | Some(_) => None
+  | None if model.folder == "" => None
+  | None =>
+    Some(
+      Route.Parts(
+        ready(model) && !folderExists(model, model.folder) ? "" : Folder.parent(model.folder),
+      ),
+    )
+  }
+
+let subtitle = (model: model): option<string> =>
+  switch model.picker {
+  | Some(_) => None
+  | None =>
+    let parent = Folder.parent(model.folder)
+    model.folder != "" && parent != "" ? Some(Folder.display(parent)) : None
+  }
 
 // Bar leading slot. Normally the gear: Settings and Debug have no other way
 // in from an installed app (no URL bar), so the Parts root carries one bar
-// button on the root (HIG); Settings then links on to Debug. While the
-// picker is open it is a Cancel text action instead — `Shell.back` can only
-// push a route, and cancelling is a page message.
+// button on the root (HIG); Settings then links on to Debug — in a folder
+// `Shell` shows Back instead and drops this slot (A13). While the picker is
+// open it is a Cancel text action — `Shell.back` can only push a route,
+// and cancelling is a page message.
 let leading = (model: model, ~dispatch: msg => unit): option<React.element> =>
   switch model.picker {
   | Some(_) =>
@@ -972,15 +1140,15 @@ let leading = (model: model, ~dispatch: msg => unit): option<React.element> =>
     )
   }
 
-// Bar trailing actions (DESIGN.md §11.2, review-2026-09-17.md P1/P3): the
-// Edit/Done text action and, once the list is non-empty, the "+" icon
-// button — both live here now instead of in the body. Neither renders
-// while the create form is open (nothing to edit/add to yet) or before the
-// list has loaded. `new-part` only ever exists once on screen at a time:
-// this bar icon while the list is non-empty, or the empty state's own body
-// capsule (`renderEmptyCapsule`) while it isn't — never both, which is what
-// keeps `getByTestId('new-part')` a single-element (Playwright strict-mode)
-// match either way.
+// Bar trailing actions (DESIGN.md §11.2, review-2026-09-17.md P1/P3), per
+// view (A13, review B3): **Edit / Done** while the folder on screen has a
+// part row or a folder row, exists, and neither the create form nor the
+// picker is open; **"+"** while the folder exists and no form is open — the
+// bar icon while any part exists anywhere, else the empty state's own body
+// capsule (`renderEmptyCapsule`). `new-part` only ever exists once on
+// screen at a time, which is what keeps `getByTestId('new-part')` a
+// single-element (Playwright strict-mode) match either way. Nothing before
+// both loads are in, and nothing in a folder that doesn't exist.
 let actions = (model: model, ~dispatch: msg => unit): option<React.element> =>
   switch model.picker {
   | Some(_) =>
@@ -994,23 +1162,30 @@ let actions = (model: model, ~dispatch: msg => unit): option<React.element> =>
       </Ui.Button>,
     )
   | None =>
-    model.loaded && model.form->Option.isNone && Array.length(model.parts) > 0
+    let known = ready(model) && folderExists(model, model.folder) && model.form->Option.isNone
+    let editable = known && viewHasRows(model)
+    let addable = known && Array.length(model.parts) > 0
+    editable || addable
       ? Some(
         <>
-          <Ui.Button
-            variant=Ui.Button.Plain
-            className="bar-action"
-            testId="parts-edit"
-            onClick={_ => dispatch(EditToggled)}>
-            {React.string(model.editing ? "Done" : "Edit")}
-          </Ui.Button>
-          <Ui.Button
-            variant=Ui.Button.Icon
-            testId="new-part"
-            ariaLabel="New part"
-            onClick={_ => dispatch(NewPartClicked)}>
-            <Icon name=Plus size=22 />
-          </Ui.Button>
+          {editable
+            ? <Ui.Button
+                variant=Ui.Button.Plain
+                className="bar-action"
+                testId="parts-edit"
+                onClick={_ => dispatch(EditToggled)}>
+                {React.string(model.editing ? "Done" : "Edit")}
+              </Ui.Button>
+            : React.null}
+          {addable
+            ? <Ui.Button
+                variant=Ui.Button.Icon
+                testId="new-part"
+                ariaLabel="New part"
+                onClick={_ => dispatch(NewPartClicked)}>
+                <Icon name=Plus size=22 />
+              </Ui.Button>
+            : React.null}
         </>,
       )
       : None
@@ -1269,7 +1444,7 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
 
   switch state {
   // A10: the rename strip is the same `PartForm` as create (minus units),
-  // so picking a Folder here is how a part moves between sections.
+  // so picking a Folder here is how a part moves between folders.
   | Renaming(draft) =>
     <div key={part.id} className="list-row" role="listitem" dataTestId="part-row">
       <div className="part-row-edit">
@@ -1340,9 +1515,9 @@ let renderRow = (model: model, part: Types.part, ~dispatch: msg => unit): React.
   }
 }
 
-// A12b: the header's Rename/Delete icon buttons carry `data-path`, so a
-// focus cmd (and a test) can find *this* folder's — every section shows
-// the same `folder-rename` id. `JsxDOM.domProps` can't express a data
+// A12b: a folder row's Rename/Delete icon buttons carry `data-path`, so a
+// focus cmd (and a test) can find *this* folder's — every row shows the
+// same `folder-rename` id. `JsxDOM.domProps` can't express a data
 // attribute, so, like `OptionButton` below, the element is created through
 // the jsx-runtime call with exactly the attributes it needs.
 module PathButton = {
@@ -1361,33 +1536,50 @@ module PathButton = {
   let make = (props: props): React.element => jsx("button", props)
 }
 
-// A12b: the trailing controls on a folder header while editing — Rename on
-// every folder, Delete only on an empty leaf (no parts, no subfolders: the
-// one case `deleteFolder` never refuses, so no confirm).
-let renderFolderActions = (section: section, ~dispatch: msg => unit): React.element => <>
+// A13: a folder row's outer `<div role="listitem">`, which carries
+// `data-testid="folder-row"` and `data-path` — the same jsx-runtime route
+// as `PathButton`, for the same reason.
+module PathDiv = {
+  type props = {
+    className: string,
+    role: string,
+    @as("data-testid") dataTestId: string,
+    @as("data-path") dataPath: string,
+    children: React.element,
+  }
+
+  @module("react/jsx-runtime") external jsxKeyed: (string, props, string) => React.element = "jsx"
+
+  let make = (~key: string, props: props): React.element => jsxKeyed("div", props, key)
+}
+
+// A12b (A13: on the subfolder row): the trailing controls while editing —
+// Rename on every folder, Delete only on an empty leaf (no parts, no
+// subfolders: the one case `deleteFolder` never refuses, so no confirm).
+let renderFolderActions = (~path: string, ~deletable: bool, ~dispatch: msg => unit): React.element => <>
   {PathButton.make({
     type_: "button",
     className: "btn btn-icon",
     dataTestId: "folder-rename",
-    dataPath: section.path,
+    dataPath: path,
     ariaLabel: "Rename folder",
-    onClick: _ => dispatch(FolderRenameStart(section.path)),
+    onClick: _ => dispatch(FolderRenameStart(path)),
     children: <Icon name=Pencil size=20 />,
   })}
-  {section.kind == EmptyLeaf
+  {deletable
     ? PathButton.make({
         type_: "button",
         className: "btn btn-icon",
         dataTestId: "folder-delete",
-        dataPath: section.path,
+        dataPath: path,
         ariaLabel: "Delete folder",
-        onClick: _ => dispatch(FolderDeleteClicked(section.path)),
+        onClick: _ => dispatch(FolderDeleteClicked(path)),
         children: <Icon name=Trash size=20 />,
       })
     : React.null}
 </>
 
-// A12b: the header as an inline one-segment form — the leaf name prefilled,
+// A12b: the row as an inline one-segment form — the leaf name prefilled,
 // `Folder.validateSegment` live (the rule shows once there is something to
 // judge), Save disabled while invalid or unchanged, a store `Exists` shown
 // in the same line until the draft changes. Enter saves, Escape cancels.
@@ -1457,65 +1649,87 @@ let renderFolderRename = (edit: folderEdit, ~dispatch: msg => unit): React.eleme
   </div>
 }
 
-// A10: one inset grouped section per folder. The root section never gets a
-// header (a folder-less list is byte-for-byte the pre-A10 list); a folder's
-// header is `"<display path> · <count>"` — `.list-group-header` uppercases
-// it on screen, `Folder.snap` keeps the underlying spelling unique. A12b:
-// while editing the header carries Rename (and Delete on an empty leaf) as
-// siblings of the `<h2>`, or becomes the rename form; an empty leaf is a
-// section with one "Empty folder" row; an intermediate folder is a
-// header-only row (`parts-folder-header`, no container — and not
-// `parts-section-header`, which stays one per real section).
-let renderSection = (model: model, section: section, ~dispatch: msg => unit): React.element => {
-  let key = section.path == "" ? "/" : section.path
-  let editable = model.editing && section.path != ""
-  let renaming = switch model.folderEdit {
-  | Some(edit) if editable && edit.path == section.path => Some(edit)
-  | Some(_) | None => None
-  }
-  let headerEl = renaming->Option.map(edit => renderFolderRename(edit, ~dispatch))
-  let headerTrailing =
-    editable && renaming->Option.isNone ? Some(renderFolderActions(section, ~dispatch)) : None
-  switch section.kind {
-  | Intermediate =>
-    <section key className="list-group-section" dataTestId="parts-folder">
-      {switch headerEl {
-      | Some(el) => el
-      | None =>
-        <Ui.ListGroup.Header
-          text={Folder.display(section.path)} testId="parts-folder-header" trailing=?headerTrailing
-        />
-      }}
-    </section>
-  | Parts | EmptyLeaf =>
-    <Ui.ListGroup
-      key
-      asList=true
-      header=?{section.path == ""
-        ? None
-        : Some(Folder.display(section.path) ++ " · " ++ Int.toString(Array.length(section.rows)))}
-      headerTestId="parts-section-header"
-      ?headerTrailing
-      ?headerEl
-      testId="parts-section"
-    >
-      {section.kind == EmptyLeaf
-        ? <div className="list-row" role="listitem" dataTestId="parts-section-empty">
-            <span className="list-row-body">
-              <Ui.ListRow.Meta> {React.string("Empty folder")} </Ui.ListRow.Meta>
-            </span>
-          </div>
-        : section.rows->Array.map(part => renderRow(model, part, ~dispatch))->React.array}
-    </Ui.ListGroup>
-  }
-}
+// A13: a folder row. The folder glyph leads; the body is the leaf name over
+// `meta` (direct-child counts in the folder view, the location in search
+// results). Outside Edit mode the body and chevron are a real `<a>` to the
+// folder's own route — `Ui.ListRow ~href`'s shape, hand-rolled only because
+// the outer `<div>` needs `data-path` (`PathDiv`). While editing (folder
+// view only; result rows stay plain links) it is a plain listitem with
+// Rename and, on an empty leaf, Delete trailing — never a checkbox (folders
+// are not selectable in v1) — or the inline rename form in its place.
+let folderGlyph = <span className="folder-row-glyph" ariaHidden=true> <Icon name=Folder size=28 /> </span>
 
-// A10: a plain 17 px search field under the static Large Title — on the web
-// that's the honest equivalent of HIG's nav-bar search (review N5). Live
-// filter, sections preserved. `global.css`'s `-webkit-appearance: none`
-// strips WebKit's native cancel button along with the rest of the chrome,
-// so the page supplies its own (`parts-search-clear`) while there is
-// something to clear; clearing returns focus to the field.
+let renderFolderLink = (~path: string, ~meta: string): React.element =>
+  PathDiv.make(
+    ~key=path,
+    {
+      className: "list-row",
+      role: "listitem",
+      dataTestId: "folder-row",
+      dataPath: path,
+      children: <>
+        folderGlyph
+        <a className="list-row-link" href={Route.href(Route.Parts(path))}>
+          <span className="list-row-body">
+            <Ui.ListRow.Title> {React.string(Folder.leaf(path))} </Ui.ListRow.Title>
+            <Ui.ListRow.Meta> {React.string(meta)} </Ui.ListRow.Meta>
+          </span>
+          <span className="list-row-chevron"> <Icon name=ChevronRight size=20 /> </span>
+        </a>
+      </>,
+    },
+  )
+
+let renderFolderEditRow = (
+  model: model,
+  ~path: string,
+  ~meta: string,
+  ~deletable: bool,
+  ~dispatch: msg => unit,
+): React.element =>
+  PathDiv.make(
+    ~key=path,
+    {
+      className: "list-row",
+      role: "listitem",
+      dataTestId: "folder-row",
+      dataPath: path,
+      children: switch model.folderEdit {
+      | Some(edit) if edit.path == path =>
+        <div className="folder-row-edit"> {renderFolderRename(edit, ~dispatch)} </div>
+      | Some(_) | None =>
+        <>
+          folderGlyph
+          <span className="list-row-body">
+            <Ui.ListRow.Title> {React.string(Folder.leaf(path))} </Ui.ListRow.Title>
+            <Ui.ListRow.Meta> {React.string(meta)} </Ui.ListRow.Meta>
+          </span>
+          <span className="list-row-trailing">
+            {renderFolderActions(~path, ~deletable, ~dispatch)}
+          </span>
+        </>
+      },
+    },
+  )
+
+// The two groups of the folder view. Each carries its header only when the
+// other renders too — alone, the group needs no label.
+let renderFoldersGroup = (~header: bool, rows: array<React.element>): React.element =>
+  <Ui.ListGroup asList=true header=?{header ? Some("Folders") : None} testId="folders-list">
+    {React.array(rows)}
+  </Ui.ListGroup>
+
+let renderPartsGroup = (~header: bool, rows: array<React.element>): React.element =>
+  <Ui.ListGroup asList=true header=?{header ? Some("Parts") : None} testId="parts-list">
+    {React.array(rows)}
+  </Ui.ListGroup>
+
+// A10: a plain 17 px search field under the title — on the web that's the
+// honest equivalent of HIG's nav-bar search (review N5). Live filter across
+// every folder (A13). `global.css`'s `-webkit-appearance: none` strips
+// WebKit's native cancel button along with the rest of the chrome, so the
+// page supplies its own (`parts-search-clear`) while there is something to
+// clear; clearing returns focus to the field.
 let renderSearch = (model: model, ~dispatch: msg => unit): React.element =>
   <div className="parts-search">
     {Canvas.Input.make({
@@ -1545,17 +1759,182 @@ let renderSearch = (model: model, ~dispatch: msg => unit): React.element =>
         </Ui.Button>}
   </div>
 
-let renderList = (model: model, ~dispatch: msg => unit): React.element => {
-  let sections = sectionsOf(model)
+// Search results (A13): A10's shape — a Folders section of the folders
+// whose leaf matches (meta = where it lives), then one flat section per
+// folder with a full-path header (root first and headerless), the part rows
+// as they are in the folder view (A12b's checkbox rows while editing);
+// folder rows here are plain links. Nothing at all → the one Footnote.
+let renderResults = (model: model, ~dispatch: msg => unit): React.element => {
+  let {folders, sections} = resultsOf(model)
+  if Array.length(folders) == 0 && Array.length(sections) == 0 {
+    <p className="t-footnote muted" dataTestId="parts-search-empty">
+      {React.string(`No parts match "${String.trim(model.query)}".`)}
+    </p>
+  } else {
+    let location = (path: string): string => {
+      let parent = Folder.parent(path)
+      parent == "" ? "Top level" : Folder.display(parent)
+    }
+    <div className="parts-sections">
+      {Array.length(folders) == 0
+        ? React.null
+        : renderFoldersGroup(
+            ~header=true,
+            folders->Array.map(path => renderFolderLink(~path, ~meta=location(path))),
+          )}
+      {sections
+      ->Array.map(section =>
+        <Ui.ListGroup
+          key={section.path == "" ? "/" : section.path}
+          asList=true
+          header=?{section.path == ""
+            ? None
+            : Some(Folder.display(section.path) ++ " · " ++ Int.toString(Array.length(section.rows)))}
+          headerTestId="parts-section-header"
+          testId="parts-section"
+        >
+          {section.rows->Array.map(part => renderRow(model, part, ~dispatch))->React.array}
+        </Ui.ListGroup>
+      )
+      ->React.array}
+    </div>
+  }
+}
+
+// Under the lists: a secondary New Folder capsule that reveals an inline
+// one-segment field (`Folder.validateSegment` live: Create disabled while
+// invalid or empty, the rule inline once there is something to judge), or
+// — at six deep already — the capsule disabled with a Footnote saying why.
+// `selected` is the parent the new folder nests under (the picker's
+// selection, or the folder on screen); `draft` is whichever New Folder
+// draft the caller owns (A13, review S2).
+let renderNewFolder = (~selected: string, ~draft: option<string>, ~dispatch: msg => unit): React.element => {
+  let maxed = Folder.depth(selected) >= Folder.maxDepth
+  switch draft {
+  | None =>
+    <div className="stack folder-picker-new">
+      <Ui.Button
+        variant=Ui.Button.Secondary
+        block=true
+        testId="folder-new"
+        disabled=maxed
+        onClick={_ => dispatch(NewFolderOpen)}>
+        <Icon name=FolderPlus size=20 />
+        {React.string("New Folder")}
+      </Ui.Button>
+      {maxed
+        ? <p className="t-footnote muted" dataTestId="folder-new-depth">
+            {React.string("Folders go six deep.")}
+          </p>
+        : React.null}
+    </div>
+  | Some(draft) =>
+    let invalid = Folder.validateSegment(draft)->Result.isError
+    let error = switch Folder.validateSegment(draft) {
+    | Error(e) if String.trim(draft) != "" => Some(Folder.errorMessage(e))
+    | Error(_) | Ok(_) => None
+    }
+    <div className="stack folder-picker-new">
+      <Ui.Field
+        label="New folder" htmlFor="folder-new-name-input" error=?error errorTestId="folder-new-error">
+        {Canvas.Input.make({
+          dataTestId: "folder-new-name",
+          id: "folder-new-name-input",
+          type_: "text",
+          autoCapitalize: "words",
+          autoCorrect: "off",
+          autoComplete: "off",
+          spellCheck: false,
+          enterKeyHint: "done",
+          placeholder: "Folder name",
+          ariaInvalid: error->Option.isSome,
+          value: draft,
+          onChange: e => dispatch(NewFolderChanged(inputValue(e))),
+          onKeyDown: e =>
+            if JsxEvent.Keyboard.key(e) == "Enter" {
+              e->JsxEvent.Keyboard.preventDefault
+              if !invalid {
+                dispatch(NewFolderCreate)
+              }
+            },
+        })}
+      </Ui.Field>
+      <div className="btn-row">
+        <Ui.Button
+          variant=Ui.Button.Primary
+          testId="folder-new-create"
+          disabled=invalid
+          onClick={_ => dispatch(NewFolderCreate)}>
+          {React.string("Create")}
+        </Ui.Button>
+        <Ui.Button
+          variant=Ui.Button.Secondary testId="folder-new-cancel" onClick={_ => dispatch(NewFolderCancel)}>
+          {React.string("Cancel")}
+        </Ui.Button>
+      </div>
+    </div>
+  }
+}
+
+// DESIGN.md §7 / §11.2: "one line of copy … and the primary button; no
+// illustration" — the empty state's own capsule, while no part exists
+// anywhere. Once one does, "+" lives in the bar instead (`actions` above,
+// P3); this stops rendering entirely then, rather than becoming a second,
+// redundant "New part" affordance under the list.
+let renderEmptyCapsule = (model: model, ~dispatch: msg => unit): React.element =>
+  Array.length(model.parts) > 0
+    ? React.null
+    : <Ui.Button
+        variant=Ui.Button.Primary
+        block=true
+        testId="new-part"
+        onClick={_ => dispatch(NewPartClicked)}>
+        {React.string("New part")}
+      </Ui.Button>
+
+// A13: one folder's screen. Order: at the root with no part anywhere, A10's
+// empty-state copy and its capsule; the Folders group (direct subfolders,
+// chevron rows, direct-count meta; Rename/Delete trailing while editing);
+// the Parts group (the parts sitting directly here, `updatedAt` desc); a
+// folder with neither says "Empty folder"; a non-root folder with no part
+// anywhere gets the capsule after that; then the New Folder capsule.
+let renderFolder = (model: model, ~dispatch: msg => unit): React.element => {
+  let known = knownFolders(model)
+  let {children, rows} = folderViewOf(model)
+  let isRoot = model.folder == ""
+  let both = Array.length(children) > 0 && Array.length(rows) > 0
+  let noParts = Array.length(model.parts) == 0
+  let folderRows = children->Array.map(child => {
+    let parts = Array.length(partsIn(model.parts, child))
+    let folders = Array.length(childrenOf(known, child))
+    let meta = folderMeta(~parts, ~folders)
+    model.editing
+      ? renderFolderEditRow(model, ~path=child, ~meta, ~deletable=parts == 0 && folders == 0, ~dispatch)
+      : renderFolderLink(~path=child, ~meta)
+  })
   <>
-    {renderSearch(model, ~dispatch)}
-    {Array.length(sections) == 0
-      ? <p className="t-footnote muted" dataTestId="parts-search-empty">
-          {React.string(`No parts match "${String.trim(model.query)}".`)}
-        </p>
+    {isRoot && noParts
+      ? <div className="parts-empty" dataTestId="parts-empty">
+          <p className="t-footnote muted">
+            {React.string("No parts yet. A part is a set of photographed faces.")}
+          </p>
+        </div>
+      : React.null}
+    {isRoot ? renderEmptyCapsule(model, ~dispatch) : React.null}
+    {Array.length(children) == 0 && Array.length(rows) == 0
+      ? isRoot
+          ? React.null
+          : <p className="t-footnote muted" dataTestId="folder-empty">
+              {React.string("Empty folder")}
+            </p>
       : <div className="parts-sections">
-          {sections->Array.map(section => renderSection(model, section, ~dispatch))->React.array}
+          {Array.length(children) == 0 ? React.null : renderFoldersGroup(~header=both, folderRows)}
+          {Array.length(rows) == 0
+            ? React.null
+            : renderPartsGroup(~header=both, rows->Array.map(part => renderRow(model, part, ~dispatch)))}
         </div>}
+    {isRoot ? React.null : renderEmptyCapsule(model, ~dispatch)}
+    {renderNewFolder(~selected=model.folder, ~draft=model.newFolder, ~dispatch)}
   </>
 }
 
@@ -1626,78 +2005,6 @@ let renderFolderOption = (picker: picker, path: string, ~dispatch: msg => unit):
   )
 }
 
-// Under the list: a secondary New Folder capsule that reveals an inline
-// one-segment field (`Folder.validateSegment` live: Create disabled while
-// invalid or empty, the rule inline once there is something to judge), or
-// — at six deep already — the capsule disabled with a Footnote saying why.
-let renderNewFolder = (picker: picker, ~dispatch: msg => unit): React.element => {
-  let maxed = Folder.depth(picker.selected) >= Folder.maxDepth
-  switch picker.newFolder {
-  | None =>
-    <div className="stack folder-picker-new">
-      <Ui.Button
-        variant=Ui.Button.Secondary
-        block=true
-        testId="folder-new"
-        disabled=maxed
-        onClick={_ => dispatch(NewFolderOpen)}>
-        <Icon name=FolderPlus size=20 />
-        {React.string("New Folder")}
-      </Ui.Button>
-      {maxed
-        ? <p className="t-footnote muted" dataTestId="folder-new-depth">
-            {React.string("Folders go six deep.")}
-          </p>
-        : React.null}
-    </div>
-  | Some(draft) =>
-    let invalid = Folder.validateSegment(draft)->Result.isError
-    let error = switch Folder.validateSegment(draft) {
-    | Error(e) if String.trim(draft) != "" => Some(Folder.errorMessage(e))
-    | Error(_) | Ok(_) => None
-    }
-    <div className="stack folder-picker-new">
-      <Ui.Field
-        label="New folder" htmlFor="folder-new-name-input" error=?error errorTestId="folder-new-error">
-        {Canvas.Input.make({
-          dataTestId: "folder-new-name",
-          id: "folder-new-name-input",
-          type_: "text",
-          autoCapitalize: "words",
-          autoCorrect: "off",
-          autoComplete: "off",
-          spellCheck: false,
-          enterKeyHint: "done",
-          placeholder: "Folder name",
-          ariaInvalid: error->Option.isSome,
-          value: draft,
-          onChange: e => dispatch(NewFolderChanged(inputValue(e))),
-          onKeyDown: e =>
-            if JsxEvent.Keyboard.key(e) == "Enter" {
-              e->JsxEvent.Keyboard.preventDefault
-              if !invalid {
-                dispatch(NewFolderCreate)
-              }
-            },
-        })}
-      </Ui.Field>
-      <div className="btn-row">
-        <Ui.Button
-          variant=Ui.Button.Primary
-          testId="folder-new-create"
-          disabled=invalid
-          onClick={_ => dispatch(NewFolderCreate)}>
-          {React.string("Create")}
-        </Ui.Button>
-        <Ui.Button
-          variant=Ui.Button.Secondary testId="folder-new-cancel" onClick={_ => dispatch(NewFolderCancel)}>
-          {React.string("Cancel")}
-        </Ui.Button>
-      </div>
-    </div>
-  }
-}
-
 // The picker takes over the page the way the create form does: one
 // `role="listbox"` group — root first, then every known folder as a flat
 // tree (children after their parent, indented) — and the New Folder area.
@@ -1709,48 +2016,18 @@ let renderPicker = (model: model, picker: picker, ~dispatch: msg => unit): React
       ->Array.map(path => renderFolderOption(picker, path, ~dispatch))
       ->React.array}
     </Ui.ListGroup>
-    {renderNewFolder(picker, ~dispatch)}
+    {renderNewFolder(~selected=picker.selected, ~draft=picker.newFolder, ~dispatch)}
   </div>
-
-// DESIGN.md §7 / §11.2: "one line of copy … and the primary button; no
-// illustration" — the empty state's own capsule. Once the list is
-// non-empty, "+" lives in the bar instead (`actions` above, P3); this
-// stops rendering entirely then, rather than becoming a second, redundant
-// "New part" affordance under the list.
-let renderEmptyCapsule = (model: model, ~dispatch: msg => unit): React.element =>
-  if !model.loaded || Array.length(model.parts) > 0 {
-    React.null
-  } else {
-    <Ui.Button
-      variant=Ui.Button.Primary
-      block=true
-      testId="new-part"
-      onClick={_ => dispatch(NewPartClicked)}>
-      {React.string("New part")}
-    </Ui.Button>
-  }
-
-// A12b: with no parts at all, the empty leaf folders (a folder made in the
-// picker then Cancelled; the folder the last part was deleted from) still
-// show as their `· 0` sections under the empty state, so they never
-// "vanish" (review S5). Edit needs a part (`actions`), so they are rename/
-// delete-able again once one exists.
-let renderEmptyFolders = (model: model, ~dispatch: msg => unit): React.element =>
-  if !model.loaded || Array.length(model.parts) > 0 {
-    React.null
-  } else {
-    let sections = sectionsOf(model)
-    Array.length(sections) == 0
-      ? React.null
-      : <div className="parts-sections">
-          {sections->Array.map(section => renderSection(model, section, ~dispatch))->React.array}
-        </div>
-  }
 
 // `.parts-page` scopes PartsList.css's 72 px thumbnail override to this
 // page's rows only — `Ui.ListThumb`/`.list-thumb` (global.css) is also used
 // by Part.res's face-edit list at its own 52 px, and CSS here is unscoped
 // app-wide (see PartsList.css), so an unscoped override would leak there.
+//
+// A13: the body is "Loading parts…" until both loads are in, then the
+// unknown-folder Footnote (no search, no capsule — the bar's Back leads to
+// the root), else the search field (whenever any part or folder exists
+// anywhere) over the results while a query is active or the folder itself.
 let view = (model: model, ~dispatch: msg => unit): React.element =>
   <div className="stack-lg parts-page">
     <Ui.Live text=model.announcement testId="parts-live" />
@@ -1767,19 +2044,20 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     | (None, Some(f)) => renderForm(f, ~dispatch)
     | (None, None) =>
       <div className="stack">
-        {if !model.loaded {
+        {if !ready(model) {
           <p className="t-footnote muted"> {React.string("Loading parts…")} </p>
-        } else if Array.length(model.parts) == 0 {
-          <div className="parts-empty" dataTestId="parts-empty">
-            <p className="t-footnote muted">
-              {React.string("No parts yet. A part is a set of photographed faces.")}
-            </p>
-          </div>
+        } else if !folderExists(model, model.folder) {
+          <p className="t-footnote muted" dataTestId="folder-missing">
+            {React.string("This folder doesn't exist.")}
+          </p>
         } else {
-          renderList(model, ~dispatch)
+          let anyContent =
+            Array.length(model.parts) > 0 || Array.length(knownFolders(model)) > 0
+          <>
+            {anyContent ? renderSearch(model, ~dispatch) : React.null}
+            {searching(model) ? renderResults(model, ~dispatch) : renderFolder(model, ~dispatch)}
+          </>
         }}
-        {renderEmptyCapsule(model, ~dispatch)}
-        {renderEmptyFolders(model, ~dispatch)}
       </div>
     }}
   </div>

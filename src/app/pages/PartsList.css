@@ -268,3 +268,27 @@
   gap: var(--cc-space-2);
   padding: 0 var(--cc-page-x);
 }
+
+/* SPEC §8a A13 — folder rows in the browser view and in search results. The
+   leading glyph slot is as wide as a part row's 72 px thumbnail so the two
+   groups' titles line up on one screen; the glyph itself is the picker's
+   `cc-text-2` folder outline, a size up. The inline rename form (A12b) now
+   sits *inside* the row — the row's own 16 px inset replaces the page-x
+   padding the form carried when it replaced a section header. */
+.folder-row-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  min-height: var(--cc-tap-min);
+  color: var(--cc-text-2);
+}
+
+.folder-row-edit {
+  width: 100%;
+}
+
+.folder-row-edit .folder-rename {
+  padding: 0;
+}
