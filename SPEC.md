@@ -1310,3 +1310,101 @@ unmount is a cut, and the route transition above covers the big exits):**
   state, a `history.state` index for same-depth Back (review J2; optional if it ever matters),
   swipe-back gesture (the browser's own edge swipe works in Safari standalone and already fires
   `hashchange` → `pop`), any JS animation library, spring physics.
+
+### A17 — Adaptive layout: compact, medium and expanded size classes (iPad and desktop) — **no JSON delta**
+
+Owner: "it looks ok on mobile… on desktop it's not great… I'll look at it on iPad… make it more
+adaptive." Today the only width rule in the app is one `max-width: 360px` query: every screen is
+the 390 px phone column stretched to whatever the window is. The tour now takes `TOUR_VIEWPORT=WxH
+TOUR_DSF=1`; the before-state is committed as `docs/design/mockups/adaptive-before-*.png` — at
+1440 × 900 the Parts rows run 1400 px wide, the Part page shows two 700 px face cards with the
+features and Export below the fold, and Annotate pillarboxes the photo into a 300 px strip over a
+1400 px form; at 820 × 1180 (iPad portrait) the face cards are 380 px squares.
+
+**Size classes** (HIG's compact / regular, expressed as three widths of the layout viewport):
+- [ ] **compact** < 600 px — every phone in portrait; today's layout, unchanged. **medium** 600–1023 px —
+  iPad portrait (820 / 834), iPhone landscape, narrow windows. **expanded** ≥ 1024 px — iPad landscape
+  (1180), desktop. Plain `@media (min-width: 600px)` / `(min-width: 1024px)`; the two numbers live
+  once as a comment block at the top of `theme.css` and nowhere else as literals. Container queries
+  (`@container`, iOS 16+) only where a component's column can be narrower than the viewport (the
+  face grid in the expanded Part layout).
+- [ ] Tokens: `--cc-page-x` becomes 16 / 20 / 24 by size class; `--cc-column: 720px` (the reading
+  column for lists, forms, settings), `--cc-column-narrow: 560px` (forms, Settings, Debug, the
+  picker), `--cc-panel: 420px` (Annotate's side panel at expanded), `--cc-card-max: 240px` (a face
+  card's largest edge). Type scale unchanged — HIG does not scale body text by size class; the
+  Large Title stays 34 px.
+
+**Shell (medium and expanded):**
+- [ ] The nav bar and the footer toolbar stay full-bleed (the glass strip spans the window); their
+  *contents* (leading / title / trailing; Move / Delete) align to the same centred column as the
+  page. `.shell-content` and `.shell-large-title` become a centred column: `max-width:
+  var(--cc-column); margin-inline: auto` at medium+. The ambient G1 wash keeps filling the frame
+  outside the column, so a wide window is not a black void with a strip in it.
+- [ ] Pointer: under `@media (hover: hover) and (pointer: fine)` interactive rows, cards, chips and
+  capsules get a hover state — the hairline material one step stronger (`--glass-fill-strong`), 160
+  ms — and `cursor: pointer`. Press scales and focus rings unchanged. Never on touch.
+- [ ] Keyboard: **Escape** closes whichever take-over or inline editor is open (picker → form; form
+  → list; rename strip; delete confirm; New Folder field) via one `keydown` listener registered by
+  the Shell that dispatches a page-level `Escape` msg (pages that have nothing open ignore it).
+  Arrow keys in the picker listbox and list rows are A17b.
+
+**Parts root / folder / search:**
+- [ ] medium and expanded: the 720 column, centred; rows, sections, the New Folder capsule and the
+  Edit toolbar contents unchanged inside it. The create form and the picker use the narrow column.
+  A persistent sidebar browser next to the detail is **A17b** (below).
+
+**Part page:**
+- [ ] medium: the face grid is 3-up (`repeat(3, minmax(0, 1fr))`); cards keep `aspect-ratio: 1`
+  and cap at `--cc-card-max` — a 4th column is never forced. Features group and Export in the 720
+  column; the primary capsule caps at 400 px, centred (HIG: buttons don't span a tablet).
+- [ ] expanded: **two columns** (`.part-columns`, `grid-template-columns: minmax(0, 1fr)
+  minmax(320px, 380px)`, gap 24, aligned to a 1120 px max width, centred): left the face gallery
+  as an auto-fill grid (`repeat(auto-fill, minmax(200px, 1fr))`, container-queried, cards ≤ 240,
+  "+ Capture" last), right the features list, the flagged / conflict rows, Export and the hands-on
+  timer, sticky at `top: var(--cc-bar-height)` so the numbers stay in view while the gallery
+  scrolls. This is the left-and-right of Linked Mode's §5 desktop (faces | … | queue + saved), so
+  the v1 three-column layout is a column inserted, not a redesign.
+
+**Capture:**
+- [ ] medium: the kind grid 3-up; expanded: 4-up, cards ≤ 240; the shutter block and "From library"
+  centred at a 480 px max. The A2HS hint never shows above compact.
+
+**Annotate (the one that matters most):**
+- [ ] medium: the canvas height becomes `min(var(--vv-height) * 0.55, 720px)` (today: a 300 px cap
+  — half a phone's height); the panel below in the 720 column; the Dimensions list under it.
+- [ ] expanded: **side by side** — `.annotate` is a grid `minmax(0, 1fr) var(--cc-panel)` filling
+  `var(--vv-height)` minus the bar; the canvas fills the left cell's full height (the canvas sizes
+  itself from its container's box — the builder confirms the resize path handles a height-driven
+  box and the A6 fit reads the real size), the panel is the right column with its own scroll
+  (`overflow-y: auto`, the tools strip at its top, then Reading / Name / Kind / Tolerance / Save /
+  Clear / Dimensions). Focus order and the A2 keyboard behaviour unchanged. Mouse: drag already works
+  via pointer events; **wheel / trackpad-pinch zoom at the cursor is A17b**.
+- [ ] The export PNG is unchanged in every class (it renders from the photo, not the viewport).
+
+**Settings, Debug:** the narrow column, centred.
+
+**Motion:** push / pop transitions unchanged (the whole root still slides); A17b's split view
+transitions the detail column alone.
+
+**Tests and docs:**
+- [ ] Playwright: a second describe file `e2e/specs/adaptive.spec.js` runs with two viewports via
+  `test.use({viewport})` blocks — **1440 × 900** and **820 × 1180** — asserting: the Parts column's
+  bounding box is ≤ 720 wide and horizontally centred (±2 px); the Part page at 1440 has
+  `.part-columns` with two grid tracks and the Export capsule ≤ 400 wide; the face grid at 820 has
+  three columns (computed `grid-template-columns` has three tracks) and a card ≤ 240; Annotate at
+  1440 has the panel to the right of the canvas (canvas box right edge ≤ panel box left edge) and
+  the canvas ≥ 600 tall; Annotate at 820 has the canvas ≥ 500 tall; hover on a part row at 1440
+  changes its computed background (Playwright `hover()`); Escape closes the picker. Every existing
+  spec stays at 390 × 844 and green (count today 65; report the new count).
+- [ ] Screenshots: the tour gains a `--wide` mode that shoots `12`, `08`, `07`, `04` at 1440 × 900
+  and 820 × 1180 into `docs/screenshots/wide/`; those eight PNGs are committed and looked at.
+- [ ] `DESIGN.md` gains "§12 Size classes" (the table above, the columns, what changes per screen,
+  what never changes: type scale, tokens, the blur budget, the export); `docs/testids.md` unchanged
+  unless a hook needs an id; LOGBOOK section with before/after measurements per screen.
+
+**A17b — later, on top:** the expanded **split view** — a persistent Parts browser sidebar (320
+px: search, folders, parts, Edit) beside the detail (Part / Capture / Annotate), `Main` holding
+the browser's model alongside the page so the list never reloads on navigation, `#/parts/:id`
+rendering sidebar + part, an empty-detail state ("Select a part"), the detail column transitioning
+alone; arrow-key navigation in lists and the picker; wheel / trackpad zoom at the cursor on the
+canvas; Linked Mode's three-column desktop as the end state.

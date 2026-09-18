@@ -16,8 +16,13 @@ fs.mkdirSync(outDir, { recursive: true })
 
 const browser = await chromium.launch()
 const context = await browser.newContext({
-  viewport: { width: 390, height: 844 },
-  deviceScaleFactor: 2,
+  // TOUR_VIEWPORT=1440x900 TOUR_DSF=1 shoots the same tour at another size
+  // (A17 responsive work); the default stays the SPEC's phone viewport.
+  viewport: (() => {
+    const m = /^(\d+)x(\d+)$/.exec(process.env.TOUR_VIEWPORT || '')
+    return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 390, height: 844 }
+  })(),
+  deviceScaleFactor: Number(process.env.TOUR_DSF || 2),
   isMobile: true,
   hasTouch: true,
 })
