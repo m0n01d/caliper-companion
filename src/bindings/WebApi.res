@@ -107,6 +107,39 @@ module Document = {
   let removeDataNav = (): unit => document->documentElement->removeAttribute("data-nav")
 }
 
+// ── Keyboard — the document-level Escape (SPEC §8a A17-ii) ─────────────
+// One `keydown` listener on the document for the program's lifetime,
+// registered once from `Main.init` through `subscribe` — the
+// `Route.subscribe` shape (review S7): a `Tea.effect` that never
+// unsubscribes, since the program outlives every page. Only Escape is
+// dispatched, and only when nothing closer to the target claimed it:
+// `defaultPrevented` is how a control with its own Escape (the folder
+// rename strip in PartsList.res) tells this listener to stand down, and
+// `isComposing` skips a key that is part of an IME composition. `Main`
+// reads the key as a string (`KeyPressed(string)`), so the arrow keys of
+// A17b slot in without a new msg. `preventDefault` is here for those
+// controls; nothing in this module calls it.
+module Keyboard = {
+  type event
+
+  @val external document: Dom.document = "document"
+  @get external key: event => string = "key"
+  @get external defaultPrevented: event => bool = "defaultPrevented"
+  @get external isComposing: event => bool = "isComposing"
+  @send external preventDefault: event => unit = "preventDefault"
+  @send
+  external onKeyDown: (Dom.document, @as("keydown") _, event => unit) => unit = "addEventListener"
+
+  let subscribe = (toMsg: string => 'msg): Tea.cmd<'msg> =>
+    Tea.effect(dispatch =>
+      document->onKeyDown(e =>
+        if !defaultPrevented(e) && !isComposing(e) && key(e) == "Escape" {
+          dispatch(toMsg(key(e)))
+        }
+      )
+    )
+}
+
 // ── View Transitions API (SPEC §8a A16) ─────────────────────────────────
 // `document.startViewTransition(cb)` — iOS 18+ / Chrome 111+ / Firefox 144+.
 // `startFn` is the feature check: reading the method as a property is

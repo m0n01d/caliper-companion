@@ -13,6 +13,7 @@ type page =
 
 type msg =
   | RouteChanged(Route.t)
+  | KeyPressed(string)
   | PartsListMsg(PartsList.msg)
   | PartMsg(Part.msg)
   | CaptureMsg(Capture.msg)
@@ -51,7 +52,14 @@ let pageForRoute = (route: Route.t): (page, Tea.cmd<msg>) =>
 let init = (): (model, Tea.cmd<msg>) => {
   let route = Route.current()
   let (page, pageCmd) = pageForRoute(route)
-  ({route, page}, Tea.batch([pageCmd, Route.subscribe(r => RouteChanged(r))]))
+  (
+    {route, page},
+    Tea.batch([
+      pageCmd,
+      Route.subscribe(r => RouteChanged(r)),
+      WebApi.Keyboard.subscribe(k => KeyPressed(k)),
+    ]),
+  )
 }
 
 let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
@@ -80,6 +88,29 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
     // at the top — pushes and pops alike (the returning list re-inits).
     let (page, cmd) = pageForRoute(route)
     ({route, page}, Tea.batch([cmd, Shell.scrollToTop]))
+  // SPEC §8a A17-ii: Escape closes whichever take-over or inline editor
+  // the mounted page has open. `Shell` has no dispatch and page msgs flow
+  // only through `Main.msg`, so the keyboard is a `Main` subscription in
+  // the shape of `Route.subscribe` (review S7), routed into the page by a
+  // direct `update` call — the `FolderChanged` shape above, never a cmd.
+  // Each page's `Escape` picks the first thing to close in its own
+  // precedence; Annotate, Settings and Debug have nothing Escape closes.
+  // `WebApi.Keyboard.subscribe` dispatches Escape alone, so the second
+  // arm is exhaustiveness, not a path.
+  | KeyPressed("Escape") =>
+    switch model.page {
+    | PartsList(pageModel) =>
+      let (nextPage, cmd) = PartsList.update(pageModel, PartsList.Escape)
+      ({...model, page: PartsList(nextPage)}, Tea.map(cmd, m => PartsListMsg(m)))
+    | Part(pageModel) =>
+      let (nextPage, cmd) = Part.update(pageModel, Part.Escape)
+      ({...model, page: Part(nextPage)}, Tea.map(cmd, m => PartMsg(m)))
+    | Capture(pageModel) =>
+      let (nextPage, cmd) = Capture.update(pageModel, Capture.Escape)
+      ({...model, page: Capture(nextPage)}, Tea.map(cmd, m => CaptureMsg(m)))
+    | Annotate(_) | Settings(_) | Debug(_) => (model, Tea.none)
+    }
+  | KeyPressed(_) => (model, Tea.none)
   | PartsListMsg(pageMsg) =>
     switch model.page {
     | PartsList(pageModel) =>

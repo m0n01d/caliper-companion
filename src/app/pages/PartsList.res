@@ -193,6 +193,8 @@ type msg =
   | NewFolderChanged(string)
   | NewFolderCancel
   | NewFolderCreate
+  // A17-ii: the document-level Escape (`Main.KeyPressed`); see `update`.
+  | Escape
   | NewFolderCreated(string, array<string>)
   | NewFolderFailed(string)
 
@@ -577,8 +579,43 @@ let searching = (model: model): bool => String.trim(model.query) != ""
 
 let emptyDraft: formDraft = {name: "", path: ""}
 
-let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
+// A17-ii: the one row whose inline rename is open, if any (`rowStates` is
+// absent == Normal, and one inline editor is open at a time, review S9).
+let renamingRow = (model: model): option<string> =>
+  model.rowStates
+  ->Dict.toArray
+  ->Array.find(((_, state)) =>
+    switch state {
+    | Renaming(_) => true
+    | Normal => false
+    }
+  )
+  ->Option.map(((id, _)) => id)
+
+let rec update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
+  // SPEC §8a A17-ii: Escape, routed here from `Main.KeyPressed` by a direct
+  // `update` call. Closes the first open take-over or inline editor,
+  // outermost first — the picker's New Folder field, the picker, the
+  // create form, the Delete confirm strip, a row's rename, the folder
+  // rename, the root New Folder field — by re-entering the msg its own
+  // Cancel control sends, so focus lands where that Cancel puts it. The
+  // folder rename strip's own `onKeyDown` claims the key first
+  // (`preventDefault`, so `WebApi.Keyboard` never dispatches it).
+  | Escape =>
+    switch model {
+    | {picker: Some({newFolder: Some(_)})} => update(model, NewFolderCancel)
+    | {picker: Some(_)} => update(model, PickerCancel)
+    | {form: Some(_)} => update(model, FormCancel)
+    | {confirmingDelete: true} => update(model, DeleteCancel)
+    | _ =>
+      switch (renamingRow(model), model.folderEdit, model.newFolder) {
+      | (Some(id), _, _) => update(model, RenameCancel(id))
+      | (None, Some(_), _) => update(model, FolderRenameCancel)
+      | (None, None, Some(_)) => update(model, NewFolderCancel)
+      | (None, None, None) => (model, Tea.none)
+      }
+    }
   | PartsLoaded(parts) => (
       {...model, loaded: true, parts, error: None},
       // One cmd per part (see `loadFirstFaceImageCmd`'s doc comment) plus
@@ -1642,7 +1679,11 @@ let renderFolderRename = (edit: folderEdit, ~dispatch: msg => unit): React.eleme
             if canSave {
               dispatch(FolderRenameSubmit)
             }
-          | "Escape" => dispatch(FolderRenameCancel)
+          | "Escape" =>
+            // A17-ii: claim the key so the document listener
+            // (`WebApi.Keyboard` → `Main.KeyPressed`) stands down.
+            e->JsxEvent.Keyboard.preventDefault
+            dispatch(FolderRenameCancel)
           | _ => ()
           },
       })}
