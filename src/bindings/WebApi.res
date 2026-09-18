@@ -44,6 +44,16 @@ module Location = {
   @set external setHash: (t, string) => unit = "hash"
 }
 
+// `encodeURIComponent` / `decodeURIComponent` (SPEC §8a A13): a folder
+// path's segments travel in the hash one percent-escaped segment each.
+// `decodeComponent` *throws* a `URIError` on a malformed escape (`%E0`), so
+// callers wrap it in a `try` — `Route.parse` runs inside the `hashchange`
+// listener.
+module Uri = {
+  @val external encodeComponent: string => string = "encodeURIComponent"
+  @val external decodeComponent: string => string = "decodeURIComponent"
+}
+
 module Window = {
   type t
 

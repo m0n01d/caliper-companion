@@ -28,7 +28,7 @@ type model = {
 // Builds the page + cmd for a route, lifting the page's own msg into `msg`.
 let pageForRoute = (route: Route.t): (page, Tea.cmd<msg>) =>
   switch route {
-  | Route.Parts =>
+  | Route.Parts(_) =>
     let (pageModel, cmd) = PartsList.init()
     (PartsList(pageModel), Tea.map(cmd, m => PartsListMsg(m)))
   | Route.Part(partId) =>

@@ -190,7 +190,7 @@ let title = (model: model): string =>
   | Found(p) => p.name
   | Pending | Missing => "Part"
   }
-let back = (_model: model): option<Route.t> => Some(Route.Parts)
+let back = (_model: model): option<Route.t> => Some(Route.Parts(""))
 
 // Shell slots (DESIGN.md §11.1). The one subtitle slot carries the part's
 // folder path (SPEC §8a A10, review B2: "Miata / Interior / Dashboard";
@@ -545,7 +545,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     | Missing =>
       <div className="stack">
         <p className="t-footnote muted"> {React.string("Part not found.")} </p>
-        <a className="btn btn-secondary" href={Route.href(Route.Parts)}>
+        <a className="btn btn-secondary" href={Route.href(Route.Parts(""))}>
           {React.string("Back to parts")}
         </a>
       </div>
