@@ -2784,3 +2784,99 @@ segmented indicator, the selection-circle stagger, the canvas eases) is not here
   `14` fully settled — no shot catches a rise or a slide mid-way. WebKit cannot launch here
   (e2e/README.md) — the iOS 18 push/pop, the footer's blur riding the rise, and the pop stacking
   are to be eyeballed once on the phone.
+
+## 2026-09-18 — A16b motion: segmented indicator, selection-circle stagger, canvas eases (agent/a16-motion)
+
+SPEC §8a A16b, on top of A16a (same branch). No `view-transition-name`, no `Motion.transition`,
+no new dependency, nothing `position: fixed`, nothing bounces, no permanent frame loop.
+
+- **Segmented indicator** (`Ui.res`, `global.css` §8). `Ui.Segmented` renders one
+  `<span class="segmented-indicator" aria-hidden>` first and the group carries `data-index`
+  (the selected option's position, `Array.findIndex`) and `data-count` through a jsx-runtime
+  record component (`Segmented.Group`, the `PathDiv` route — `JsxDOM.domProps` cannot express a
+  data attribute; `aria-label` is an optional record field). CSS as specified: `.segmented
+  { position: relative }`, options `position: relative; z-index: 1`, the pressed option's
+  background is now `transparent` (label colour unchanged), the indicator is absolute at
+  2 px / 2 px / 2 px with `border-radius: inherit`, `--cc-live-fill`, and `transition:
+  transform var(--cc-motion) var(--cc-ease-standard)`; widths `[data-count="n"]` =
+  `calc((100% − 4px − (n − 1) × 4px) / n)` for n = 2, 3, 4 and offsets `[data-index="i"]` =
+  `translateX(calc(i × 100% + i × 4px))` for i = 0…3. One addition: `[data-index="-1"]` hides
+  the indicator (a `selected` outside `options`; no caller does it — every site passes an enum
+  key — but a capsule parked on the first option would be a lie). The Snap pill and the hidden
+  units `<select>` are untouched. Under `reduce`: §12's zero-duration block.
+- **Selection-circle stagger** (`PartsList.css`). `.part-select` enters by `cc-select-in`
+  (opacity 0 → 1, `translateX(−8px)` → 0) over `--cc-motion` `--cc-ease-out` with
+  `animation-fill-mode: backwards`, and `.part-row-selectable:nth-child(2…7) .part-select`
+  get `animation-delay` 20…120 ms, `:nth-child(n + 8)` 140 ms — pure CSS, no `--i` from the
+  view (the rows are the `.list-group`'s direct children; the hidden header is outside it).
+  Reading of "up to 8 rows": rows past the eighth share the last delay rather than dropping
+  to 0, so no later row ever leads an earlier one. **§12 change:** the global reduced-motion
+  block now also zeroes `animation-delay` (`!important`) — a 140 ms stagger of 0 ms
+  animations would still be a stagger. The 8 px slide is the one transform inside a
+  `.list-group` (A16a's "only take-overs rise"): the 24 px circle sits centred in its own
+  44 px box, so −8 px never leaves the row or the group's clip.
+- **Snap ring ease** (`Draw.snapRing`): `progress` goes through `Viewport.ease` (the §11.1
+  curve) — the one line the review asked for. Geometry (1 → 1.6, fade) and `ringMs` 150
+  unchanged; the `now`-based loop is the existing `frames` cmd, which stops scheduling at
+  progress 1 and single-ticks under reduced motion (`matchMedia` read once per animation start).
+- **Pill settle** (`Annotate.res`, `Draw.res`, `Viewport.res`, `Canvas.res`): the model gains
+  `settle: option<{gen, id, progress}>` + `settleGen`, `SettleTick` through `frames(~ms=160)`
+  (`settleCmd`), minted in `Saved(Ok)` for the landed dimension's id. `drawScene` passes
+  `~pillScale=Viewport.settleScale(progress)` (new, pure: `1 + 0.04 × (1 − ease(p))`,
+  clamped; two unit cases) to `Draw.dimension` for that one Dimmed dimension, which hands it to
+  `Draw.pill ~scale` — the pill draws inside `save / translate / scale / translate / restore`
+  about its own centre (two new `@send` bindings `Canvas.Ctx.translate` / `scale`), after the
+  alpha group's `restore` like every Dimmed pill. Because `Tea.use` runs cmds synchronously
+  inside `dispatch`, the reduced-motion single tick lands before React commits: the first
+  paint after a Save is already the resting pill (measured below — no `scale` call at all).
+- **Reading-field ring** (`Annotate.css`): `[data-testid="reading"]:focus { animation:
+  cc-ring-fade 400ms var(--cc-ease-out) }`, keyframes `box-shadow: 0 0 0 4px var(--cc-accent)`
+  → `transparent` — the `input:focus` outline (2 px, offset 0) stays underneath, so the visible
+  ring is the 2 px beyond it. Restarts on each focus (fine). §6's handle scale-in stays struck.
+- **Every A16b animation** (all zeroed under `prefers-reduced-motion`):
+
+  | What | Duration | Easing | Reduced motion |
+  |---|---|---|---|
+  | Segmented `.segmented-indicator` transform between options | 160 ms (`--cc-motion`) | `--cc-ease-standard` | §12: 0 ms |
+  | `.part-select` `cc-select-in` (opacity 0 → 1, −8 px → 0), +20 ms per row to 140 ms | 160 ms | `--cc-ease-out`, `backwards` | §12: 0 ms duration **and** delay |
+  | Snap ring (canvas): radius 1 → 1.6×, alpha 1 → 0, progress eased | 150 ms (`ringMs`) | `Viewport.ease` (= `--cc-ease`) | `frames` single-ticks → never drawn |
+  | Saved pill settle (canvas): scale 1.04 → 1 | 160 ms (`settleMs`) | `Viewport.ease` via `settleScale` | single tick → drawn at 1 on the first paint |
+  | Reading field `cc-ring-fade` (box-shadow 4 px accent → transparent) on `:focus` | 400 ms | `--cc-ease-out` | §12: 0 ms |
+
+- **Measured** (scratchpad Playwright probe against the preview, 390×844, `requestAnimationFrame`,
+  `globalAlpha` and `ctx.scale` wrapped in-page): **Snap ring, `no-preference`** (three runs): 10–11 rAF
+  callbacks per ring, 8–9 frames that draw it, the ring gone **154–174 ms after the tap** (last
+  drawn frame 138–158 ms; `ringMs` 150 plus the click-to-first-frame latency), and **0 rAF
+  callbacks in the second after it settles** (also 0 in [tap + 300, tap + 1300] ms). The alpha
+  samples are the curve: 1 − ease = 0.57 at 24 ms, 0.28 at 40, 0.14 at 56, 0.07 at 73, 0.04 at
+  89, 0.02 at 106, 0.01 at 122, 0.00 at 139 — most of the fade is over by a third of the way,
+  the landing is soft. **Pill settle, `no-preference`:** 11 `ctx.scale` calls after Enter,
+  the first 25 ms after the keypress (the write landing) at 1.0400, then 1.0236, 1.0120,
+  1.0064, 1.0035, 1.0019, 1.0010, 1.0004, 1.0001, 1.0000 at 180 ms, the settle frame (no
+  scale call) at 196 ms, and **0 rAF callbacks in the second after that**; 24 rAF callbacks
+  in total after Enter — the settle's 11, the A6 restore tween's and the canvas-focus retries.
+  **`reduce`:** the ring **0 rAF callbacks, 0 ring frames** — `data-snapped` still
+  `true,false`, so the tap snapped and the ring was simply never drawn (final state on the
+  first frame); the settle **0 `scale` calls** (the pill is at rest on the first paint after
+  the Save — `Tea.use` runs the single tick inside `dispatch`, before the commit), 2 rAF
+  callbacks after Enter that are not `frames` (the canvas-focus retries, pre-existing) and 0
+  in [Enter + 300, Enter + 1300] ms.
+- **Playwright** (`motion.spec.js`, chromium only, `contextOptions.reducedMotion` as A16a
+  found): under `no-preference` — three parts, Edit → the first three `.part-select` have
+  `animation-delay` `[0, 0.02, 0.04]` s and `animation-name: cc-select-in`; under `reduce` — the
+  create form's Units group has `data-count="2"`, `data-index` 0 → 1 on pressing "in", the
+  indicator's computed transform differs between the two states and its `translateX` is its
+  own width + 4 px (polled), and the pressed option's background is transparent; the reading
+  field is focused after p2 with `animation-name: cc-ring-fade`. No existing spec changed.
+- **Verified.** rescript build clean; vitest 281 → 283; Chromium e2e 62 → 65, green twice; the
+  tour's `07-annotate-saved` and `14-parts-edit-toolbar` (temp dir, not committed) are **pixel-identical** to the same tour run
+  against a build of the A16a merge (`b237452`, served on a second port; diffed with
+  Playwright's bundled pngjs) — motion adds nothing to the resting look. Of the other 15 shots,
+  12 are identical too; `08` and `10` differ in a duration / timestamp readout (run time, not
+  the build), and `06-annotate-pending` differs in the Kind control's selected capsule by
+  **sub-pixel edge anti-aliasing only**: vertical extent identical (y 1404–1479 at 2×), the
+  left and right edges within 0.5 device px (0.25 CSS px) — flex snaps each option box while
+  the indicator sits at the fractional `calc` width (116.67 px for three options). Inherent to
+  a transformed capsule standing in for a laid-out one; imperceptible, noted.
+  WebKit cannot launch here — the glide, the stagger and the ring fade are to be eyeballed once
+  on the phone.
