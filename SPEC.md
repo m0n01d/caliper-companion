@@ -1093,3 +1093,96 @@ there, Graphite's `#83868B` 4.20:1, and Graphite's lighter ground leaves the was
 - [ ] **Not in A14**: a light appearance; a theme toggle; Paper; the "Reduce glass" toggle (A15);
   blur on anything but the bar and footer; any change to `features.json`, `parameters.csv`, the
   export PNG's geometry, or the skill.
+
+### A16 — Motion: page transitions, take-overs, and micro-interactions — **no JSON delta**
+
+Owner: "lovely transitions to make the app feel more fluid… a little more polish before I show this
+thing off." Today the app has three transitions (press fills, the toggle knob, the face-card ring)
+and every route change is a hard cut. A16 adds motion in the HIG's register — `DESIGN.md` §5's
+rule stands: opacity and transform only, nothing bounces, everything zeroed under
+`prefers-reduced-motion` — with one deliberate exception to §5's 120–160 ms: page pushes and pops
+run at the HIG's ~350 ms, because they move a whole screen. A15 (Reduce glass) is unrelated and
+stays queued.
+
+**Tokens (`src/theme.css`):**
+- [ ] `--cc-motion-nav: 350ms` (push / pop), `--cc-motion-sheet: 280ms` (take-overs), `--cc-motion:
+  160ms` (existing; enter / settle), `--cc-motion-press: 80ms` (existing), `--cc-ease-out:
+  cubic-bezier(0.2, 0.8, 0.2, 1)` (enter, the §11.1 curve), `--cc-ease-in: cubic-bezier(0.4, 0, 1,
+  1)` (exit), `--cc-ease-standard: cubic-bezier(0.2, 0, 0, 1)` (§5, moves). No spring, no overshoot.
+
+**Page navigation (the View Transitions API, `document.startViewTransition`; iOS 18+ / Chrome
+111+; unsupported → the plain dispatch, no animation):**
+- [ ] `src/bindings/WebApi.res` gains `ViewTransition`: `startViewTransition: (unit => unit) =>
+  option<t>` (typed external, `None` when the API is missing), `finished: t => promise<unit>`;
+  and `ReactDOM.flushSync` (a typed external on `react-dom`) so the DOM update lands inside the
+  callback, which the API requires — React batches otherwise. `Route.subscribe`'s `hashchange`
+  listener becomes: compute `direction = Route.compare(prev, next)` → set
+  `document.documentElement.dataset.nav = "push" | "pop" | "fade"` → `startViewTransition(() =>
+  flushSync(() => dispatch(msg)))` → on `finished` (or immediately when unsupported) remove
+  `data-nav`. `Route.depth`: `Parts(folder)` = 1 + `Folder.depth(folder)`; `Settings` = 2; `Debug`
+  = 3; `Part(_)` = 10; `Capture(_)` / `Annotate(_, _)` = 11. Deeper → `push`, shallower → `pop`,
+  equal → `fade`. The Back chevron, folder rows and `Route.push` all go through `hashchange`, so
+  they all animate; the browser's own back/forward too.
+- [ ] CSS (`global.css`): `::view-transition-old(root)` / `::view-transition-new(root)` keyframes
+  per `html[data-nav]`: **push** — new slides in from 100 % → 0 with `--cc-ease-out`, old slides
+  0 → −30 % and dims to 0.6 (UIKit's parallax); **pop** — mirrored (old slides out to 100 %, new
+  slides −30 % → 0 and brightens); **fade** — 200 ms crossfade. Both layers `--cc-motion-nav`.
+  The sticky nav bar is part of the root snapshot (no separate `view-transition-name`; a
+  persistent-bar effect is A16b if wanted). `@media (prefers-reduced-motion: reduce)` →
+  `::view-transition-group(*) { animation: none }` (instant swap, no crossfade — the API's default
+  crossfade would otherwise still run).
+- [ ] The annotate canvas keeps painting during a transition (it is inside the snapshot; nothing to
+  do), and `Canvas.setScrollTop` on `FolderChanged` runs inside the callback so the new screen is
+  snapshotted at the top.
+
+**Take-overs and in-page state (CSS enter animations on mount; no exit animations — an unmount
+is a cut, and the route transition above covers the big exits):**
+- [ ] Create form and the folder picker (`.parts-form`, `.folder-picker`): enter by sliding up 24 px
+  and fading in over `--cc-motion-sheet` `--cc-ease-out` (`@keyframes cc-rise`).
+- [ ] Edit mode: `.shell-footer` (the toolbar) rises from `translateY(100%)` over
+  `--cc-motion-sheet`; each row's `.part-select` circle enters with `cc-rise`-style fade + 8 px
+  slide from the left over `--cc-motion`, staggered 20 ms per row up to 8 rows (`--i` custom
+  property from the view, `animation-delay: calc(var(--i) * 20ms)`); leaving Edit mode is a cut.
+- [ ] Rows appearing (a created part, a new folder row, a moved part arriving) and picker options:
+  `cc-rise` over `--cc-motion`, no stagger. Removed rows: a cut.
+- [ ] Segmented control: the selected fill moves between options instead of jumping —
+  `view-transition-name: cc-segment` on the `[aria-pressed="true"]` option and the change dispatched
+  through `startViewTransition` (a `Tea.transition(dispatch, msg)` helper that wraps any dispatch
+  the same way `Route.subscribe` does, used by the Kind segmented control, the units segmented
+  control and the Snap pill). Unsupported → jump, as today.
+- [ ] Press feedback: every `.btn`, `.chip`, `.list-row-link`, `.face-card`, `.folder-row` gets
+  `transform: scale(0.97)` on `:active` over `--cc-motion-press` (transform only; the existing
+  pressed fills stay). Rows and cards: 0.985. Nothing else moves on press.
+- [ ] Face-card check badge: on first paint after a capture, scale 0.6 → 1 and fade over
+  `--cc-motion` (`cc-pop`, `--cc-ease-out`, no overshoot — §5). The captured ring fades in with it.
+- [ ] Annotate: the snap ring scales 1.3 → 1 and fades over `--cc-motion` when it lands (§5
+  "handles appear with a 120 ms scale-from-0.6" already applies to handles — keep); a saved
+  dimension's pill "settles" 1.04 → 1 over `--cc-motion`; the reading field, when it takes focus
+  after p2, gets a one-shot 2 px ring fade (`cc-ring-fade`, 400 ms) so the eye lands where the
+  keyboard is about to type. Canvas motion is drawn by `Draw.res` with a `now`-based ease (the
+  canvas has no CSS), reduced-motion read once via `matchMedia` → skip the ease.
+- [ ] Live-region text and focus targets are unchanged: motion never delays a focus move (focus
+  cmds run before the animation starts, not on `finished`).
+
+**Reduced motion and tests:**
+- [ ] `prefers-reduced-motion: reduce` → the existing zero-duration block plus the
+  `::view-transition-group(*)` rule above and the canvas ease skip. `prefers-reduced-transparency`
+  and `prefers-contrast` are untouched.
+- [ ] Playwright: `e2e/playwright.config.js` sets `use.reducedMotion: 'reduce'` globally so every
+  existing spec stays deterministic (Chromium honours it for CSS and for `startViewTransition`'s
+  crossfade via the rule above). One new spec, `e2e/specs/motion.spec.js`, opens a context with
+  `reducedMotion: 'no-preference'` and asserts: `document.startViewTransition` is called once per
+  route change (a `page.addInitScript` counter wrapping the API); `html[data-nav]` reads `push`
+  going Parts → Part and `pop` on Back, and is absent after `finished`; the Kind segmented change
+  sets a `view-transition-name` on the pressed option; the Edit toolbar has a non-`none` animation
+  name on entry; with `reducedMotion: 'reduce'` the same route change sets no `data-nav` animation
+  (the attribute may exist; the computed `animation-name` on the pseudo is `none`). The suite
+  count today is 58; report the new count.
+- [ ] `DESIGN.md` §5 gains the two nav/sheet durations as the stated exceptions and the token
+  names; §11.1 "Interaction feel" lists the press scale; `docs/testids.md` unchanged unless a
+  hook needs an id; LOGBOOK section listing every animation with its duration, easing and the
+  reduced-motion behaviour.
+- [ ] **Not in A16**: a persistent nav bar across pushes (shared-element `view-transition-name` on
+  the bar — A16b), the face-thumbnail → annotate hero transition (A16b), swipe-back gesture (the
+  browser's own edge swipe works in Safari standalone and already fires `hashchange` → `pop`), any
+  JS animation library, spring physics.
