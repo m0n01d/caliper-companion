@@ -484,7 +484,8 @@ test.describe('parts — folders — management (SPEC §8a A12b)', () => {
     await page.getByTestId('part-rename-cancel').click()
     await expect(page.getByTestId('parts-move')).toHaveText('Move 2')
 
-    // Move: the picker takes over titled by the count, root preselected;
+    // Move: the picker takes over titled by the count, the parts' current
+    // folder preselected (root here, because these parts are at root);
     // Cancel keeps the selection and focuses Move.
     await page.getByTestId('parts-move').click()
     await expect(page.locator('.shell-title')).toHaveText('Move 2 Parts')
@@ -848,6 +849,8 @@ test.describe('parts — folders — drill-down (SPEC §8a A13)', () => {
     await page.getByTestId('part-select').nth(0).check()
     await page.getByTestId('part-select').nth(1).check()
     await page.getByTestId('parts-move').click()
+    // A14 fix: the picker preselects the folder the parts are in, not the root.
+    await expect(optionFor(page, 'Miata/Interior')).toHaveAttribute('aria-selected', 'true')
     await expect(page.locator('.shell-title')).toHaveText('Move 2 Parts')
     await optionFor(page, '').click()
     await page.getByTestId('folder-picker-done').click()

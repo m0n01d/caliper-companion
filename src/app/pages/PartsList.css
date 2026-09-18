@@ -194,6 +194,14 @@
   appearance: none;
 }
 
+/* Both pseudo-elements share the one grid cell and are centred by
+   `place-items` — no `position: absolute`, which anchored the check to
+   whatever ancestor happened to be positioned (seen on the phone after
+   A14: the tick floated left of the disc). */
+.part-select::before,
+.part-select::after {
+  grid-area: 1 / 1;
+}
 .part-select::before {
   content: "";
   box-sizing: border-box;
@@ -213,7 +221,6 @@
 
 .part-select:checked::after {
   content: "";
-  position: absolute;
   box-sizing: border-box;
   width: 7px;
   height: 12px;

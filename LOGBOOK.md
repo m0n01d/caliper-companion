@@ -2679,3 +2679,16 @@ here). Per SPEC §8a A14's "Build split" and `docs/design/a14-glass-review.md` �
   generator's comment says why.
 - Looked at: `07-annotate-saved` (ink dimensions on halo, Snap on = ivory fill, disabled primary
   reads as disabled), `12-parts-list`, `08-part-features`, `16`, `14`, and the 512 / 180 icons.
+
+## 2026-09-18 — Phone report after A14: two Edit-mode fixes
+
+- **Selection tick floated left of the disc (iOS).** `.part-select:checked::after` was
+  `position: absolute` inside a `display: grid` checkbox that was not itself positioned; Chromium
+  resolves that to the static position (centred by `place-items`), WebKit to the nearest
+  positioned ancestor — the row — so the tick sat at the row's left edge. Both pseudo-elements now
+  share `grid-area: 1 / 1` and no positioning; the Chromium screenshot is byte-identical, which is
+  the expected signature of a WebKit-only bug. Not verifiable here (no WebKit).
+- **Move picker preselected the root.** `draftPathFor(ForMove)` returned `""`; now the selected
+  parts' common folder when they share one, else the folder being viewed (search results can mix
+  folders). The root-level A12b test passed before and after because its parts *are* at root; the
+  A13 drill-down test now asserts `Miata/Interior` is preselected when moving from inside it.

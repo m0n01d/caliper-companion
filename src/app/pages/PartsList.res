@@ -475,8 +475,17 @@ let draftPathFor = (model: model, target: pickerTarget): string =>
     | Renaming(draft) => draft.path
     | Normal => ""
     }
-  // A12b: a move preselects the root.
-  | ForMove(_) => ""
+  // A move preselects where the parts already are: their common folder when
+  // the selection shares one, else the folder being viewed (search results
+  // can mix folders). So the picker shows the current location and Done with
+  // nothing changed is a no-op. (A12b preselected the root — seen on the
+  // phone as "None" checked while standing in Miata / Interior / Upgrades.)
+  | ForMove(ids) =>
+    let paths = model.parts->Array.filter(p => Array.includes(ids, p.id))->Array.map(p => p.path)
+    switch paths->Array.get(0) {
+    | None => model.folder
+    | Some(first) => paths->Array.every(path => path == first) ? first : model.folder
+    }
   }
 
 // Case-insensitive substring on the name, the stored path and its display
