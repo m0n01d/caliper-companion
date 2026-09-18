@@ -1,0 +1,36 @@
+{
+  "name": "caliper-companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n res,vite -c yellow,blue \"rescript watch\" \"vite\"",
+    "res:build": "rescript build",
+    "res:clean": "rescript clean",
+    "build": "rescript build && vite build",
+    "preview": "rescript build && vite preview",
+    "test": "rescript build && vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "rescript build && vitest run --coverage",
+    "e2e": "rescript build && vite build && playwright test --config=e2e/playwright.config.js",
+    "e2e:headed": "rescript build && vite build && playwright test --config=e2e/playwright.config.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@vitest/coverage-v8": "^5.0.1",
+    "concurrently": "^9.0.0",
+    "playwright": "1.60.0",
+    "rescript": "^12.3.1",
+    "vite": "^8.0.13",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "@rescript/react": "^0.15.0",
+    "@rescript/runtime": "^12.3.1",
+    "fflate": "^0.8.2",
+    "pouchdb": "^9.0.0",
+    "pouchdb-find": "^9.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

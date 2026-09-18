@@ -1,0 +1,444 @@
+/* Annotate — page styles (DESIGN.md §11.2 "Annotate", §3, §4). Tokens live
+   in src/theme.css; the shared classes (.panel, .field, .chip, .segmented,
+   .pill, .btn-*) in src/global.css. Only the layout that is specific to
+   this screen is here.
+
+   Layout (compact, < 600): a flex column — the photo stage on top, inset by
+   the page margin with the 16 px photo radius; the hairline-material
+   control `.panel` (global.css §11; translucent, never blurred) below it in
+   normal flow (never `position: fixed`, SPEC §5), edge to edge and down to
+   the bottom of the screen. The stage's height tracks `--vv-height` (kept
+   live from `visualViewport` by Index.res) and is capped at 300 px (§3), so
+   when the iOS keyboard shrinks the visual viewport the stage shrinks with
+   it and the reading field rides up into view. Medium raises the cap and
+   expanded (landscape-or-square only) puts the panel beside the stage —
+   the two `@media` blocks at the end of this file (SPEC §8a A17-ii). */
+
+.annotate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  /* Undo .shell-content's side and bottom padding so the panel can reach
+     the screen edges; `min-height` stretches it to the bottom. */
+  margin: 0 calc(-1 * (var(--cc-page-x) + env(safe-area-inset-right)))
+    calc(-1 * (var(--cc-space-5) + env(safe-area-inset-bottom)))
+    calc(-1 * (var(--cc-page-x) + env(safe-area-inset-left)));
+  min-height: calc(100% + var(--cc-space-5) + env(safe-area-inset-bottom));
+}
+
+/* ── Stage ─────────────────────────────────────────────────────────── */
+.annotate-stage {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 calc(var(--cc-page-x) + env(safe-area-inset-right)) 0
+    calc(var(--cc-page-x) + env(safe-area-inset-left));
+  height: min(300px, calc(var(--vv-height, 100dvh) * 0.5));
+  min-height: 200px;
+  border-radius: var(--cc-radius-photo);
+  background: var(--cc-photo-mat);
+  overflow: hidden;
+}
+
+.annotate-stage-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The `role="img"` group: the canvas and nothing else. */
+.annotate-photo {
+  position: absolute;
+  inset: 0;
+}
+
+.annotate-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Pointer Events do all the gesture work (SPEC M4): no browser pan/zoom. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: crosshair;
+  outline: none;
+}
+
+/* Focus lands here after every save. A quiet `text-3` ring, not the full
+   `text` ring: the ivory overlays already live on this photo (A14). */
+.annotate-canvas:focus-visible {
+  outline: 2px solid var(--cc-text-3);
+  outline-offset: -2px;
+}
+
+/* Absolute inside the stage — never fixed, so the keyboard can't break it.
+   Nothing but the placement hint sits over the photo now (design review
+   2026-09-17 A1): the Snap/zoom toolbar moved into the panel's own tools
+   strip (`.annotate-tools`, below), so this is just a top-left scrim pill.
+   `pointer-events: none` so a tap under the hint still reaches the canvas —
+   the pill is a `<span>`, never a control. */
+.annotate-overlay {
+  position: absolute;
+  top: var(--cc-space-2);
+  left: var(--cc-space-2);
+  pointer-events: none;
+}
+
+/* The tools strip (design review A1): Snap, dimension count, zoom out, zoom
+   readout, zoom in, as a 44 px strip at the top of `.panel` — in flow, not
+   over the photo. Transparent (A14 G2 / review S9): the panel is the
+   hairline material now, and an opaque `surface` band inside a translucent
+   sheet read as a second, darker card. `align-items: center` is load-bearing: this is
+   a flex ROW, so its default cross-axis alignment is `stretch`, which would
+   stretch the count Ui.Pill to the row's height; a near-square box at
+   `border-radius: 999px` (capsule) renders as a circle at that height,
+   which is the "oversized black disc" bug centering avoids. */
+.annotate-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--cc-space-2);
+  min-height: var(--cc-tap-min);
+  background: transparent;
+}
+
+/* The panel supplies the one background; the strip's pill children stay
+   transparent so nothing paints a second, overlapping capsule on top of it. */
+.annotate-tools .pill {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* The count reads as a compact mono figure, not a full-size hint pill. */
+.annotate-tools [data-testid="dimension-count"] {
+  min-width: 20px;
+  padding: 0 var(--cc-space-2);
+  justify-content: center;
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.annotate-tools [data-testid="zoom"] {
+  padding: 0 var(--cc-space-1);
+}
+
+/* SPEC §8a A5: the Snap toggle is a pill that is a real button, inside the
+   strip. It keeps the 44 px tap height (DESIGN.md §2) but reads as a pill,
+   not a capsule button. A14 (review B3): off = `text-2` label on
+   transparent; on = the ivory `text` fill with the `accent-ink` label — in
+   mono an on/off *text* colour collapses to ivory vs grey, so the state is
+   a fill, like a pressed chip. `aria-pressed` carries it for VoiceOver. */
+.annotate-tools .annotate-snap {
+  min-height: var(--cc-tap-min);
+  padding: 0 var(--cc-space-2);
+  gap: var(--cc-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+}
+
+.annotate-tools .annotate-snap[aria-pressed="true"] {
+  /* S2: Snap on = the live fill; snapped taps are geometry, and geometry is blue. */
+  background: var(--cc-live-fill);
+  color: var(--cc-accent-ink);
+}
+
+.annotate-tools .annotate-snap svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────── */
+/* Sections 16 px apart (design review 2026-09-17 §2, DESIGN.md §11.1
+   "Vertical rhythm"), not the shared `.panel`'s 12 px in-section gap —
+   this page's direct children (tools strip, reading, name, kind row,
+   errors, actions, dimension list) are page-level sections, not siblings
+   inside one section. */
+.annotate .panel {
+  flex: 1 0 auto;
+  gap: var(--cc-space-4);
+  padding: var(--cc-space-4) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-4) + env(safe-area-inset-bottom))
+    calc(var(--cc-page-x) + env(safe-area-inset-left));
+}
+
+/* The reading input IS the live reading (§4 "Reading panel"): 38 px mono,
+   the unit at Subhead beside it. */
+.annotate-reading {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-2);
+}
+
+.annotate-reading input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--cc-space-2) 14px;
+  font: var(--cc-text-reading);
+  letter-spacing: -0.01em;
+}
+
+.annotate-unit {
+  flex: 0 0 auto;
+  font: var(--cc-text-subhead);
+  color: var(--cc-text-2);
+}
+
+/* SPEC §8a A16b: when the reading takes focus after p2 (`focusTestId`), a
+   one-shot 2 px ring just outside the focus outline fades over 400 ms, so
+   the eye lands where the keyboard is about to type. It restarts on each
+   focus (fine). A shadow, not the outline: the `input:focus` outline
+   (global.css §6, 2 px at offset 0) stays put underneath; the 4 px spread
+   is the 2 px ring beyond it. Zeroed under `prefers-reduced-motion` by
+   global.css §12. */
+[data-testid="reading"]:focus {
+  animation: cc-ring-fade 400ms var(--cc-ease-out);
+}
+
+@keyframes cc-ring-fade {
+  from {
+    box-shadow: 0 0 0 4px var(--cc-accent);
+  }
+
+  to {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.annotate-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+/* Kind + tolerance share a row. Tolerance narrowed 124 → 104 px (design
+   review 2026-09-17 A2: "± 0.10 mm" needs ≈ 96 px) so the segmented control
+   gets enough width for Ui.Segmented's base metrics (12 px padding, 4 px
+   gap, Subhead 15 semibold, global.css) to fit "Diameter" without clipping
+   on a 390 px phone with a wide fallback font (headless/non-Apple
+   platforms; SF Pro Text isn't there to fall back from) — verified by
+   screenshot at 390 and 360; the page-scoped padding/font override wave 1
+   and wave 2 added is no longer needed and is dropped. */
+.annotate-kind-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-3);
+}
+
+.annotate-kind {
+  flex: 1 1 auto;
+}
+
+.annotate-kind-row > .field:last-child {
+  flex: 0 0 auto;
+  width: 104px;
+}
+
+.annotate-tolerance {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-1);
+}
+
+.annotate-tolerance input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--cc-space-2) var(--cc-space-2);
+  font-size: var(--cc-size-body);
+}
+
+/* ── Actions ───────────────────────────────────────────────────────── */
+.annotate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+.annotate-actions-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--cc-space-2);
+}
+
+/* Delete is the small red capsule of §6, next to the small Clear. */
+.annotate-actions-row .btn-danger {
+  min-height: 40px;
+  padding: var(--cc-space-1) var(--cc-space-4);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+/* ── Dimension list (SPEC §8a A9) ──────────────────────────────────── */
+/* The face's saved dimensions, the last section of the panel: after Save
+   in the DOM (DESIGN.md §9 "… → Save → saved dims list"), on the sheet's
+   own surface so the sheet still runs to the bottom of the screen, and in
+   the page scroll — never fixed. The inset grouped container therefore
+   sits one step up (`cc-surface-2`) at the 12 px inner radius (§11.1
+   concentric shapes: inside a 16 px-padded surface) instead of the card's
+   16 px on the ground; the header keeps its 16 px inset so it lines up
+   with the row text, as on the Parts list. A14 (review S9): it keeps this
+   OPAQUE `surface-2` as the one raised card inside the translucent panel
+   rather than stacking a second 55 % fill on the panel's. */
+.annotate-dimensions {
+  margin-top: var(--cc-space-2);
+}
+
+.annotate-dimensions .list-group {
+  background: var(--cc-surface-2);
+  border-radius: var(--cc-radius);
+}
+
+.annotate-dim-empty {
+  margin: 0;
+  padding: var(--cc-space-3) var(--cc-space-4);
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+/* A row: kind glyph · name · value unit · ± tol. Composed from global.css's
+   `.list-row` classes in Annotate.res (Ui.ListRow has no `data-id` or
+   `aria-selected`). Gap tightened from the 12 px of a thumbnail row: the
+   glyph is a character, not a 52 px image. */
+.annotate-dim-row {
+  gap: var(--cc-space-2);
+}
+
+/* A fixed slot whether or not there is a glyph (a length has none), so the
+   names line up down the list. */
+.annotate-dim-glyph {
+  flex: 0 0 auto;
+  width: 1.1em;
+  font: 500 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-mono);
+  color: var(--cc-text-2);
+  text-align: center;
+}
+
+.annotate-dim-name {
+  font-family: var(--cc-font-mono);
+}
+
+.annotate-dim-figures {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.annotate-dim-value {
+  color: var(--cc-text);
+}
+
+.annotate-dim-tol {
+  font-size: var(--cc-size-footnote);
+  color: var(--cc-text-2);
+}
+
+/* The selected row is never colour alone (DESIGN.md §9): the live wash,
+   a 3 px live rule on the left, and `aria-selected`. The rule is an inset
+   shadow so it costs no layout and stays inside the clipped container.
+   Wins over `button.list-row:active` (0,2,1) by specificity so a press on
+   the selected row doesn't flash back to surface-2. */
+.annotate-dimensions .list-row[aria-selected="true"],
+.annotate-dimensions button.list-row[aria-selected="true"]:active {
+  background: var(--cc-live-wash);
+  box-shadow: inset 3px 0 0 var(--cc-live);
+}
+
+/* ── 360 px phones (DESIGN.md §8) ──────────────────────────────────── */
+/* The reading value drops to 32 px, and the kind row wraps so the
+   segmented control keeps its full labels with the tolerance below it. */
+@media (max-width: 360px) {
+  .annotate-reading input {
+    font-size: 32px;
+  }
+
+  .annotate-kind-row {
+    flex-wrap: wrap;
+  }
+
+  .annotate-kind {
+    flex-basis: 100%;
+  }
+}
+
+/* ── Medium (≥ 600; SPEC §8a A17-ii) ───────────────────────────────── */
+/* iPad portrait and iPhone landscape keep the stacked layout in the 720
+   column (the Shell's `bleed` column is 100 %, so the panel still runs edge
+   to edge) and the stage gets 55 % of the visual viewport, 300–720 px:
+   `min` lifts today's 300 px cap (half a phone's height) to 649 px on an
+   820 × 1180 iPad, and the outer `max` keeps an iPhone in landscape
+   (375–440 tall, where 55 % is 206–242) from getting *less* than compact
+   (review S5). Everything else — the panel, the tools strip, the
+   Dimensions list — is the compact page under it. */
+@media (min-width: 600px) {
+  .annotate-stage {
+    height: max(300px, min(var(--vv-height, 100dvh) * 0.55, 720px));
+  }
+}
+
+/* ── Expanded, landscape or square (≥ 1024; SPEC §8a A17-ii) ───────── */
+/* Side by side: a grid of the stage (the flexible cell) and the panel
+   (`--cc-panel`, 420) filling the visual viewport under the bar. The
+   `min-aspect-ratio` gate keeps a 13-inch iPad in portrait (1024 / 1032 ×
+   1366) on the stacked medium layout, where side by side would give a
+   604 × 1322 cell with a landscape photo in a third of it (review S6).
+
+   The grid must fit inside `.shell` exactly (review B2, measured: with only
+   the side and bottom margins undone it overshot by 48 px — `.shell-
+   content`'s top and bottom padding — and the page scrolled under its own
+   panel scroller). So all four of `.shell-content`'s paddings are undone
+   here, the compact `min-height: calc(100% + …)` is overridden to 0, and
+   the height is the visual viewport minus the bar: `.shell` has exactly
+   its own height of content (`scrollHeight === clientHeight`; the e2e
+   asserts it). `--vv-height`, not `100dvh` (review S12): iPadOS keeps the
+   layout viewport when the on-screen keyboard shows and only
+   `visualViewport` shrinks, so the grid follows the keyboard — the stage
+   cell shrinks (the canvas re-fits through its ResizeObserver) and the
+   panel scrolls with the reading field at its top; a hardware keyboard
+   opens nothing and nothing moves. `.shell` stays the app's one scroll
+   container; the panel's own `overflow-y` is the single exception, and
+   the page has nothing left to scroll. Nothing here has `transform` or
+   `overflow` on an ancestor of the sticky bar. */
+@media (min-width: 1024px) and (min-aspect-ratio: 1/1) {
+  .annotate {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--cc-panel);
+    gap: 0;
+    margin: calc(-1 * var(--cc-page-x)) calc(-1 * (var(--cc-page-x) + env(safe-area-inset-right)))
+      calc(-1 * (var(--cc-space-5) + env(safe-area-inset-bottom)))
+      calc(-1 * (var(--cc-page-x) + env(safe-area-inset-left)));
+    min-height: 0;
+    height: calc(var(--vv-height, 100dvh) - var(--cc-bar-height));
+  }
+
+  /* The stage fills its cell (`align-self: stretch` with `height: auto`)
+     inside the page margin on all four sides — 972 × 808 at 1440 × 900,
+     712 × 728 at 1180 × 820. The canvas inside it is `position: absolute;
+     inset: 0`, so it takes the cell's full height and reports it through
+     `ResizeObserver` → `ViewSized` → `refit` (Annotate.res); no ReScript
+     change (review S11). */
+  .annotate-stage {
+    height: auto;
+    min-height: 0;
+    margin: var(--cc-page-x) var(--cc-page-x) var(--cc-page-x)
+      calc(var(--cc-page-x) + env(safe-area-inset-left));
+  }
+
+  /* The panel is the right column with its own scroll — the tools strip at
+     its top, then Reading / Name / Kind / Tolerance / Save / Clear /
+     Dimensions. A hairline on the left edge only, square corners, no
+     inset highlight (it is a side column now, not a sheet rising from the
+     bottom). `min-height: 0` lets a grid item shrink below its content so
+     the scroll is the panel's, not the page's. The left padding drops the
+     left safe-area inset the compact rule adds (the panel is on the right
+     now); the right and bottom keep theirs. */
+  .annotate .panel {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-left: var(--cc-page-x);
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

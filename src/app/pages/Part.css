@@ -1,0 +1,138 @@
+/* Part — page-scoped styles. P2a (docs/design/review-2026-09-17.md §3/§4
+   layout A): the face grid itself is `.face-grid`/`Ui.FaceCard`, entirely
+   global.css §14 — nothing page-scoped needed for it. This file carries
+   what's still page-specific: the edit-mode list's label capitalisation,
+   the Feature row (no shared table/list-row component fits its 3-column
+   shape), and the bar's trailing text action. Tokens: src/theme.css
+   (--cc-*). */
+
+/* SPEC §8a A7: a default face's label (e.g. "top") is capitalised for
+   display; a custom label (e.g. "left_side") stays mono, as-is (DESIGN.md
+   §7) — used only by `renderFacesEdit`'s list-row title now that the
+   captured-state grid (`Ui.FaceCard`) capitalises every label uniformly via
+   its own CSS (global.css §14 `.face-card-label`). */
+.face-slot-label {
+  text-transform: capitalize;
+}
+
+/* Bar trailing text action (Part's `faces-edit`, PartsList's `parts-edit`):
+   DESIGN.md §11.2 "trailing Edit/Done text action", per
+   docs/design/mockups/part-a.html's `.bar-action`. `Ui.Button
+   ~variant=Plain` (global.css `.btn-plain`) already gives borderless/
+   transparent + the base `.btn`'s 44 px tap floor; this adds only what
+   Plain doesn't carry — accent colour and the bar's tighter horizontal
+   padding. CSS in this app is unscoped app-wide (index.html links every
+   page's stylesheet unconditionally, plain `<link>` tags, no CSS Modules),
+   so one rule here serves both pages' trailing action; it lives in this
+   file since Part introduces the pattern in this same track. See
+   PartsList.css for the reuse note on its side. */
+.bar-action {
+  padding: 0 var(--cc-space-2);
+  color: var(--cc-accent);
+}
+
+/* Feature row (DESIGN.md §4 "Feature row", review-2026-09-17.md F4/F5): a
+   3-column grid per row instead of a `<table>` — name (wraps, never
+   truncates) with the faces line under it / value + unit / ± tolerance.
+   No column header row; the group header (Part.res's `featuresHeader`)
+   carries the unit instead. Padding 12/16 (vertical/horizontal — the P1
+   rhythm fix; the pre-P1 table used 9/10/14), min 44 px tall. */
+.feature-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: var(--cc-space-2);
+  align-items: start;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-3) var(--cc-space-4);
+  border-bottom: 1px solid var(--cc-border);
+}
+
+.feature-row:last-child {
+  border-bottom: 0;
+}
+
+.feature-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.feature-row-name-text {
+  overflow-wrap: anywhere;
+}
+
+.feature-row-value {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.feature-row-tol {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.flag-marker {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  color: var(--cc-error);
+  vertical-align: -2px;
+}
+
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
+}
+
+/* ── SPEC §8a A17: medium and expanded ────────────────────────────────── */
+/* The Hands-on timer sits under Export: at compact both span the column
+   (left-aligned); from medium the capsule is capped at 400 and centred
+   (global.css §16), so the timer centres with it — the `adaptive-after-*`
+   boards' look. */
+@media (min-width: 600px) {
+  .part-timer {
+    text-align: center;
+  }
+}
+
+/* ── SPEC §8a A17: the expanded two-column Part page ──────────────────── */
+/* Below 1024 `.part-columns` is the plain `.stack-lg` it always was (the
+   medium 3-up grid is global.css §16's). At expanded the Shell gives Part
+   the wide column (1120) and the root becomes a grid: the gallery (668 px
+   — `auto-fill` reads the grid's own width, 3 × 212 px cards, "+ Capture"
+   last; no container query, no card cap, review S4) and a 320–380 px
+   aside holding the features group, Export and the timer. Edit mode's face
+   list lands in the gallery column. `align-items: start` / `align-self:
+   start` is load-bearing (review B1, measured): a grid child with auto
+   height stretches to the gallery's row and has no room to stick — after
+   a 1000 px scroll the aside's top was −932 with `stretch`, 44 with
+   `start`. A second sticky inside the `.shell` scroller is fine: nothing
+   between `.shell` and this page has `overflow`, and nothing here has
+   `transform` (the A16 nav slide is on the root, outside the scroller). */
+@media (min-width: 1024px) {
+  .part-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: var(--cc-space-6);
+    align-items: start;
+  }
+
+  .part-columns > .page-error {
+    grid-column: 1 / -1;
+  }
+
+  .part-columns .face-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .part-aside {
+    position: sticky;
+    top: calc(var(--cc-bar-height) + var(--cc-page-x));
+    align-self: start;
+  }
+}

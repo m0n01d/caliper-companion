@@ -1,0 +1,26 @@
+/* Settings — page-scoped styles. The inset grouped list, toggle and mono
+   type all come from src/global.css / Ui.res; nothing here is specific to
+   this screen beyond the error banner. The `.wedge-row .toggle-track`/
+   `.visually-hidden` hit-testing workaround that used to live here is gone —
+   design wave 3a fixed `Ui.Toggle` itself (global.css §9: the track is
+   `pointer-events: none`, the real input covers the switch at `opacity: 0`
+   instead of the clipped `.visually-hidden`), so every `Ui.Toggle` gets it
+   for free now. Tokens: src/theme.css (--cc-*). */
+
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
+}
+
+/* Leading glyph on the Diagnostics row — same slot `Ui.ListThumb` fills on
+   part/face rows, sized for a 20 px Lucide icon instead of a thumbnail. */
+.list-row-leading {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--cc-text-2);
+}

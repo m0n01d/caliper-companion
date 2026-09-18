@@ -1,0 +1,224 @@
+/* Capture — page-scoped styles (DESIGN.md §11.2 "Capture", §4 Face card/
+   Shutter/Secondary-button/Scrim-pill). Global tokens live in src/theme.css,
+   shared component classes in src/global.css — nothing here references the
+   deprecated `--color-*` compat aliases or global.css §13 legacy page
+   classes (no `.page`, `.face-row*`, `.capture-btn*`,
+   `.recapture-overlay`/`.sheet`/`.recapture-dialog`, `.visually-hidden-
+   input`). `.capture-page` below is this page's *current* root class (design
+   wave P2b "layout A") — not the dead legacy name of the same spelling this
+   comment used to warn off; that page never shipped and no rule for it
+   exists anywhere in the tree (grepped before reusing it). No
+   `position: fixed` anywhere (SPEC §5) — the recapture card is in-flow, no
+   overlay/modal (DESIGN.md §11.1 "Confirmations"). */
+
+/* Design wave P2b "layout A" (docs/design/review-2026-09-17.md C1, DESIGN.md
+   §1 "hands stay on the part" / §11.2): the face-card grid (`.face-grid`,
+   global.css §14 handles the cards themselves) sits on top; `.capture-
+   action` (whichever of the shutter block, the recapture card or the
+   custom-face card is showing) is pushed to the bottom of the content by
+   `margin-top: auto`, which only has somewhere to push *to* because this
+   container is `min-height: 100%` of `.shell-content` (a flex item that
+   fills the remaining viewport height — see Capture.res's view-section
+   comment for why that resolves). The camera note, as the next sibling
+   after `.capture-action`, lands right under whichever block is showing,
+   at the very bottom. */
+.capture-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-6);
+  min-height: 100%;
+}
+
+.capture-action {
+  margin-top: auto;
+}
+
+/* -- face grid ----------------------------------------------------------- */
+/* `custom-face-remove` (SPEC §8a A7, `faceGrid`'s own comment in
+   Capture.res): sits in the selected, unsaved custom chip's card, in the
+   same top-right spot `.face-card-badge` (global.css §14) positions the
+   captured check. It's a real `Ui.Button` — a DOM sibling of `.face-card`,
+   never nested inside the card's own `<button>` — so this wrapper stands in
+   for `.face-card` as the grid item (same `aspect-ratio: 1` a bare
+   `.face-card` gets from sizing off the grid track) and gives the badge
+   something `position: relative` to sit on. */
+.face-card-holder {
+  position: relative;
+  aspect-ratio: 1;
+}
+
+.face-card-holder .face-card {
+  width: 100%;
+  height: 100%;
+}
+
+/* `.btn-icon` (global.css) is a 44 px tap target — right for a standalone
+   icon button, too big for a badge overlaid on a 109 px (3-up) card. Shrink
+   it to the same 24 px `.face-card-check` uses for the captured badge. */
+.face-card-holder .custom-face-remove.btn-icon {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+}
+
+.face-card-holder .custom-face-remove.btn-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* -- shutter block ------------------------------------------------------ */
+.shutter-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cc-space-3);
+  padding-top: var(--cc-space-2);
+  text-align: center;
+}
+
+.shutter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-4);
+}
+
+/* The iOS shutter (DESIGN.md §4 as rewritten by A14, review B3b): a `text`
+   disc inside a `text` ring with a `ground` gap between them — the gap is
+   what keeps it from reading as one flat ivory disc now that `accent` =
+   `text` (the old 4 px `text` border on an `accent` fill). The disc is
+   `--cc-shutter` − 12 px with a 6 px margin, so the two box-shadow rings
+   (3 px gap + 3 px ring) land exactly on the 76 px footprint the row was
+   laid out for. A real `<label>` for the selected kind's camera input
+   (referenced by `htmlFor`, see Capture.res's module-end notes) — not a
+   button, so the native label→input file-picker gesture stays intact on
+   iOS Safari. */
+.shutter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: calc(var(--cc-shutter) - 12px);
+  height: calc(var(--cc-shutter) - 12px);
+  margin: 6px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--cc-text);
+  box-shadow:
+    0 0 0 3px var(--cc-ground),
+    0 0 0 6px var(--cc-text);
+  color: var(--cc-accent-ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color var(--cc-motion-press) linear,
+    opacity var(--cc-motion-press) linear;
+}
+
+.shutter:active {
+  background: var(--cc-accent-pressed);
+}
+
+.shutter-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shutter-disabled:active {
+  background: var(--cc-text);
+}
+
+.shutter-caption {
+  color: var(--cc-text);
+}
+
+/* The "From library" capsule is a plain `.btn.btn-secondary` label in the
+   markup — global.css already styles it (".btn also dresses a <label> or
+   <a> as a button"); its OWN `:focus-visible` never fires though, same
+   reason as the shutter's below (it's never itself the focused element —
+   its `htmlFor` input is). */
+
+/* DESIGN.md §9 "Focus-visible rings on every interactive element": the
+   camera/library inputs these labels are `htmlFor` are `.visually-hidden`
+   and rendered elsewhere in the DOM (`hiddenInputs`, not nested inside
+   either label — see Capture.res's module-end notes on why), so neither
+   label can see its input via `:focus-within`, and the previous attempt
+   here (`.shutter:focus-within:has(input:focus-visible)`) was dead CSS: an
+   `input` that isn't a descendant can never make `:has()` match. Fixed by
+   keying off a *static* class Capture.res's `renderCaptureInput` puts on
+   whichever hidden input pair belongs to the currently-selected chip
+   (`input-selected-camera`/`input-selected-library` — not the label's own
+   dynamic per-face id, so one rule covers every default AND custom face).
+   `:has()` at the shared `.capture-page` root can then reach sideways from
+   the focused input to the sibling label that represents it. */
+.capture-page:has(.input-selected-camera:focus-visible) .shutter {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 8px; /* 2 px clear of the 6 px shadow ring */
+}
+
+.capture-page:has(.input-selected-library:focus-visible) .shutter-block > .btn-secondary {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 2px;
+}
+
+.camera-note {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  padding: 0 var(--cc-space-1);
+}
+
+.camera-note-prominent {
+  color: var(--cc-error);
+  background: var(--cc-error-wash);
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  padding: var(--cc-space-2) var(--cc-space-3);
+  font-weight: 600;
+}
+
+/* -- recapture card (inline, non-modal; the `.list-group` hairline material) -- */
+.recapture-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
+}
+
+.recapture-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+/* -- custom-face card (SPEC §8a A7; inline, non-modal; `.list-group` material) -- */
+.custom-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
+}
+
+.custom-card-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+/* Custom chips and the "Capture <label>" caption show the slug via
+   global.css's `.mono` (DESIGN.md §7) — nothing page-specific needed. */
+
+/* ── SPEC §8a A17: medium and expanded ────────────────────────────────── */
+/* The page sits in the Shell's 720 column and the kind grid is 3-up
+   (global.css §16 — the same rule as Part's; review S9: there is no live
+   preview to enlarge, the shutter is a `<label>` for a hidden file input,
+   and the cards carry the captured / selected state a chip row would lose;
+   4-up in 720 would give 168 px cards, smaller than medium's 216). The
+   shutter block and "From library" (a `.btn-block`, capped at 400 by §16)
+   centre at a 480 px max. The A2HS hint keys on standalone, not width. */
+@media (min-width: 600px) {
+  .shutter-block {
+    max-width: 480px;
+    margin-inline: auto;
+  }
+}

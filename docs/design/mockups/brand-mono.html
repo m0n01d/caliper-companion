@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Snapkin · monochrome icons</title>
+<!-- Monochrome exploration (docs/design/branding-snapkin.md §7): four minimalist marks, each at
+     360 / 180 / 60 / 16 on a near-black tile, then home-screen rows on a near-black tile, an ivory
+     tile and an iOS 26 "clear" (frosted, backdrop-filter) tile. Pure geometry, one stroke weight
+     per mark, 80 % safe area, no web font. -->
+<style>
+*{box-sizing:border-box}html,body{margin:0;background:#111214}
+body{color:#F2F2F0;font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;-webkit-font-smoothing:antialiased}
+.board{width:1080px;padding:36px 40px 40px;display:flex;flex-direction:column;gap:26px;background:#111214}
+.hdr{display:flex;justify-content:space-between;align-items:baseline;font-size:15px;letter-spacing:0.12em;text-transform:uppercase;color:#83868B}
+.hdr b{color:#A9ABAF;font-weight:600}
+.cap{font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#83868B;margin:0 0 8px}
+.sq{clip-path:url(#sq);display:block;flex:0 0 auto}.sq svg{display:block;width:100%;height:100%}
+.m{border-top:1px solid #303236;padding-top:18px;display:flex;flex-direction:column;gap:16px}
+.row{display:flex;gap:28px;align-items:flex-end}
+.col{display:flex;flex-direction:column;gap:6px;align-items:center}.col .cap{margin:6px 0 0}
+.txt{flex:1 1 auto;align-self:stretch;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:22px}
+.txt h2{margin:0 0 10px;font-size:24px;font-weight:600;letter-spacing:-0.01em}.txt h2 span{color:#A9ABAF;margin-right:10px}
+.txt p{margin:0 0 6px;font-size:15px;line-height:21px;color:#A9ABAF}.txt p b{color:#F2F2F0;font-weight:600}
+.strips{display:flex;gap:16px}
+.strip{flex:1 1 0;height:212px;border-radius:16px;overflow:hidden;border:1px solid #303236;position:relative}
+.strip.dark{background:radial-gradient(120% 80% at 30% 0%,#26292E 0%,#141618 55%,#0D0E10 100%)}
+.strip.ivory{background:radial-gradient(120% 80% at 30% 0%,#FFFCF5 0%,#EFE9DE 60%,#E2DBCE 100%)}
+.strip.ivory .cap,.strip.ivory .tw{color:#3A3631;text-shadow:none}
+.strip.clear{background:radial-gradient(70% 60% at 25% 20%,#5B6C8C 0%,transparent 60%),radial-gradient(60% 50% at 80% 75%,#7C6F8A 0%,transparent 60%),linear-gradient(160deg,#2B3140 0%,#1A1D26 60%,#3A2F3B 100%)}
+.strip .cap{position:absolute;left:14px;top:12px;margin:0;z-index:2}
+.tiles{position:absolute;inset:0;display:flex;justify-content:center;align-items:center;gap:30px;padding-top:18px}
+.tile{width:96px;height:96px;clip-path:url(#sq);display:flex;align-items:center;justify-content:center;position:relative}
+.tile svg{width:100%;height:100%}
+.tile-ph{background:linear-gradient(180deg,#3A404A,#2C3138)}.tile-ph svg{width:52px;height:52px}
+.strip.ivory .tile-ph{background:linear-gradient(180deg,#D8D2C6,#C9C2B5)}
+.strip.clear .tile-ph,.strip.clear .tile.glass{background:rgba(255,255,255,0.20);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 0 0 1px rgba(255,255,255,.28),inset 0 -1px 0 rgba(0,0,0,.12)}
+.strip.clear .tile.glass svg{width:100%;height:100%;filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
+.tw{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:18px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs><clipPath id="sq" clipPathUnits="objectBoundingBox"><path d="M0.5 0C0.14 0 0 0.14 0 0.5C0 0.86 0.14 1 0.5 1C0.86 1 1 0.86 1 0.5C1 0.14 0.86 0 0.5 0Z"/></clipPath></defs></svg>
+<div class="board">
+  <div class="hdr"><span><b>Snapkin</b> · monochrome, minimalist marks</span><span>one ink · one weight</span></div>
+  
+  <div class="m">
+    <div class="row">
+      <div class="col"><div class="sq" style="width:360px;height:360px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="360" height="360"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#F2F2F0" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><div class="cap">360</div></div><div class="col"><div class="sq" style="width:180px;height:180px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="180" height="180"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#F2F2F0" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><div class="cap">180</div></div><div class="col"><div class="sq" style="width:60px;height:60px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="60" height="60"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#F2F2F0" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><div class="cap">60</div></div><div class="col"><div class="sq" style="width:16px;height:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="16" height="16"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#F2F2F0" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><div class="cap">16</div></div>
+      <div class="txt"><h2><span>m1</span>Napkin + lens + ⌀, line only</h2><p><b>16 px:</b> a rounded square with a ring — the ⌀ is gone; reads "note", not "measure".</p><p><b>Clear tile, 60 px:</b> Sits like an SF Symbol; the outline holds at 60 but the ring inside the square is a busy glyph next to Apple’s one-idea icons.</p></div>
+    </div>
+    <div class="strips">
+      
+      <div class="strip dark"><div class="cap">near-black tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#F2F2F0" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip ivory"><div class="cap">ivory tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#F2EDE4"/>
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#111214" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip clear"><div class="cap">iOS 26 clear tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile glass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96">
+  <g transform="rotate(-6 512 512)" fill="none" stroke="#FFFFFF" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z"/><path d="M626 250L626 398L774 398"/>
+    <circle cx="512" cy="530" r="178"/>
+    <g transform="translate(512 530)"><path d="M-112 0L112 0"/><path d="M-98 -56L-158 0L-98 56"/><path d="M98 -56L158 0L98 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="m">
+    <div class="row">
+      <div class="col"><div class="sq" style="width:360px;height:360px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="360" height="360"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><div class="cap">360</div></div><div class="col"><div class="sq" style="width:180px;height:180px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="180" height="180"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><div class="cap">180</div></div><div class="col"><div class="sq" style="width:60px;height:60px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="60" height="60"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><div class="cap">60</div></div><div class="col"><div class="sq" style="width:16px;height:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="16" height="16"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><div class="cap">16</div></div>
+      <div class="txt"><h2><span>m2</span>Lens alone: ⌀ across a circle</h2><p><b>16 px:</b> a circle with a bar — still one readable idea at 16.</p><p><b>Clear tile, 60 px:</b> The best fit: one closed shape, one line, exactly the weight and simplicity of a system glyph.</p></div>
+    </div>
+    <div class="strips">
+      
+      <div class="strip dark"><div class="cap">near-black tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip ivory"><div class="cap">ivory tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#F2EDE4"/>
+  <g fill="none" stroke="#111214" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip clear"><div class="cap">iOS 26 clear tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile glass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96">
+  <g fill="none" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="300"/>
+    <g transform="translate(512 512)"><path d="M-200 0L200 0"/><path d="M-214 -56L-274 0L-214 56"/><path d="M214 -56L274 0L214 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="m">
+    <div class="row">
+      <div class="col"><div class="sq" style="width:360px;height:360px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="360" height="360"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><div class="cap">360</div></div><div class="col"><div class="sq" style="width:180px;height:180px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="180" height="180"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><div class="cap">180</div></div><div class="col"><div class="sq" style="width:60px;height:60px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="60" height="60"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><div class="cap">60</div></div><div class="col"><div class="sq" style="width:16px;height:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="16" height="16"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><div class="cap">16</div></div>
+      <div class="txt"><h2><span>m3</span>Bare dimension |◀───▶|</h2><p><b>16 px:</b> a horizontal bar with end caps; reads "resize" or "expand" more than "dimension".</p><p><b>Clear tile, 60 px:</b> Clean, but it is the fullscreen/expand glyph in a tile; no napkin, no lens, nothing Snapkin.</p></div>
+    </div>
+    <div class="strips">
+      
+      <div class="strip dark"><div class="cap">near-black tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#111214"/>
+  <g fill="none" stroke="#F2F2F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip ivory"><div class="cap">ivory tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#F2EDE4"/>
+  <g fill="none" stroke="#111214" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip clear"><div class="cap">iOS 26 clear tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile glass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96">
+  <g fill="none" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 392V632M834 392V632"/>
+    <g transform="translate(512 512)"><path d="M-250 0L250 0"/><path d="M-262 -56L-322 0L-262 56"/><path d="M262 -56L322 0L262 56"/></g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="m">
+    <div class="row">
+      <div class="col"><div class="sq" style="width:360px;height:360px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="360" height="360"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="#F2EDE4"/><path d="M626 250L626 398L774 398Z" fill="#E4DED3"/>
+    <g fill="none" stroke="#111214" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><div class="cap">360</div></div><div class="col"><div class="sq" style="width:180px;height:180px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="180" height="180"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="#F2EDE4"/><path d="M626 250L626 398L774 398Z" fill="#E4DED3"/>
+    <g fill="none" stroke="#111214" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><div class="cap">180</div></div><div class="col"><div class="sq" style="width:60px;height:60px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="60" height="60"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="#F2EDE4"/><path d="M626 250L626 398L774 398Z" fill="#E4DED3"/>
+    <g fill="none" stroke="#111214" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><div class="cap">60</div></div><div class="col"><div class="sq" style="width:16px;height:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="16" height="16"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="#F2EDE4"/><path d="M626 250L626 398L774 398Z" fill="#E4DED3"/>
+    <g fill="none" stroke="#111214" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><div class="cap">16</div></div>
+      <div class="txt"><h2><span>m4</span>Ivory napkin, dark ⌀ through a cut circle</h2><p><b>16 px:</b> a light square with a dark ring — the strongest silhouette at 16; the ⌀ is a dark bar inside it.</p><p><b>Clear tile, 60 px:</b> Odd: a filled white note on a frosted tile fights the material; the outline marks belong in clear, this one belongs on a dark tile.</p></div>
+    </div>
+    <div class="strips">
+      
+      <div class="strip dark"><div class="cap">near-black tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#111214"/>
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="#F2EDE4"/><path d="M626 250L626 398L774 398Z" fill="#E4DED3"/>
+    <g fill="none" stroke="#111214" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#8A919B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip ivory"><div class="cap">ivory tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96"><rect width="1024" height="1024" fill="#F2EDE4"/>
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="#E4DED3"/><path d="M626 250L626 398L774 398Z" fill="#D3CCC0"/>
+    <g fill="none" stroke="#111214" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#6B655B" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+      <div class="strip clear"><div class="cap">iOS 26 clear tile</div><div class="tiles">
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><circle cx="12" cy="12" r="6"/></svg></div><span>Notes</span></div>
+        <div class="tw"><div class="tile glass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="96" height="96">
+  <g transform="rotate(-6 512 512)">
+    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="rgba(255,255,255,0.92)"/><path d="M626 250L626 398L774 398Z" fill="rgba(255,255,255,0.6)"/>
+    <g fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="512" cy="530" r="178"/>
+      <g transform="translate(512 530)"><path d="M-178 -46V46M178 -46V46"/><path d="M-178 0L178 0"/><path d="M-118 -56L-178 0L-118 56"/><path d="M118 -56L178 0L118 56"/></g>
+    </g>
+  </g></svg></div><span>Snapkin</span></div>
+        <div class="tw"><div class="tile tile-ph"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div><span>Files</span></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

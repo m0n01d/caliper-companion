@@ -1,0 +1,192 @@
+/* theme.css — Snapkin design tokens. Tokens only; the classes that
+   consume them live in global.css.
+
+   Source of truth: DESIGN.md §2 (the `cc-` colours, spacing, radii) as amended
+   by DESIGN.md §11 (system type stack, HIG type scale, capsule shapes, 16 px
+   page margin, dark only), SPEC §8a A14 (the monochrome palette and the
+   two-material glass tokens) and docs/design/liquid-glass-web.md §3 (the
+   `--glass-*` names). Ternpike's palette is gone; nothing here is inherited
+   from it. */
+
+/* ── Size classes (SPEC §8a A17, docs/design/a17-adaptive-review.md) ────
+   Three widths of the layout viewport — HIG's compact / regular, spelled
+   as three because the web has no split view until A17b:
+
+     compact   <  600 px    every phone in portrait: the layout as it was,
+                            untouched — nothing below binds under 600
+     medium    600–1023 px  iPad portrait (mini 744, iPad 820, Air / Pro 11
+                            834), iPhone landscape (667–956), narrow windows
+     expanded  ≥ 1024 px    iPad landscape (1133–1210), 13-inch iPads in
+                            both orientations (1024 / 1032 wide in
+                            portrait), desktop
+
+   600 and 1024 live here, once; elsewhere they appear only as the literal
+   in an `@media (min-width: …)` prelude line (the page-margin steps at the
+   end of this file, global.css §16, Part.css, Capture.css). Plain width
+   queries, no container queries (review S4). The type scale does not
+   change by class — HIG does not scale body text, the Large Title stays
+   34 px. */
+
+:root {
+  /* Dark only (DESIGN.md §11.1 "Colour"): form controls, scrollbars and the
+     UA stylesheet render in their dark variants. */
+  color-scheme: dark;
+
+  /* ── Colour (DESIGN.md §2, monochrome per SPEC §8a A14 — the "Glass"
+     column of docs/design/branding-snapkin.md §7, reviewed in
+     docs/design/a14-glass-review.md S3; applied 2026-09-18). One ink, one
+     chroma: `error` is the only hue in the app. `accent` = `text` — the
+     rule changed from hue to fill (see the A14 fill/outline table), so the
+     semantic names stay. `text-3` never sits on bare ground (4.14:1 under
+     the G1 wash's peak) — only on `surface`, `field` or a glass fill. ───── */
+  --cc-ground: #0e0f11;
+  --cc-surface: #1b1c1f;
+  --cc-surface-2: #26272b;
+  --cc-field: #151618;
+  --cc-border: #34363a;
+  --cc-text: #f2f2f0;
+  --cc-text-2: #a9abaf;
+  --cc-text-3: #8c8f94;
+  --cc-accent: #f2f2f0; /* = text: the primary is an ivory fill, not a hue */
+  --cc-accent-pressed: #d9dadb; /* §6: pressed = the ivory fill, −8 L */
+  --cc-accent-ink: #0e0f11; /* = ground: the label on an ivory fill (17:1) */
+  /* S2 splash (branding-snapkin.md §9): "live / verified" is Fusion's sketch
+     blue. 400 for rings, badges, text and the canvas (7.36:1 on ground);
+     500 as a fill with a ground label (5.80:1) for the "on" states — Snap
+     pill, selected segment, pressed chips. Tappable stays the ivory fill. */
+  --cc-live: #38abdf; /* autodeskBlue-400: captured ring, selected ring, check badge, snap ring, live readouts */
+  --cc-live-wash: #0a324d; /* autodeskBlue-900 */
+  --cc-live-ink: #cdeaf7; /* autodeskBlue-100: text on live wash (10.6:1) */
+  --cc-live-border: #0696d7; /* autodeskBlue-500 */
+  --cc-live-fill: #0696d7; /* autodeskBlue-500: the "on" fill */
+  --cc-live-fill-pressed: #0684be; /* −8 L, 4.61:1 with a ground label */
+  --cc-error: #f0605a;
+  --cc-error-ink: #2b0a0a;
+  --cc-error-wash: rgb(240 96 90 / 0.2); /* §4 warning row (error): cc-error at 20% */
+  --cc-photo-mat: #1e1f22;
+  --cc-scrim: #0e0f11cc;
+
+  /* ── Type (DESIGN.md §11.1: system stack, HIG "Large" Dynamic Type step) ─ */
+  --cc-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --cc-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --cc-size-large-title: 34px;
+  --cc-leading-large-title: 41px;
+  --cc-size-title-3: 20px;
+  --cc-leading-title-3: 25px;
+  --cc-size-headline: 17px;
+  --cc-leading-headline: 22px;
+  --cc-size-body: 17px;
+  --cc-leading-body: 22px;
+  --cc-size-callout: 16px;
+  --cc-leading-callout: 21px;
+  --cc-size-subhead: 15px;
+  --cc-leading-subhead: 20px;
+  --cc-size-footnote: 13px;
+  --cc-leading-footnote: 18px;
+  --cc-size-caption-1: 12px;
+  --cc-leading-caption-1: 16px;
+  --cc-size-caption-2: 11px;
+  --cc-leading-caption-2: 13px;
+  --cc-size-reading: 38px; /* the live caliper reading, mono 500, leading 1.0 */
+  --cc-leading-reading: 1;
+
+  /* `font:` shorthand values for each text style, e.g. `font: var(--cc-text-body)`.
+     Weight is the HIG default for the style; Headline is semibold by definition,
+     Large Title is used bold (its emphasized weight). */
+  --cc-text-large-title: 700 var(--cc-size-large-title) / var(--cc-leading-large-title) var(--cc-font-ui);
+  --cc-text-title-3: 600 var(--cc-size-title-3) / var(--cc-leading-title-3) var(--cc-font-ui);
+  --cc-text-headline: 600 var(--cc-size-headline) / var(--cc-leading-headline) var(--cc-font-ui);
+  --cc-text-body: 400 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
+  --cc-text-callout: 400 var(--cc-size-callout) / var(--cc-leading-callout) var(--cc-font-ui);
+  --cc-text-subhead: 400 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+  --cc-text-footnote: 400 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+  --cc-text-caption-1: 400 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-ui);
+  --cc-text-caption-2: 400 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
+  --cc-text-reading: 500 var(--cc-size-reading) / var(--cc-leading-reading) var(--cc-font-mono);
+
+  /* ── Spacing and shape (DESIGN.md §2, page margin per §11.1 "Layout") ─── */
+  --cc-space-1: 4px;
+  --cc-space-2: 8px;
+  --cc-space-3: 12px;
+  --cc-space-4: 16px;
+  --cc-space-5: 20px;
+  --cc-space-6: 24px;
+  --cc-page-x: 16px; /* 20 at medium, 24 at expanded: the `@media` steps at the end of this file */
+  /* A17 columns — the Shell's reading column. `Main` picks one per page
+     (`Shell.column`), global.css §16 reads it as `data-column`. */
+  --cc-column: 720px; /* lists, Capture (`Column`) */
+  --cc-column-narrow: 560px; /* the create form, the folder picker, Settings, Debug (`Narrow`) */
+  --cc-column-wide: 1120px; /* the Part page at expanded (`Wide`; 720 at medium) */
+  --cc-panel: 420px; /* Annotate's side panel at expanded (A17-ii) */
+
+  --cc-radius-sm: 10px; /* thumbnails, small buttons */
+  --cc-radius: 12px; /* inputs, inner elements of a 16 px container (concentric: 16 − 4) */
+  --cc-radius-lg: 14px;
+  --cc-radius-card: 16px; /* inset grouped list containers, cards, the panel */
+  --cc-radius-photo: 16px;
+  --cc-radius-capsule: 999px;
+
+  --cc-tap-min: 44px; /* every interactive element */
+  /* The nav bar's height (A17): the bar is one `--cc-tap-min` row under
+     its safe-area padding. Sticky offsets under the bar (the Part aside)
+     and A17-ii's Annotate grid read this; nothing named it before. */
+  --cc-bar-height: calc(var(--cc-tap-min) + env(safe-area-inset-top));
+  --cc-btn-height: 50px; /* capsule primary/secondary buttons (§11.1 "Shape") */
+  --cc-shutter: 76px;
+
+  /* ── Glass (docs/design/liquid-glass-web.md §3, re-tuned by SPEC §8a A14
+     G2/G7 and docs/design/a14-glass-review.md B2) ─────────────────────────
+     Two materials. `--glass-fill-strong` (70 %) is the blurred one, on the
+     two sticky surfaces only (the nav bar and the Shell footer), where
+     content really passes underneath: over a white photo it composites to
+     (86,87,88), `text` 6.5:1. `--glass-fill` (55 %, no filter) is the
+     hairline material on every in-flow surface — capsules, chips, cards,
+     groups, the panel — whose only backdrop is the frame's ambient wash. */
+  --glass-fill: rgba(28, 29, 32, 0.55); /* the hairline material: cc-surface at 55%, never blurred */
+  --glass-fill-strong: rgba(14, 15, 17, 0.7); /* cc-ground at 70%, the two blurred sticky surfaces */
+  --glass-fill-hover: rgba(38, 39, 43, 0.55); /* cc-surface-2 at the hairline alpha: the pointer hover fill (A17, review S1) — one step UP from `--glass-fill`, and press continues to opaque surface-2 */
+  --glass-stroke: rgba(242, 242, 240, 0.18); /* cc-text at 18%, hairline edge (G7) */
+  --glass-highlight: rgba(242, 242, 240, 0.28); /* top inset highlight */
+  --glass-blur: 24px;
+  --glass-saturate: 1.2; /* a no-op on mono chrome; only matters where the bar crosses a photo */
+  --glass-radius-sm: 14px; /* matches cc-radius-lg neighborhood, rounder than opaque cards */
+  --glass-radius-pill: 999px;
+
+  /* ── Motion (DESIGN.md §11.1 "Interaction feel") ──────────────────────── */
+  --cc-motion: 160ms; /* enter / settle */
+  --cc-motion-press: 80ms; /* §6: pressed-state fill change, and the A16 press scale */
+  --cc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* SPEC §8a A16: the two stated exceptions to §6's 120–160 ms range — a
+     page push / pop moves a whole screen (the HIG's ~350 ms) and a take-over
+     (create form, folder picker, Edit toolbar) rises over 280 ms. */
+  --cc-motion-nav: 350ms;
+  --cc-motion-sheet: 280ms;
+  /* `--cc-ease-out` is an alias of `--cc-ease` (one curve, two names would
+     drift); `--cc-ease-in` is the exit curve; `--cc-ease-standard` is §6's
+     move curve. No spring, no overshoot. */
+  --cc-ease-out: var(--cc-ease);
+  --cc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --cc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* liquid-glass-web.md §3 also carries a `prefers-color-scheme: light` remap of
+   the glass fill. It is deliberately NOT here: the app ships dark only with
+   `color-scheme: dark` forced, so that block would fire on every phone set to
+   light appearance and put a 55%-white bar under off-white text. Add it back
+   together with a light theme, not before. */
+
+/* Size classes (the table in this file's header): the page margin steps
+   16 → 20 → 24. Tokens only — the column, bar and grid rules that read
+   them are global.css §16. */
+@media (min-width: 600px) {
+  :root {
+    --cc-page-x: 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --cc-page-x: 24px;
+  }
+}

@@ -1,0 +1,365 @@
+/* PartsList — page-scoped styles. Everything else (buttons, fields, the
+   list group/row shape, segmented control) comes from the shared classes in
+   src/global.css and the Ui.res components; this file only carries what's
+   truly specific to this screen. Tokens: src/theme.css (--cc-*).
+
+   The bar's trailing "Edit"/"Done" text action (`parts-edit`) reuses the
+   `.bar-action` rule defined in Part.css, not redeclared here — CSS in this
+   app is unscoped app-wide (index.html links every page's stylesheet
+   unconditionally, plain <link> tags, no CSS Modules), so that one rule
+   already applies to this page's button too. */
+
+/* P2a (docs/design/review-2026-09-17.md P2, DESIGN.md §4 "List row
+   (Part)"): 72 px first-face thumbnail. `Ui.ListThumb`/`.list-thumb`
+   (global.css) has no size prop and is 52 px by default — also used by
+   Part.res's own face-edit list at that size — so this overrides it scoped
+   to `.parts-page` (PartsList.res's view wrapper) only; an unscoped
+   override here would leak into that other page given the same unscoped-
+   CSS caveat above. Reported as a `Ui.ListThumb` gap (no `~size` prop) in
+   the P2a report rather than touching Ui.res, which is out of this track's
+   file ownership. */
+.parts-page .list-thumb {
+  width: 72px;
+  height: 72px;
+}
+
+.parts-form-row {
+  align-items: flex-start;
+}
+
+/* The row is a horizontal flex container, so its lone .field child sizes to
+   its own shrink-to-fit content by default rather than the row's full
+   width — push it. (Ui.Segmented itself no longer needs this: design wave
+   3a made it `width: 100%` by default in global.css §8, so the
+   `.parts-form-row .segmented` override that used to sit here is gone.) */
+.parts-form-row .field {
+  width: 100%;
+}
+
+/* A part row is a single Ui.ListRow now (design wave 3a): thumbnail
+   leading, name+meta body wrapped in a real <a> (Ui.ListRow's `~href`),
+   Rename/Delete icon buttons as `~trailing` siblings outside that <a> — no
+   button-in-button, and no page-scoped row markup needed any more (this
+   used to be a hand-rolled two-line row; see LOGBOOK.md "Design wave 2 —
+   lists" for why, and "Design wave 3a" for the fix). Renaming /
+   ConfirmingDelete still replace a row's normal content in place below. */
+.part-row-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--cc-space-2);
+  width: 100%;
+}
+
+.parts-empty {
+  padding: var(--cc-space-3) 0 var(--cc-space-2);
+}
+
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
+}
+
+/* SPEC §8a A10 — search field above the list. global.css strips every
+   input's native chrome (`-webkit-appearance: none` on `input[type="search"]`
+   too), which in WebKit also drops the built-in cancel button — so the page
+   supplies its own (`parts-search-clear`, a 44 px icon button overlaid in
+   the field's trailing padding, only while the query is non-empty) rather
+   than shipping a search field with no way to clear it on a phone. The
+   field itself is the shared 17 px Body input; only the right padding
+   changes, to keep typed text from running under the button. */
+.parts-search {
+  position: relative;
+}
+
+.parts-search input[type="search"] {
+  padding-right: 48px;
+}
+
+.parts-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+}
+
+/* A10: one folder section per distinct path. The inset grouped sections
+   already sit 24 px apart via the page's `.stack-lg`; inside the list block
+   they're siblings of the search field in a `.stack` (12 px), which is the
+   HIG grouped-table rhythm for header → group → header. Nothing to add for
+   the root section: it's a plain headerless group, exactly the pre-A10
+   list. */
+.parts-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-6);
+}
+
+/* SPEC §8a A12a — the Folder row and the picker. In the create form the
+   row is a `.list-row` <button> (title "Folder", the chosen folder as the
+   trailing value, chevron) inside the inset group; `button.list-row`
+   (global.css) already gives it the pressed highlight and cursor. The value
+   ellipsises so a deep path never wraps the row. */
+.part-folder-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.part-folder-row .part-folder-value {
+  max-width: 60%;
+}
+
+/* The same control inside a rename strip (review N4: no `.list-row` inside
+   the row's own `.list-row`): a button drawn like the Name input above it —
+   the field's box, border and radius — with the value leading and the
+   chevron trailing, under a Caption label. */
+.part-folder-field {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-3);
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-2) 14px;
+  background: var(--cc-field);
+  border: 1px solid var(--glass-stroke); /* A14: drawn like the field above it — `field` + the stroke */
+  border-radius: var(--cc-radius);
+  color: var(--cc-text);
+  font: var(--cc-text-body);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.part-folder-field .part-folder-value {
+  flex: 1 1 auto;
+}
+
+/* Picker options: a fixed-width glyph slot keeps the titles aligned (the
+   root "None" row leaves it empty); the indent itself is inline
+   `padding-left` (`16 + depth × 20 px`, PartsList.res). The Check on the
+   selected row is the one accent in the list. */
+.folder-option-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  width: 22px;
+  color: var(--cc-text-2);
+}
+
+.folder-option-check {
+  color: var(--cc-accent);
+}
+
+/* The bar's Done is the emphasised action of the Cancel/Done pair (HIG
+   picker bars); `.bar-action` (Part.css) gives both the accent colour. */
+.bar-action-strong {
+  font-weight: 600;
+}
+
+/* Chromium keeps its own `::-webkit-search-cancel-button` even with
+   `-webkit-appearance: none` on the input (WebKit drops it), so it is
+   removed explicitly here — one clear affordance per field, ours. */
+.parts-search input[type="search"]::-webkit-search-cancel-button,
+.parts-search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* SPEC §8a A12b — Edit mode selects (review S2). A selectable row is a plain
+   `.list-row` whose leading `<input type="checkbox">` is drawn as a 24 px
+   selection circle inside a 44 px hit area; the body (thumbnail, title,
+   meta) is the checkbox's `<label>`, so the whole row toggles; the pencil
+   stays a trailing sibling outside it. The check is pure CSS (a rotated
+   two-sided border) — no image, no icon font. */
+.part-select {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--cc-tap-min);
+  height: var(--cc-tap-min);
+  margin: 0 calc(-1 * var(--cc-space-2)) 0 calc(-1 * var(--cc-space-3));
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* SPEC §8a A16b: the circles enter with a fade and an 8 px slide from the
+   left over `--cc-motion`, 20 ms later per row down to the eighth — rows
+   past it share the last delay, so no later row ever leads an earlier one.
+   Pure CSS by `:nth-child` (the rows are the `.list-group`'s direct
+   children); JSX `style` cannot carry a custom property without an unsafe
+   helper. `backwards` keeps a waiting circle invisible until its turn.
+   Under `prefers-reduced-motion` global.css §12 zeroes the duration AND the
+   delay, so every circle is simply there. This is the one transform inside
+   a `.list-group` (A16a: "only take-overs rise"): 8 px on a 24 px circle
+   centred in its own 44 px box never leaves the row. */
+.part-select {
+  animation: cc-select-in var(--cc-motion) var(--cc-ease-out) backwards;
+}
+
+@keyframes cc-select-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+.part-row-selectable:nth-child(2) .part-select {
+  animation-delay: 20ms;
+}
+
+.part-row-selectable:nth-child(3) .part-select {
+  animation-delay: 40ms;
+}
+
+.part-row-selectable:nth-child(4) .part-select {
+  animation-delay: 60ms;
+}
+
+.part-row-selectable:nth-child(5) .part-select {
+  animation-delay: 80ms;
+}
+
+.part-row-selectable:nth-child(6) .part-select {
+  animation-delay: 100ms;
+}
+
+.part-row-selectable:nth-child(7) .part-select {
+  animation-delay: 120ms;
+}
+
+.part-row-selectable:nth-child(n + 8) .part-select {
+  animation-delay: 140ms;
+}
+
+/* Both pseudo-elements share the one grid cell and are centred by
+   `place-items` — no `position: absolute`, which anchored the check to
+   whatever ancestor happened to be positioned (seen on the phone after
+   A14: the tick floated left of the disc). */
+.part-select::before,
+.part-select::after {
+  grid-area: 1 / 1;
+}
+.part-select::before {
+  content: "";
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--cc-text-3);
+  border-radius: 50%;
+  transition:
+    background-color var(--cc-motion-press) linear,
+    border-color var(--cc-motion-press) linear;
+}
+
+.part-select:checked::before {
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+}
+
+.part-select:checked::after {
+  content: "";
+  box-sizing: border-box;
+  width: 7px;
+  height: 12px;
+  margin-top: -2px;
+  border: solid var(--cc-accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.part-select:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -4px;
+}
+
+.part-row-label {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--cc-space-3);
+  min-width: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.part-row-label:active {
+  opacity: 0.6;
+}
+
+/* The selection toolbar's contents (the Shell's `.shell-footer` supplies
+   the sticky glass, hairline and safe-area padding): Move and Delete as
+   two `text` actions, edge to edge, Delete in `cc-error` (A14 table: the
+   app's one chroma); the confirm strip stacks its Footnote over the
+   Delete/Cancel pair. The compound selector is load-bearing: the button
+   also carries `.bar-action` (Part.css, linked after this file), which
+   used to win the specificity tie and paint Delete in the accent. */
+.edit-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-2);
+}
+
+.bar-action.edit-toolbar-danger {
+  color: var(--cc-error);
+}
+
+/* The inline folder-rename form replaces the section header (A12b): the
+   same field + Save/Cancel pair as a row's rename strip, at the header's
+   own page-x inset so it lines up with the heading it replaces. */
+.folder-rename {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+  padding: 0 var(--cc-page-x);
+}
+
+/* SPEC §8a A13 — folder rows in the browser view and in search results. The
+   leading glyph slot is as wide as a part row's 72 px thumbnail so the two
+   groups' titles line up on one screen; the glyph itself is the picker's
+   `cc-text-2` folder outline, a size up. The inline rename form (A12b) now
+   sits *inside* the row — the row's own 16 px inset replaces the page-x
+   padding the form carried when it replaced a section header. */
+.folder-row-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  min-height: var(--cc-tap-min);
+  color: var(--cc-text-2);
+}
+
+.folder-row-edit {
+  width: 100%;
+}
+
+.folder-row-edit .folder-rename {
+  padding: 0;
+}
+
+/* ── SPEC §8a A16: take-overs rise on mount ──────────────────────────── */
+/* The create form's outermost element (`.parts-form`, PartsList.res
+   `renderForm`) and the folder picker's root (`.folder-picker`) slide up
+   24 px and fade in over `--cc-motion-sheet` — `cc-rise` in global.css §15.
+   Nothing inside them animates on its own (no picker-option stagger: double
+   motion inside a rising sheet); leaving is a cut. Zeroed under
+   `prefers-reduced-motion` by global.css §12. */
+.parts-form,
+.folder-picker {
+  animation: cc-rise var(--cc-motion-sheet) var(--cc-ease-out);
+}

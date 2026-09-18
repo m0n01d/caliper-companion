@@ -1,0 +1,1526 @@
+# Caliper Companion — v0 spec (mobile web PWA, Ternpike stack)
+
+> **Name:** the product is **Snapkin** (2026-09-18). "Caliper Companion" below is the working title it
+> was specced under; identifiers that carry it (`features.json` schema id, the PouchDB database name,
+> `.ccpart.zip`) are contracts and stay.
+
+**Status:** ready for Claude Code · **Owner:** Dwight · **Target:** installable PWA, one user, two weeks
+**Supersedes:** `caliper-companion-spec-v0.md` (Swift). Same product, same JSON contract, different runtime.
+
+## 1. Why this exists
+
+Reverse-engineering a small part today means a notepad sketch, caliper readings scribbled next to arrows, then retyping everything into Fusion 360 — and the CAD agent never creates named user parameters unless told to. The app replaces the notepad: photograph each face, tap two edges, enter the caliper reading, name the feature. It exports a dimensioned image for humans and a `features.json` for the Fusion MCP, which creates one user parameter per feature and one sketch per face.
+
+**The photo is never measured.** It is a labeled sketch. No calibration, no scale bar, no lens correction. The caliper is the only source of numbers.
+
+## 2. Hypothesis v0 tests
+
+> Annotated-photo capture is at least 30% faster than notepad + calipers from part-in-hand to a parametric Fusion model, on five real parts.
+
+Kill if not true by part five. Everything in v0 serves this test.
+
+## 3. Goals
+
+- G1: 3 faces, 10 dimensions, captured, named and exported in under 4 minutes hands-on.
+- G2: `features.json` round-trips into Fusion via the MCP with zero manual renaming.
+- G3: Zero data loss — closing the tab or killing Safari loses at most the dimension being typed.
+- G4: Works in airplane mode once installed to the home screen.
+
+## 4. Non-goals for v0 (do not build)
+
+- Bluetooth of any kind. The caliper path is a text input; a keyboard-wedge dongle (§9) will type into it later. Nothing in the app knows a dongle exists.
+- Edge snap (Canny/contours) — P1.
+- Reconciliation UI — the data model supports one name on several faces; UI shows a warning row only.
+- AR, 3D, WebXR, LiDAR, mesh import.
+- Accounts, auth, sync to CouchDB, Stripe, analytics. (Sync is v1; the PouchDB doc shapes are designed for it now.)
+- Desktop layout. Phone portrait only, 360–430 px wide.
+- Fusion sketch generation — that is the MCP skill's job; the app ends at JSON.
+
+## 5. Platform and constraints
+
+- **Language/UI:** ReScript + React, mirroring Ternpike exactly: same ReScript major version, same bundler and config, same lint/test setup. Copy Ternpike's PouchDB bindings, PWA scaffold (manifest, service worker, install prompt), and theme tokens; do not rewrite them. Point Claude Code at the Ternpike repo and say "match this."
+- **Persistence:** PouchDB (IndexedDB adapter). Images stored as PouchDB attachments (JPEG blobs). No CouchDB sync in v0, but every doc has `type`, `partId`, and `updatedAt` so v1 sync is a config change.
+- **Offline:** service worker precaches the app shell; all reads/writes hit PouchDB. No network calls in v0.
+- **Dependencies:** PouchDB, React, ReScript toolchain. One optional extra allowed: `fflate` for zipping the export bundle. Nothing else without asking.
+- **iOS Safari rules that bite (encode as tests where possible):**
+  - Camera via `<input type="file" accept="image/jpeg,image/png" capture="environment">`; Safari transcodes HEIC to JPEG for file inputs. Never use `getUserMedia` for stills.
+  - Decode photos with `createImageBitmap(file, { imageOrientation: "from-image" })` so EXIF rotation is applied **before** any coordinate is computed. Every normalized point is relative to the oriented image.
+  - Canvas render at source size: 4032×3024 (12.2 MP) is under Safari's ~16.7 MP canvas cap; anything larger gets downscaled to 4096 on the long edge and the scale recorded in JSON.
+  - Layout with `100dvh` and `env(safe-area-inset-*)`; no `position: fixed` toolbars over the canvas (keyboard resizes break them); use `visualViewport` for the reading-input sheet.
+  - Numeric entry uses `<input type="text" inputmode="decimal" enterkeyhint="next">` — `type="number"` strips leading dots and fights fractions.
+  - Home-screen installed apps are exempt from Safari's 7-day storage eviction; the app still offers "Export" prominently and v1 sync is the real backstop.
+  - `navigator.share({ files })` for export; test that multiple files share on iOS 17+.
+
+## 6. Data model (`core/` — pure ReScript, no DOM, fully unit-tested)
+
+```rescript
+type units = Mm | Inch
+type faceKind = Top | Side | End | Detail
+type dimensionKind = Length | Diameter | Depth
+type readingSource = Typed | Wedge   // Wedge = a keyboard-wedge dongle typed it; indistinguishable at runtime, set by a user toggle
+
+type point = {x: float, y: float}   // 0.0–1.0 of oriented image width/height
+
+type dimension = {
+  id: string,            // "dim:" ++ uuid
+  faceId: string,
+  name: string,          // validated by FeatureName
+  kind: dimensionKind,
+  value: float,          // part units
+  tolerance: float,      // ± part units
+  p1: point,
+  p2: point,
+  source: readingSource,
+  createdAt: string,     // ISO 8601
+}
+
+type face = {
+  id: string,            // "face:" ++ uuid
+  partId: string,
+  kind: faceKind,
+  imageAttachment: string,   // attachment name on this doc, e.g. "image.jpg"
+  pixelWidth: int,
+  pixelHeight: int,          // oriented dimensions
+  levelDegrees: option<float>,
+  outline: option<array<point>>,   // optional 4 corners, reserved for future AR review; no v0 UI
+  capturedAt: string,
+}
+
+type part = {
+  id: string,            // "part:" ++ uuid
+  name: string,
+  slug: string,
+  units: units,
+  notes: string,
+  anchors: array<anchor>,   // reserved, always [] in v0
+  createdAt: string,
+  updatedAt: string,
+}
+
+type anchor = {family: string, tagId: int, sizeMm: float}   // reserved for AR review
+
+/// Derived, never stored.
+type feature = {
+  name: string,
+  kind: dimensionKind,
+  value: float,          // reconciled
+  tolerance: float,      // max of contributors
+  faceIds: array<string>,
+  spread: float,         // max − min
+  flagged: bool,         // spread > tolerance
+}
+```
+
+### 6.1 PouchDB documents
+
+- One doc per part, face, dimension. `_id` = the typed id above. Every doc carries `type: "part" | "face" | "dimension"`, `partId`, `updatedAt`.
+- Face image lives as attachment `image.jpg` on the face doc. Never inline base64 in a doc body.
+- Indexes (`pouchdb-find`): `[type, partId]` and `[type, updatedAt]`.
+- Deleting a part deletes its faces and dimensions in one bulk write.
+
+### 6.2 Feature names
+
+- Regex `^[a-z][a-z0-9_]{0,31}$`. Valid Fusion 360 user-parameter names.
+- Reject reserved: `pi`, `e`, `sin`, `cos`, `tan`, `sqrt`, `abs`, `floor`, `ceil`, `round`, `min`, `max`, `log`, `ln`, `exp`.
+- Suggestions, in order: names already used on other faces of this part; then `overall_l`, `overall_w`, `overall_h`, `hole_dia`, `wall`, `slot_w`, `slot_l`, `chamfer`.
+- Part `slug`: lowercase, non `[a-z0-9]` runs → `_`, trimmed, ≤ 40 chars, must match `^[a-z][a-z0-9_]*$`, prefix `p_` if it would start with a digit.
+
+### 6.3 Reconciliation (pure function)
+
+`reconcile: array<dimension> => result<array<feature>, reconcileError>`
+
+- Group by `name`. Kind conflict within a group → `Error(KindConflict(name))`.
+- `value` = mean, `tolerance` = max, `spread` = max − min, `flagged` = `spread > tolerance`.
+- Output sorted by name ascending. Deterministic.
+
+## 7. JSON contract — `features.json` (schema `caliper-companion/features/1`)
+
+Unchanged from the Swift spec except two optional reserved fields. Frozen once v0 ships.
+
+```json
+{
+  "schema": "caliper-companion/features/1",
+  "exportedAt": "2026-09-17T14:12:03Z",
+  "app": { "name": "Caliper Companion", "version": "0.1.0", "runtime": "web" },
+  "part": { "id": "part:…", "name": "Norcold freezer hinge pin", "slug": "norcold_freezer_hinge_pin",
+            "units": "mm", "notes": "", "anchors": [] },
+  "faces": [
+    { "id": "face:…", "kind": "top", "image": "faces/top.jpg", "annotated": "faces/top_dimensioned.png",
+      "pixelWidth": 4032, "pixelHeight": 3024, "renderScale": 1.0, "levelDegrees": 0.4, "outline": null }
+  ],
+  "features": [
+    { "name": "overall_l", "kind": "length", "value": 42.18, "tolerance": 0.10,
+      "faceIds": ["face:…"], "spread": 0.0, "flagged": false,
+      "measurements": [
+        { "faceId": "face:…", "value": 42.18, "p1": [0.171, 0.448], "p2": [0.811, 0.448],
+          "source": "typed", "at": "2026-09-17T14:03:11Z" } ] }
+  ]
+}
+```
+
+Export bundle: `<slug>.ccpart.zip` (via `fflate`) containing `features.json`, `faces/<kind>.jpg`, `faces/<kind>_dimensioned.png`. If zip is skipped, share the same files as an array with `navigator.share`. Paths in JSON are bundle-relative either way. (`part.path`, added by §8a A10, is a folder path — a Fusion Data Panel location — not a file path.)
+
+**MCP skill contract (built in parallel against the golden fixture):** one user parameter per feature (`name = value units`, comment carries tolerance and faceIds); one sketch per face on top→XY, side→XZ, end→YZ, detail→XY, with the annotated PNG attached as a canvas. Never invent geometry. In v1 the skill pulls the JSON straight from CouchDB over HTTP; in v0 it reads the exported file.
+
+## 8. Modules, in build order, with acceptance criteria
+
+One module → green tests → commit → next. Never start N+1 with red tests in N.
+
+### M1 — `core/` (day 1–2)
+
+- [ ] Types in §6 compile; JSON encode/decode round-trips a fixture part (3 faces, 9 dimensions) losslessly.
+- [ ] `FeatureName.validate` accepts `overall_l`, `hole_dia2`; rejects `Overall_L`, `2nd_hole`, `pi`, `sqrt`, 33-char names, empty.
+- [ ] `Slug.make("Norcold freezer hinge pin") == "norcold_freezer_hinge_pin"`; `Slug.make("2018 NB bezel") == "p_2018_nb_bezel"`.
+- [ ] `reconcile` on the fixture returns 9 features sorted by name; two-face `pin_dia` 6.50/6.52 tol 0.05 → value 6.51, spread 0.02, `flagged == false`; 6.40/6.52 → `flagged == true`.
+- [ ] `reconcile` returns `KindConflict("wall")` when `wall` is Length on one face and Depth on another.
+- [ ] `FeaturesDocument.make` matches the checked-in golden `features.json` byte-for-byte with injected dates.
+- [ ] Number parsing: `"42.18"`, `".5"`, `"42"` parse in mm; `"1 3/8"` and `"1-3/8"` parse only when units are inch; negatives and empty are errors.
+
+### M2 — Persistence (day 3–4)
+
+- [ ] PouchDB store with the doc shapes and indexes in §6.1; typed ReScript API (`Store.putPart`, `Store.facesOf(partId)`, …) — no raw PouchDB calls outside `store/`.
+- [ ] Parts list: create (name, units), rename, delete with confirmation; empty state names the first action.
+- [ ] Part screen: faces row, features table (name, value, tolerance, faces), warning row when any feature is flagged or a kind conflict exists.
+- [ ] Given a dimension half-typed, when the tab is killed, then reopening shows every *saved* dimension; the half-typed one is gone. (Playwright: reload mid-entry.)
+- [ ] A face doc is written only after its image attachment write resolves; failure leaves no orphan doc.
+
+### M3 — Capture (day 5–6)
+
+- [ ] Face picker (top/side/end/detail). Recapturing a kind replaces the image after confirmation; dimensions are discarded unless the user chooses "keep".
+- [ ] `<input type="file" capture="environment">` flow; image decoded with `imageOrientation: "from-image"`; oriented `pixelWidth/Height` stored. Test: a portrait EXIF-rotated fixture JPEG yields the rotated dimensions and a tap on a known feature yields the expected normalized point.
+- [ ] `DeviceOrientationEvent` permission requested once; `levelDegrees` recorded at the moment the file input is opened; `None` when denied or when importing from the library.
+- [ ] Given camera permission denied at the OS level, when the user taps Capture, then the library picker still works and a one-line explanation shows.
+
+### M4 — Annotate (day 7–10) — the core screen
+
+- [ ] Canvas image view with pinch-zoom and pan (Pointer Events, no third-party gesture lib). Taps convert to normalized image coordinates regardless of zoom; Playwright test taps the same feature at 1× and 3× and asserts points within 0.005.
+- [ ] Two-tap dimension: tap 1 places p1 (handle), tap 2 places p2 and draws the line with extension ticks; handles draggable afterwards.
+- [ ] Reading field: `inputmode="decimal"`, `enterkeyhint="next"`, parses per M1; shows part units; rejects invalid with an inline message.
+- [ ] Name field with suggestion chips in §6.2 order; invalid names show the rule inline and disable Save.
+- [ ] Kind segmented control and tolerance field defaulting to the part's last-used tolerance (initial 0.10 mm / 0.005 in).
+- [ ] **Enter in the reading field moves focus to the name field; Enter in the name field saves.** This is the keyboard-wedge seam: a dongle that types `42.18⏎` lands a reading and advances with zero app code.
+- [ ] Save writes the dimension, clears reading and name, keeps kind and tolerance, returns focus to the canvas for the next tap.
+- [ ] Existing dimensions on the face render dimmed; tapping one selects it for edit or delete.
+- [ ] Settings toggle "Readings come from a wedge dongle" sets `source: Wedge` on saved dimensions; default `Typed`.
+
+### M5 — Export (day 11–12)
+
+- [ ] Dimensioned PNG per face rendered on an offscreen canvas at oriented source size (or 4096 long edge with `renderScale` recorded): lines, ticks, name + value labels on solid pills, label height ≥ 2% of image height.
+- [ ] Bundle zipped with `fflate` and passed to `navigator.share({ files })`; fallback "Download" anchor for browsers without file sharing.
+- [ ] Given a kind conflict, when the user taps Export, then export is blocked and the name is shown.
+- [ ] Given a flagged feature, when the user exports, then JSON carries `flagged: true` — never silently averaged.
+- [ ] Re-export of an unchanged part produces identical `features.json` except `exportedAt`.
+
+### M6 — PWA shell and dogfood timer (day 12–13)
+
+- [ ] Manifest, icons, service worker precache; "Add to Home Screen" hint shown once on iOS Safari; app launches offline from the home screen (Playwright WebKit with network blocked).
+- [ ] Per-part hands-on timer: starts at first capture, stops at first export; shown on the part screen; included in JSON as `"telemetry": {"handsOnSeconds": …}`. Local only.
+- [ ] Debug screen exports the last 20 timer results as CSV.
+
+## 9. The keyboard-wedge dongle (v1, hardware, separate repo)
+
+> **v1, deferred:** `docs/linked-mode/SPEC.md` — Linked Mode (phone owns geometry, desktop owns
+> readings, CouchDB live sync, QR handoff). Depends on accounts + hosted CouchDB; not before then.
+> Its migration moves `value/name/kind/tolerance` off `dimension` into `reading` docs — keep that in
+> mind when touching the dimension type.
+
+ESP32 reading Digimatic SPC (52-bit, 13 nibbles) or the 24-bit cheap-caliper protocol (jumper-selected), advertising as a **BLE HID keyboard**. Data button → types the reading in the phone's current units followed by Enter. Pairs in iOS Settings like any keyboard. Works in this PWA, in Fusion's parameter dialog, in a spreadsheet. The app never talks to it directly; M4's focus order is the entire integration.
+
+## 10. Testing
+
+- `core/`: unit tests on the compiled JS (vitest), 100% line coverage on codec, names, slug, reconcile, number parsing.
+- App: Playwright with the WebKit engine and a 390×844 viewport for the golden path — create part, import fixture image, add 3 dimensions, export, assert zip contents against the golden file.
+- Fixtures: `fixtures/hinge_pin/` with three JPEGs (one EXIF-rotated), `features.json` golden.
+- No visual snapshot tests in v0.
+
+## 11. Dogfood protocol
+
+1. Baseline two parts with today's notepad + Fusion process; record minutes and parameters named by hand.
+2. v0 on five parts: TPU battery tray mount, washer-nozzle plug, Norcold hinge pin, a Hehr window clip, one of your choice. Record `handsOnSeconds` plus minutes to a constrained Fusion sketch.
+3. Pass: median v0 total ≤ 70% of baseline and every export yields correctly named parameters in Fusion. Fail: stop, write down why.
+
+## 12. Borrow list from Ternpike (copy, don't rewrite)
+
+- ReScript project config, bundler config, lint and test setup.
+- PouchDB bindings and the `Store` pattern; index setup helpers.
+- PWA scaffold: manifest generation, service worker, install prompt, iOS safe-area layout shell.
+- Theme tokens; keep Ternpike's look for v0 — polish is post-hypothesis.
+- v1 only: Cloudflare Workers auth, CouchDB per-user database provisioning, Stripe checkout.
+
+## 13. Open questions
+
+- **Blocking (Dwight):** mm-only in v0, inch as display toggle? Recommendation: yes.
+- **Non-blocking (engineering):** does `createImageBitmap` at 12 MP hold on an iPhone 13 while the annotate canvas is live? If not, decode a 2048-wide working copy for the canvas and keep the original attachment for export.
+- **Non-blocking (Dwight):** `fflate` zip vs. multi-file share — pick after seeing what iOS Files does with a `.ccpart.zip`.
+- **Non-blocking (engineering):** an in-app "Reduce glass" toggle — the only *working* fallback for the platform, since iOS never reports `prefers-reduced-transparency` (§8a A14 G8 ships `prefers-contrast: more` instead, which does reach iOS "Increase Contrast"). Not built in A14; tracked as **A15**.
+
+## 14. Instructions for Claude Code (paste into `CLAUDE.md`)
+
+```
+Read SPEC.md fully before writing code. Build modules M1→M6 in order; tests first for M1, alongside for the rest.
+ReScript + React + PouchDB, matching the Ternpike repo's versions and config exactly. Copy Ternpike's PouchDB bindings and PWA scaffold; do not reinvent them.
+No dependencies beyond React, PouchDB (+ pouchdb-find), ReScript toolchain, and fflate. Ask before adding anything.
+Apply EXIF orientation at decode; every stored coordinate is relative to the oriented image. This is the most common bug in this class of app — test it.
+Do not build anything under Non-goals. No Bluetooth code. No AR code. Reserved fields stay reserved.
+Do not change the features.json shape; if the schema must change, stop and ask.
+One commit per acceptance-criteria group; the message names the module and criteria met.
+Ambiguous criterion → simplest reading, note it in the commit body, keep going.
+```
+
+## 8a. v0.1 amendments (phone dogfood, 2026-09-17)
+
+Findings from the first real capture → dimension → export → open-on-Mac loop. Same rules as §8:
+one amendment → green tests → commit.
+
+### A1 — Move dimensions directly on the photo (extends M4)
+
+- [ ] A **saved** dimension's endpoint handles drag without selecting it first: `pointerdown` within 22 CSS px (a 44 px target, DESIGN.md §2) of a handle starts a handle drag; releasing writes the new point to the store (same id) immediately and redraws. No Save tap.
+- [ ] Dragging a saved dimension's **line body** (within 16 px of the segment, not on a handle) translates both points together; releasing persists the same way.
+- [ ] The pending (unsaved) dimension behaves identically for its handles and body, without persisting.
+- [ ] Hit priority: handle > line body > pan. A second finger during a drag cancels the drag (points revert) and becomes a pinch.
+- [ ] A tap (no movement) on a saved dimension still selects it for edit/delete, as before.
+- [ ] Playwright: drag a saved handle by a known screen delta → after `page.reload()` the stored point moved by the matching normalized delta within 0.005; a body drag moves both points by the same delta.
+
+### A2 — The keyboard must come up on the second tap (M4 bullet 6, iOS Safari)
+
+- [ ] Given iOS Safari, when the second tap lands, then the reading field has focus and the keyboard is open, with no extra tap. `focus()` called from a `pointerup` handler does not open the iOS keyboard; the call has to run inside the `click` (or `touchend`) handler of the same tap. Implement as: `update` records the focus intent in the model on p2; the canvas `click` handler, which fires after a tap and never after a drag or pinch, performs the pending intent. Chromium e2e keeps asserting focus; Dwight verifies on the phone.
+
+### A3 — Overlays legible on any photo (M5 PNG and the live canvas)
+
+- [ ] Every stroke in the exported PNG (dimension line, arrowheads, extension ticks, handles) is drawn twice: a **halo** in near-black `#17181A` at 85 % alpha and 2.5× the line width underneath, then the line in amber `#F2A33A` on top (DESIGN.md §5 colours). Labels sit on solid amber pills with `#2B1A02` text and a 1 px near-black border.
+- [ ] Sizes per DESIGN.md §5: stroke 0.15 % of the long edge (min 2 px), pill height 2 % of image height, label font 1.4 % of image height, 10×10-equivalent arrowheads scaled the same way.
+- [ ] Test: render the same dimension onto an all-white and an all-black image; the line's amber core and its halo are both present in each (sample pixels across the line), and the pill text contrast against the pill is ≥ 4.5:1.
+- [ ] The live annotate canvas uses the same halo treatment so what you see is what exports.
+
+### A4 — Cap stored photo size (resolves the §13 "12 MP" question)
+
+- [ ] At capture, after the oriented decode, an image whose long edge exceeds **2048 px** is redrawn to 2048 on the long edge and re-encoded as JPEG quality 0.85 before storage. `pixelWidth`/`pixelHeight` are the stored size; `features.json` reports the stored size; `renderScale` is therefore always `1.0`.
+- [ ] Images already at or below 2048 are stored exactly as picked (the EXIF fixture test still yields 1200×1600).
+- [ ] The cap is a single constant (`Capture.maxLongEdge`) so a later tier can raise it.
+- [ ] Re-encoded images carry no EXIF: orientation is baked in, so downstream decodes are unaffected.
+- [ ] Playwright: a synthetic 4000×3000 JPEG (generated in-page via canvas, passed to `setInputFiles` as a buffer) stores as 2048×1536; the stored attachment is smaller than the input.
+
+### A5 — Edge snap (was P1 in §4; now v0.1, toggleable)
+
+The tap is still a sketch mark, never a measurement; snapping only makes the drawn arrow land on
+the visible edge. It must be cheap, contrast-agnostic, and easy to turn off per part.
+
+- [ ] Pure module `EdgeSnap` (no DOM): input a grayscale patch (`width`, `height`, `Uint8Array` luma), output snapped positions in patch pixels. `snapPoint(patch, ~at, ~radius)` moves `at` to the strongest gradient-magnitude pixel within `radius`; `snapPair(patch, ~p1, ~p2, ~radius)` searches **along the p1→p2 segment** and moves each end to the strongest brightness crossing within `radius` of it, so two rough taps either side of a part land on its two edges. Returns `None` for an end when the best gradient is below a threshold (≥ 3× the patch's median gradient magnitude, and an absolute floor), leaving that tap where it was.
+- [ ] Bounded cost: at decode the annotate page keeps a downscaled grayscale copy of the oriented image (long edge 1024 px, built once from the bitmap via a canvas `getImageData`); snapping runs in that space and converts back to normalized coordinates. Never touches the full-resolution bitmap.
+- [ ] Toggle: a "Snap" pill in the annotate toolbar (`data-testid="snap-toggle"`, `aria-pressed`), one thumb-tap, persisted in Settings (`settings.snap: bool`, default **on**).
+- [ ] Feedback and override: a snapped point draws a 150 ms ring (respecting reduced motion); `pending-points` reflects the snapped values; dragging a handle disables snap for that point (a drag never re-snaps). Applies to p1 on the first tap and to both ends on the second tap (via `snapPair`).
+- [ ] Unit tests on synthetic patches: a vertical step edge snaps within 1 px from up to `radius` away on either side; a flat or noise-only patch leaves the point alone; a bar (two edges) with taps just inside and just outside each edge → `snapPair` lands on both edges; an oblique segment snaps along its own direction, not the image axes.
+- [ ] Playwright on `top.jpg` (bar spans x 0.17–0.81, y 0.35–0.55): p1 tapped 12 px inside the left edge → stored x within 0.004 of 0.17; taps at (0.15, 0.45) and (0.83, 0.45) → (0.17, 0.45) and (0.81, 0.45) within 0.004; with the toggle off the stored points equal the taps; the toggle state survives reload.
+
+### A6 — Fit the view to the dimension when the second point lands
+
+With the keyboard up, the visible stage is roughly half its normal height (it tracks
+`visualViewport`), so a freshly placed dimension can sit under the keyboard. After p2, bring it
+into view.
+
+- [ ] When p2 lands (tap, snap, or the second end of `snapPair`), the viewport animates to **fit the p1–p2 segment** into the current stage with ~15 % padding on each side, centred on the segment midpoint, scale clamped to the existing [fit, 8×fit] range (a long dimension across the whole part therefore just re-centres at the fit scale). 160 ms, `--cc-ease`; instant under `prefers-reduced-motion`. Pure math lives in `Viewport.fitToSegment` with unit tests.
+- [ ] While a pending pair exists and the stage resizes (keyboard opening/closing changes `--vv-height` and therefore the canvas size), re-fit so both points stay visible.
+- [ ] Any pinch or pan by the user during the fitted state cancels auto-fit for that pair: later stage resizes do not re-fit, and the view is left where the user put it.
+- [ ] On Save or Clear, animate back to the view the user had **before** the fit (remembered when the fit was applied), unless the user pinched or panned in between, in which case stay.
+- [ ] Playwright (Chromium, 390×844): after two taps 60 px apart at the fit scale, `data-transform` shows a larger scale and both points map to inside the canvas box with ≥ 10 % margin; the `zoom` readout reflects it; after Save the transform returns to the pre-fit value within 0.01; a `zoom-in` click between p2 and Save prevents the restore.
+
+### A7 — Custom faces (not limited to top / side / end / detail) — **schema delta, needs owner OK**
+
+Real parts have undersides, chamfered ends, section views. The four kinds stay as the **sketch-plane
+hint** Fusion needs; a face additionally gets a **label**, and a part may have any number of faces.
+
+**JSON delta (`features.json`, additive; `schema` stays `caliper-companion/features/1`):**
+```json
+{ "id": "face:…", "kind": "side", "label": "left_side",
+  "image": "faces/left_side.jpg", "annotated": "faces/left_side_dimensioned.png", … }
+```
+- `kind` keeps its four values and its meaning (top→XY, side→XZ, end→YZ, detail→XY).
+- `label` is new: `^[a-z][a-z0-9_]{0,31}$` (same rule as feature names), unique per part. Default
+  faces have `label == kind` (`"top"`, `"side"`, …), so their file paths are **unchanged**.
+- `image`/`annotated` paths use the label. The MCP skill names each sketch after `label` and picks
+  the plane from `kind`; a consumer that ignores `label` still works for the four default faces.
+
+**Acceptance criteria**
+- [ ] `Types.face` gains `label: string`; `Codec`, `Store` (face docs; docs without `label` read back as `label = kind`), `FeaturesDocument` (paths from `label`, faces sorted by kind order then label) and the golden fixture are updated; M1 tests pass with the added field; the golden changes only by the added `"label"` lines.
+- [ ] Capture page: the four default chips plus a "+ Custom" chip. Custom opens an inline card: a mono name field (validated live with `FeatureName.validate`, must be unique among this part's faces, error inline) and a plane picker (segmented: Top XY / Side XZ / End YZ / Detail XY, default Top). Confirming creates the chip and selects it; the shutter and library inputs work for it exactly as for default kinds (`capture-file-<label>` / `library-file-<label>` — labels are already slug-safe).
+- [ ] Recapture replaces **by face** (same id, same label), not by kind; a part may therefore hold several faces of the same kind with different labels.
+- [ ] Part page face slots and the features table's faces column show labels; the annotate title shows the label ("left_side · Hinge pin").
+- [ ] Name suggestions and reconciliation are unchanged (they key on face ids).
+- [ ] Custom chips can be removed only when their face has no image and no dimensions; a captured custom face is deleted from the Part page like any face (delete confirms inline, removes its dimensions).
+- [ ] Playwright: add a custom face `left_side` on plane Side, capture `side.jpg` into it, dimension it, export → the zip holds `faces/left_side.jpg` and `faces/left_side_dimensioned.png`, `features.json` has that face with `kind: "side"`, `label: "left_side"`; a second custom face with the same label is rejected inline; default faces' paths are unchanged.
+
+### A8 — Snap telemetry: drag-after-snap (**deferred — specified, not yet built**)
+
+Decides whether edge snap earns more investment (Canny / Hough) or is left alone. Local only, like
+the hands-on timer.
+
+- [ ] Per part, count `snapAccepted` (a snapped point that was saved without being dragged) and
+  `snapCorrected` (a snapped point the user dragged before saving, or a saved dimension whose
+  snapped endpoint was later dragged). Points that did not snap count in neither.
+- [ ] Stored on the timer doc (`timer:<partId>`) so it rides the existing per-part telemetry; shown
+  on the Part page next to the hands-on time as "snap 14 / 2 corrected"; in `features.json`
+  under `telemetry` as `"snap": {"accepted": 14, "corrected": 2}` (additive; schema string
+  unchanged); the Debug CSV gains both columns.
+- [ ] Decision rule (written here so the dogfood applies it): corrected / (accepted + corrected)
+  > 20 % over five parts → do the next snap upgrade (Canny edge map, then Hough lines);
+  < 5 % → leave snap alone.
+- [ ] No UI beyond the two readouts. Not implemented yet; try after the five-part dogfood starts.
+
+### A9 — Dimension list on the annotate screen (select from the list, not only the photo)
+
+Two dimensions drawn on top of each other are hard to pick out by tapping the photo. Every saved
+dimension of the face is also listed under the control panel; the list and the canvas select the
+same thing.
+
+- [ ] Below the panel, an inset grouped list (`data-testid="dimension-list"`) of this face's saved dimensions in creation order: one row per dimension (`dimension-row`, `data-id="<dim id>"`) showing the kind glyph (⌀ / ↓ / none), the name in mono, the value with unit, and ± tolerance in `cc-text-2`. Empty state: one Footnote line "No dimensions on this face yet." The list is part of the page scroll, never fixed.
+- [ ] Tapping a row selects that dimension for edit exactly as tapping it on the canvas does (panel fills with its values, Save reads "Update", Delete appears, the canvas highlights it, A6's fit applies to its segment). Tapping the selected row again deselects (same as Clear). The selected row is marked (`aria-selected="true"`, `cc-teal-wash` background, teal left rule).
+- [ ] Selection made on the canvas highlights the matching row and scrolls it into view (`scrollIntoView({block: "nearest"})`, instant under reduced motion). Saving, deleting and Clear update the list immediately.
+- [ ] Focus order per DESIGN.md §9: … → Save → the list. Rows are real `<button>`s with an accessible name "<name>, <value> <unit>, <kind>".
+- [ ] Playwright: save two dimensions with identical endpoints; tapping the second row makes `delete` visible and the panel's reading equal the second value; Delete removes only that one (`dimension-count` 1, the remaining row is the first); tapping the canvas on the shared line selects one and its row gets `aria-selected`; the list is empty-state on a fresh face.
+
+### A10 — Folders (a Fusion-style path on every part) — **schema delta, additive**
+
+Parts are organised the way Fusion's Data Panel is: a `/`-separated folder path plus the part name
+as the leaf. A path, not tags, because the import skill can save the Fusion design into that same
+project folder.
+
+**JSON delta (`features.json`, additive; `schema` stays `caliper-companion/features/1`):**
+```json
+"part": { "id": "part:…", "name": "window_switch_bezel", "slug": "window_switch_bezel",
+          "path": "Miata/Interior/Dashboard", "units": "mm", "notes": "", "anchors": [] }
+```
+
+- [ ] `Types.part` gains `path: string` (`""` = root; a folder path, not a file path — carve-out in
+  §7). `core/Folder.res` (pure, tabled tests): `normalize` splits on `/`, trims each segment,
+  collapses internal whitespace, drops empty segments and rejoins (`" /Miata//Interior /"` →
+  `"Miata/Interior"`, `"a//b"` → `"a/b"` — double slashes **normalise**, they are not an error);
+  `validate` normalises, then requires each segment to match
+  `^[\p{L}\p{N}][\p{L}\p{N} _.()&'+-]{0,31}$` (`u` flag: any Unicode letter/digit, 1–32 chars) and
+  not be all dots (`^\.+$` — keeps v1's on-disk staging safe), at most 6 segments, and the whole
+  path ≤ 120 chars (`error = BadSegment(segment) | TooDeep | TooLong`; `errorMessage` renders the
+  rule); `snap(~existing)` replaces a path that equals an existing folder case-insensitively with
+  that spelling; `display` joins with `" / "` (`"Miata / Interior / Dashboard"`; `""` stays `""`).
+  Pages call `normalize → validate → snap` before `Store.createPart(~path)` / `putPart`; `Store`
+  never normalises. `Codec.decodePart` and `Store.PartDoc.fromDoc` read a missing `path` as `""`
+  (the A7 `label` precedent). `FeaturesDocument` emits `"path"` after `"slug"`; the golden gains
+  that one line; `Fixture.part` gains the field. `parameters.csv` (A11) is unchanged — it carries no
+  path. No path index: `listParts` stays an `allDocs` range + in-memory sort, grouping is in-memory.
+- [ ] Parts list: derived in `view` from `model.parts` — root section first (**never** a header on
+  the root section, so a list with no folders renders exactly as before A10), then one `Ui.ListGroup`
+  per distinct path, sorted case-insensitively, header `"<display path> · <count>"`
+  (`parts-section`, `parts-section-header`; headers render uppercase per `.list-group-header`, the
+  underlying spelling is kept unique by `snap`); rows inside keep `listParts` order (updatedAt desc;
+  `RenameSaved` re-sorts). Above the list, hidden in the empty state: `<input type="search"
+  inputmode="search" enterkeyhint="search" autocapitalize="none" autocorrect="off"
+  placeholder="Search" aria-label="Search parts">` (`parts-search`, 17 px; `global.css` strips the
+  native cancel button with `-webkit-appearance: none`, so the page supplies its own clear button,
+  `parts-search-clear`, while the query is non-empty) filtering by name **or** path,
+  case-insensitive substring, live, sections preserved; no match → one Footnote line `No parts
+  match "<q>".` (`parts-search-empty`). Query is page-local and resets on navigation (v0.1 —
+  `Route.Parts` may gain a `q` later if it bites).
+- [ ] Create and rename share one `PartForm`: Name, then **Folder** (`part-path`, `type="text"
+  autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done"`, placeholder
+  `Miata/Interior`), under it a `Ui.ChipRow` of existing folders (`part-path-chip`, at most 8,
+  ordered by the newest `updatedAt` of any part in that folder — `putPart` bumps it; tapping a chip
+  fills the field and returns focus there, never submits, so `/Sub` can be appended). Invalid → the
+  rule inline (`part-path-error`) and the primary button disabled. Rename stays an inline strip in
+  the list and lets a part be moved by editing its folder. No uniqueness: two parts may share a
+  name in one folder; the slug is still `Slug.make(name)` and ignores the folder, so
+  `<slug>.ccpart.zip` names can collide across folders (one user, accepted).
+- [ ] Part page: the folder is the Shell subtitle (`Folder.display`, "Miata / Interior / Dashboard";
+  none at root; one ellipsised Footnote line — four segments truncate on a 390 px screen). Layout
+  A's "n faces · n features · unit" line lives in the features group header, not the subtitle
+  (resolves review B2; `DESIGN.md` §11.2 updated to match).
+- [ ] Folders are implicit: none to create or delete; one disappears when its last part leaves.
+  Renaming a folder = editing each part (v1).
+- [ ] Existing parts migrate as root; nothing else changes for them.
+- [ ] Import skill (v1 line in `docs/fusion/IMPORT-SKILL-SPEC.md`): save the new design into the
+  folder named by `path`, **relative to the active project's root folder**
+  (`app.data.activeProject.rootFolder`), creating folders as needed; the first segment is a folder,
+  never a project. The planner already reads `part.path` with a `""` default (`plan["part_path"]`)
+  — no planner change.
+- [ ] Playwright (`parts.spec.js`): create `Window switch bezel` and `Door card clip` in
+  `Miata/Interior`, then `Hinge pin` at root → `parts-section` count 2, root section first and
+  headerless (`parts-section-header` count 1, text `Miata / Interior · 2`); search `bezel` → one
+  `part-row`; rename `Hinge pin`'s folder to `Miata/Interior` → header reads `· 3`, root section
+  gone; `a//b` saves and the header reads `a / b · 1` (rendered
+  uppercase as `A / B · 1` — the header is `text-transform: uppercase`); `?` → `part-path-error` visible,
+  `part-create` disabled; `miata/interior` on a new part snaps into the existing section; the Part
+  page's `.shell-subtitle` reads `Miata / Interior`. `export.spec.js`: `doc.part.path === ''` on the
+  golden test; one part with a folder exports it verbatim.
+
+### A11 — `parameters.csv` in the export bundle (Fusion ParameterIO format, no Claude needed)
+
+Autodesk's free ParameterIO add-in imports user parameters from a CSV. Shipping that file in the
+zip gives a standard, Claude-free import path: export → AirDrop → ParameterIO → Import.
+
+- [ ] The bundle gains `parameters.csv` next to `features.json`: one line per feature, no header,
+  exactly four comma-separated fields `name,unit,expression,comment`, LF line endings, UTF-8, e.g.
+  `overall_l,mm,42.18 mm,±0.10 mm · faces top end · ccpart:norcold_freezer_hinge_pin`.
+  **No commas inside any field** (the add-in splits naively): faces are joined with a space,
+  separators are middle dots. A flagged feature's comment starts with
+  `FLAGGED spread 0.12 > ±0.05 · `. `unit` is `mm` or `in`; `expression` carries the unit.
+- [ ] The format is verified against the add-in's own source (`AutodeskFusion360/ParameterIO_Python`
+  on GitHub: the reader splits each line on commas into name, unit, expression, comment and creates
+  or updates the parameter by name). The verification URL and the observed parsing rules go in the
+  commit body and in a comment at the top of the writer.
+- [ ] Pure writer `ParametersCsv.make(~part, ~faces, ~dimensions) => result<string, Reconcile.error>`
+  in `core/`, same feature order as `features.json`, unit-tested: golden `fixtures/hinge_pin/parameters.csv`
+  byte-for-byte; inch part → `in` and `1.375 in`; flagged prefix; a `KindConflict` propagates.
+- [ ] `Bundle.res` adds the entry; `features.json` is unchanged (no schema change). The export e2e
+  asserts the zip holds `parameters.csv` with N lines of four fields matching the features.
+- [ ] README ("Import into Fusion without Claude"): install ParameterIO from the Fusion App Store,
+  Utilities → ParameterIO → Import → pick `parameters.csv`; canvases stay a manual Insert → Canvas.
+
+### A12 — Folder management: explicit folders, a picker, move, rename, delete — **no JSON delta**
+
+A10 made folders implicit (a part's `path`), so there is no way to make one before it has a part, no
+way to pick one without typing it, and no way to move several parts at once (a10-folders-review.md
+N7). A12 makes folders first-class in the store and gives them a picker. `features.json` is
+unchanged: `part.path` stays the only thing exported, and the import skill needs no change.
+Reviewed before build in `docs/design/a12-folders-review.md` (B1–B5 and S1–S10 are applied in the
+text below). Two checklists under this one heading: **A12a** (store, helpers, picker) ships first;
+**A12b** (selection toolbar, folder rename / delete) builds on the landed A12a. Serial, never
+parallel — both edit `PartsList.res`.
+
+#### A12a — folder docs, helpers, the picker
+
+**Store (`Store.res` / `.resi`; PouchDB docs, app-internal):**
+- [ ] `folder` docs: `_id = "folder:" ++ path`, body `{type: "folder", path, createdAt, updatedAt}`
+  (`updatedAt` = `createdAt`, bumped on rename — §5's every-doc rule). `path` is always normalised,
+  validated and snapped by the page before it reaches the store (`Store` never normalises — A10's
+  rule; checking *existence* is not normalising). Root (`""`) is never a doc.
+  `ensureFolders(t, ~paths: array<string>): promise<array<string>>` — one `allDocs` range on
+  `folder:`, then one `bulkDocs` of every path in `paths` and every `Folder.ancestors` of them that
+  has no doc; a per-doc 409 in the `bulkDocs` result (the binding returns `array<doc>`, nothing
+  throws) counts as already existing; returns the paths it created. `ensureFolder(t, ~path)` is
+  `ensureFolders([path])`. `listFolders: t => promise<array<string>>` — every folder doc's path,
+  sorted case-insensitively. `createPart` and `putPart` call `ensureFolder` for a non-empty path
+  before writing the part, so every path a part carries always has a doc. Store tests (vitest,
+  LevelDB, the existing `StoreTest` pattern): `ensureFolders(["a/b/c", "a/x"])` creates `a`, `a/b`,
+  `a/b/c`, `a/x` and a second call creates nothing; `createPart(~path="Miata/Interior")` leaves
+  `folder:Miata` and `folder:Miata/Interior` behind.
+- [ ] `core/Folder.res` gains pure helpers, tabled tests: `parent("a/b/c") = "a/b"`, `parent("a") =
+  ""`; `leaf("a/b/c") = "c"`, `leaf("") = ""`; `ancestors("a/b/c") = ["a", "a/b"]`, `ancestors("a")
+  = []`; `isUnder("a/b/c", ~folder="a") = true`, `isUnder("ab", ~folder="a") = false`, `isUnder(x,
+  ~folder="") = true` for every x; `rebase("a/b/c", ~from="a", ~to="z") = "z/b/c"`, identity when
+  not under; `depth("") = 0`, `depth("a/b") = 2`; `join(~parent, ~name)` (`join(~parent="",
+  ~name="a") = "a"`); `validateSegment(name): result<string, error>` — `normalizeSegment`, then
+  `Error(BadSegment(name))` when the result is empty or contains `/`, else the A10 segment rule
+  (`"Interior"` Ok, `" interior "` → `Ok("interior")`, `"a/b"`, `"?"`, `""` and a 33-char name →
+  Error; `validate` stays for whole paths). `snap` becomes **prefix-wise**: each ancestor prefix is
+  snapped against `~existing` in turn, so `snap("miata/exterior", ~existing=["Miata/Interior"]) =
+  "Miata/exterior"` and `snap("miata/interior", ~existing=["Miata/Interior"]) = "Miata/Interior"`;
+  the A10 whole-path cases still hold.
+- [ ] Migration for A10 data lives in `PartsList` (not Store) and runs **once**, after
+  `PartsLoaded`: take the distinct non-root part paths in `updatedAt` order, prefix-snap each
+  against the running set of paths seen so far, `putPart` any part whose spelling changed (rare:
+  A10's whole-path snap let `Miata/Interior` and `miata/Exterior` coexist), then one
+  `ensureFolders` over the result ∪ `listFolders` → `FoldersLoaded(array<string>)`, which fills the
+  model's `folders` (every explicit folder path). Never re-run on re-render. A failure lands in the
+  existing page error line.
+
+**Folder picker (`FolderPicker`, a PartsList sub-view, not a route).** Replaces A10's free-text
+Folder field in **both** the create form and the inline rename strip (`part-path`, `part-path-chip`
+and `part-path-error` are retired).
+- [ ] The create form shows a **Folder row** (`part-folder-row`: a `list-row` with a chevron,
+  `role="button"`) — title "Folder", trailing value the current choice in display form (`Miata /
+  Interior`) or "None" at root. In the inline rename strip the same control renders as a
+  `.parts-form-field` button (same testid and role), not a `.list-row` — no row inside a row.
+  Tapping it opens the picker, which **takes over the page** the way the create form already does
+  (list, search and bar actions hidden). The picker remembers where it came from — the create form
+  or one row's rename strip (A12b adds a move) — and returns there. Bar: `PartsList.title` returns
+  "Choose Folder" while the picker is open and a new `PartsList.largeTitle: model => bool` returns
+  false (true otherwise); `Main.view` reads `largeTitle` from the page instead of its hard-coded
+  switch, so the title sits in the bar as a centred Headline. Leading: a **Cancel** text action in
+  the Shell's leading slot (`folder-picker-cancel`; `Shell.back` can only push a route, and
+  cancelling is a page message); trailing **Done** (`folder-picker-done`). `PartsList` therefore
+  exports `leading` (normally the gear, `settings-link` — `shell.spec.js` depends on it; Cancel
+  while the picker is open) and `Main.res` threads it like `actions`.
+- [ ] Picker body: one `Ui.ListGroup` (`folder-picker-list`, `role="listbox"`) with a row per
+  folder: `<button type="button" role="option" data-testid="folder-option" data-path aria-selected
+  aria-label="<Folder.display path>">` (root: `data-path=""`, `aria-label="None, top level"`), a
+  **flat tree**: root first (title "None", subtitle "Top level"), then every path in
+  `model.folders` ∪ the paths of loaded parts ∪ their ancestors, ordered depth-first so children
+  follow their parent (case-insensitive within a level); each row indented `depth × 20 px`, visible
+  title = leaf name, a leading `Icon.Folder` glyph (`Icon.res` gains Lucide `folder`; `FolderPlus`
+  already exists), a `Check` glyph in `accent` on the selected row. Tapping a row selects it (single
+  tap, no navigation). Opening the picker focuses the selected row. Under the list a secondary
+  capsule **New Folder** (`folder-new`, `FolderPlus` glyph) reveals an inline field
+  (`folder-new-name`: `autocapitalize="words" autocorrect="off" spellcheck="false"
+  enterkeyhint="done"`, placeholder "Folder name", focused on open) with Create
+  (`folder-new-create`, disabled while `Folder.validateSegment` is `Error` — so also while empty)
+  and Cancel (`folder-new-cancel`, focus back to `folder-new`); the rule shows inline as
+  `folder-new-error` (`Folder.errorMessage`; a `/` reads `Folder name "a/b" can use …`). Create =
+  `Folder.join(~parent=selected, ~name)` → `Folder.snap` against the picker's known paths (so
+  `interior` under `Miata` selects the existing `Interior` instead of making a twin) →
+  `ensureFolder` → the created (or snapped) path becomes the selection, `folders` gains what
+  `ensureFolders` returned, the field closes and focus moves to that option. When the selection is
+  already 6 deep (`Folder.depth`) the capsule is disabled with a Footnote "Folders go six deep."
+- [ ] Done applies the selection to the form's draft and returns to it; Create / Save then proceed
+  exactly as A10 (`Store.createPart(~path)` / `putPart`, each calling `ensureFolder`). Done with an
+  unchanged selection is the same return and nothing else happens. Cancel discards the picker's
+  selection, never the form's other fields (Name, units, a rename draft). A folder created in the
+  picker persists even if the picker is then Cancelled — it is a real folder (A12b shows it as an
+  empty section). Cancel and Done both return focus to `part-folder-row`. Picker state is page-local
+  (`Main.pageForRoute` re-inits the page per route, as A10's search does).
+- [ ] A12a leaves rows, Edit mode, per-row delete and the section headers exactly as A10 built
+  them; a single part still moves through its rename strip.
+
+#### A12b — selection toolbar, folder rename / delete (builds after A12a lands)
+
+**Store:**
+- [ ] `type folderError = NotEmpty | Exists | Nested`. `moveParts(t, ~partIds, ~path):
+  promise<array<Types.part>>` — `ensureFolder` first, then one `bulkDocs` rewriting each part whose
+  `path` differs (`updatedAt` bumped, same as `putPart`); parts already there are skipped; returns
+  the moved records. `deleteFolder(t, ~path): promise<result<unit, folderError>>` removes the doc
+  and **refuses** with `NotEmpty` if any part sits in it or under it (`Folder.isUnder`) or any
+  folder doc is under it. `renameFolder(t, ~from, ~to): promise<result<unit, folderError>>` (`to`
+  already validated by the page) refuses `Exists` when a folder doc **other than `from`** equals
+  `to` case-insensitively (a case-only rename `Miata` → `miata` is allowed), `Nested` when `to` is
+  under `from`; otherwise one `bulkDocs` deletes the old folder doc, creates the new one
+  (`updatedAt` bumped) and rewrites every descendant folder doc (`Folder.rebase`) and every part
+  whose `path == from` or is under it (`updatedAt` bumped, same as `putPart`), so the subtree
+  follows. `deleteParts(t, ~partIds): promise<unit>` — `deletePart` for each id in sequence inside
+  one promise. Store tests: rename `Miata` → `MX-5` moves `Miata/Interior/Dashboard`'s folder doc
+  and part; `Miata` → `miata` is `Ok`; rename onto an existing sibling is `Error(Exists)`; delete of
+  a folder with a part under it is `Error(NotEmpty)`; `moveParts` bumps only the moved parts.
+  `NotEmpty` and `Nested` are unreachable from the UI below (delete only shows on empty leaves;
+  rename keeps the parent) — store guards with store tests only, no inline copy.
+
+**Moving parts (Edit mode):**
+- [ ] "Edit" now makes every row selectable. An editing row is a plain `<div class="list-row"
+  role="listitem" data-testid="part-row">` — no `href`, no chevron: leading `<input type="checkbox"
+  id="part-select-<id>" data-testid="part-select" aria-label="Select <name>">` restyled as a
+  selection circle (a real checkbox; never `Ui.ListRow ~onClick`, which renders a `<button>` around
+  the checkbox and the pencil — nested interactive content); the body (thumbnail, title, meta) is a
+  `<label for="part-select-<id>">`, so tapping the body toggles; the per-row `part-rename` (pencil)
+  stays trailing as a sibling **outside** the label and never toggles. The per-row `part-delete`
+  and its inline confirm strip go away in favour of the toolbar below (`part-delete-confirm` /
+  `part-delete-cancel` are retired). Tab order while editing: gear (`settings-link`), Edit/Done
+  (`parts-edit`), "+" (`new-part`), search (`parts-search`), then the first `part-select`.
+- [ ] A **selection toolbar** (`edit-toolbar`) renders in a new `Shell ~footer:
+  option<React.element>=?` slot — a sibling **after** `<main class="shell-content">` directly inside
+  `.shell` (a flex column; `main` is `flex: 1 1 auto`, so a short list still pushes the footer to
+  the bottom edge and a long one lets `position: sticky; bottom: 0` catch it — inside the page body
+  it would sit mid-screen under a three-part list); the nav bar's glass recipe on a pseudo-child,
+  hairline on top, `padding-bottom: env(safe-area-inset-bottom)`; never `fixed` (§5). `PartsList`
+  exports `footer` (`Some` while editing and no form or picker is open) and `Main.res` threads it
+  like `actions`. Contents: "Move" (`parts-move`) and "Delete" (`parts-delete`), both disabled until
+  ≥ 1 row is selected, with the count in the label ("Move 2", "Delete 2"; bare "Move" / "Delete" at
+  zero). Move opens the A12a picker titled "Move 2 Parts" ("Move 1 Part"), preselecting the root;
+  Done = `moveParts` → sections re-derive, live region "Moved 2 parts to Miata / Interior" ("Moved 1
+  part to …", "… to the top level"; counts only the parts actually moved — if none moved, nothing
+  is announced), selection cleared, Edit mode stays on, focus returns to `parts-move`; Cancel
+  returns to the list with the selection intact, focus on `parts-move`. Delete → an inline confirm
+  strip in the toolbar ("Delete 2 parts? This removes their faces and dimensions." / "Delete 1
+  part? …", `parts-delete-confirm` / `parts-delete-cancel`) → `Store.deleteParts` → rows removed,
+  selection and strip cleared, live region "Deleted 2 parts" ("Deleted 1 part"), focus to
+  `parts-edit`; if no parts remain, `editing` resets to false (Edit leaves the bar) and focus goes
+  to `new-part`. "Done" clears the selection and any open strip (P1's no-leftover-state rule); a
+  search query change clears the selection too. Store errors from move / delete / rename surface
+  in the existing `rowError` line, one sentence.
+- [ ] `DESIGN.md` §11.1 Materials: "Glass in exactly one place: the navigation bar" becomes "the
+  nav bar and, while editing, the Parts bottom toolbar" — same recipe, both `sticky`, never `fixed`.
+
+**Folder rename / delete (Edit mode, on the section header):**
+- [ ] `Ui.ListGroup` gains `~headerTrailing: option<React.element>=?` (rendered as a sibling of the
+  `<h2>` inside a `.list-group-header-row` flex wrapper — never inside the heading, which would
+  leak the button names into the heading's accessible name) and `~headerEl:
+  option<React.element>=?` (replaces the `<h2>` outright, for the rename form).
+- [ ] While editing, each folder section header gains trailing icon buttons: `folder-rename`
+  (pencil, `aria-label="Rename folder"`) and `folder-delete` (trash, `aria-label="Delete folder"`),
+  the latter present **only** when the folder has no parts and no subfolders. Rename = the header
+  becomes an inline form (`folder-rename-input`, prefilled with the leaf name, focused on open,
+  `autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done"`,
+  `Folder.validateSegment` inline as `folder-rename-error`) with Save (`folder-rename-save`,
+  disabled while invalid or unchanged) / Cancel (`folder-rename-cancel`, focus back to
+  `folder-rename`); Save = `renameFolder(~from, ~to=Folder.join(~parent=Folder.parent(from),
+  ~name))`; the subtree follows (`Miata` → `MX-5` also moves the parts in
+  `Miata/Interior/Dashboard`); the page rebases its `parts` and `folders` from the result and
+  re-sorts; focus goes to the renamed section's `folder-rename`. `Exists` → inline `A folder named
+  "X" already exists here.` as `folder-rename-error`. One inline editor at a time: starting a folder
+  rename resets `rowStates`; `RenameStart` on a row cancels a folder rename. Delete =
+  `deleteFolder`, no confirm (it is empty by construction); the section disappears; live region
+  "Deleted folder Archive"; focus to `parts-edit`.
+- [ ] Empty folders: a **leaf** explicit folder (no parts, no subfolders) renders as a section too:
+  header "`<display> · 0`" and one muted Footnote row "Empty folder" (`parts-section-empty`) so it
+  is visible, pickable, renamable and deletable. A folder with subfolders but no direct parts
+  renders **no** section outside Edit mode and a header-only row (the `<h2>` + pencil, no
+  `.list-group` container) while editing, so it can be renamed. Sections stay one folder each (A10)
+  — counts never include descendants. Section order is unchanged (root first, then paths
+  case-insensitively). Search hides an empty folder unless its path matches the query.
+
+**Not in A12 (v1):** drag-and-drop; moving a folder under a different parent (inline rename is one
+segment — rename keeps the parent); nested counts; a folder-scoped "+"; a Folders screen of its
+own; "Rename" in the toolbar (the per-row pencil stays).
+
+- [ ] Docs, per half: `DESIGN.md` §11.2 Parts entry updated (A12a: the picker as a take-over screen
+  replacing the Folder field + chips; A12b: Edit mode = selection + bottom toolbar, plus the §11.1
+  Materials line above); `docs/testids.md` updated (retired ids struck, new ids listed); a LOGBOOK
+  section per half.
+- [ ] Playwright, A12a (`parts.spec.js`, new describe "folders — picker (SPEC §8a A12a)"): New
+  Folder "Miata", then with it selected "Interior" → `folder-option` rows `None`, `Miata`,
+  `Interior` (indented, `data-path="Miata/Interior"`, `aria-label="Miata / Interior"`); Done →
+  `part-folder-row` reads `Miata / Interior`; create → header `Miata / Interior · 1` and the Part
+  page's `.shell-subtitle` reads `Miata / Interior`. Edit → `part-rename` on a root part →
+  `part-folder-row` → pick `Miata/Interior` → Done → `part-rename-save` → header `· 2`, root
+  section gone. The new-folder field rejects `a/b` and `?` inline (`folder-new-error` visible,
+  `folder-new-create` disabled) and snaps `interior` to the existing `Interior` (no second
+  `Interior` option). Cancel from the picker leaves the form's Name intact and focuses
+  `part-folder-row`. `a11y.spec.js`: the picker's options are `role="option"` buttons reachable by
+  Tab, `aria-selected` truthful, the selected one focused on open. **Existing specs that change in
+  A12a:** `parts.spec.js` "sections with counts, root first and headerless; search filters; rename
+  moves and re-sorts" and "folder field: a//b normalises, ? is rejected inline, a different case
+  snaps to the existing spelling" (both drive `part-path` / `part-path-chip`; `a//b` is no longer
+  typeable — retire that case, move `?` and the snap to the picker) and the `createPartIn` helper
+  (walks the segments: select the `folder-option` when it exists, else New Folder). Unchanged:
+  "rename persists after reload", "delete with confirm returns to the empty state" (until A12b),
+  `shell.spec.js`, `export.spec.js` (no JSON delta).
+- [ ] Playwright, A12b (`parts.spec.js`, new describe "folders — management (SPEC §8a A12b)"): an
+  explicit empty `Archive` (created in the picker, then Cancel) shows as a section with
+  `parts-section-empty` and header `Archive · 0`. Edit → `parts-section` contains no link → select
+  two rows → `parts-move` reads "Move 2" → pick `Archive` → Done → header `Archive · 2`,
+  `parts-live` "Moved 2 parts to Archive", `parts-move` focused. `folder-rename` on `Miata` (a
+  header-only row while editing) → `MX-5` → header `MX-5 / Interior · 1` and that part's page
+  subtitle `MX-5 / Interior`; `Miata` → `miata` saves; renaming onto a sibling shows
+  `folder-rename-error`. `folder-delete` absent on a non-empty section, present on an empty one,
+  removes it (`parts-live` "Deleted folder Archive"). Select one → `parts-delete` reads "Delete 1"
+  → confirm → row gone, `parts-live` "Deleted 1 part", `parts-edit` focused; deleting the last part
+  exits Edit mode and focuses `new-part`. `a11y.spec.js`: in Edit mode, Tab reaches
+  `settings-link`, `parts-edit`, `new-part`, `parts-search`, then the first `part-select`, and
+  `Space` checks it. **Existing specs that change in A12b:** `parts.spec.js` "delete with confirm
+  returns to the empty state" (`part-delete` → select + `parts-delete` + `parts-delete-confirm`);
+  `a11y.spec.js` "parts list — rename autofocuses its draft input; deleting a part sends focus to
+  New part" (toolbar delete; focus target per above).
+
+### A13 — Drill-down folder browsing (the Parts list navigates into folders) — **no JSON delta**
+
+Owner: "that's how folders work". Fusion's Data Panel and iOS Files both browse one folder at a
+time; A10's flat sections with full-path headers were an overview, not a browser. A13 makes the
+Parts list a folder browser and keeps the flat sections for search results only. The data model is
+unchanged (A12's folder docs and `part.path`); this is presentation and routing. Reviewed before
+build in `docs/design/a13-drilldown-review.md` (B1–B5 and S1–S10 are applied in the text below).
+**One build agent, one wave** — `sectionsOf` / `renderSection` / `renderList` are one replacement
+and every cut leaves A12b's header-editor tests half-broken mid-track. Fallback only if it must
+split (review §2.10): A13a = routing + folder view + search + New Folder + `Part.back`, with Edit
+mode offering part selection / Move / Delete only and the three A12b management tests
+`test.fixme`; A13b = folder-row rename / delete + those tests + tour 14/15. Serial, never parallel.
+
+**Route**
+- [ ] `Route.Parts` becomes `Parts(string)` — the folder path, `""` = root. Hash: root `#/`; a
+  folder `#/f/<seg>/<seg>` with each segment `encodeURIComponent`-ed (`#/f/Miata/Interior`,
+  `#/f/Miata%20(NB)`; `/` is not a valid segment character, so a segment never needs a `%2F`).
+  `WebApi.Uri` (new): `encodeComponent` / `decodeComponent`, typed `@val` externals over
+  `encodeURIComponent` / `decodeURIComponent` (no such binding exists today; CLAUDE.md forbids
+  `%raw`). `toHash(Parts(""))` = `#/`; `toHash(Parts(p))` = `"#/f/" ++
+  Folder.segments(p)->Array.map(encodeComponent)->Array.join("/")`. `parse`: when `segs[0] ==
+  Some("f")`, decode each of `segs->Array.sliceToEnd(~start=1)` inside a `try`; any `JsExn` (a
+  malformed `%` sequence such as `#/f/%E0`) → `Parts("")` (the file's own "malformed → parts list"
+  rule); else `Parts(Folder.normalize(decoded->Array.join("/")))`, so `#/f`, `#/f/` and
+  `#/f/Miata/` are `Parts("")`, `Parts("")`, `Parts("Miata")`. **Array spread is not a pattern in
+  ReScript** (`["f", ...rest]` is a syntax error in 12.3.1) — index and slice. `parse` never
+  validates: a path that fails `Folder.validate` or names no folder is the unknown-folder view
+  below. Every existing `Route.Parts` call site (`Main.pageForRoute`, `Settings.back`,
+  `Debug.back`, the "Back to parts" links in `Part.res` and `Capture.res`) becomes
+  `Route.Parts("")` except `Part.back`, which returns `Route.Parts(part.path)` so Back from a part
+  lands in its folder (`Pending`/`Missing` → `Parts("")`).
+- [ ] `src/app/tests/RouteTest.res` (new, tabled — `Route` has had no unit test): `toHash → parse`
+  round-trips `""`, `Miata`, `Miata/Interior`, `Miata (NB)/v2.1/Dwight's` (a space, parentheses
+  and an apostrophe — `%20`, `(`, `'`) and `A&B+C`; `parse` of `#/f`, `#/f/`, `#/f/Miata/` and
+  `#/f/%20Miata%20//x` → `Parts("")`, `Parts("")`, `Parts("Miata")`, `Parts("Miata/x")`;
+  `#/f/%E0` (malformed) → `Parts("")`; `#/parts/x` is still `Part("x")`.
+- [ ] `Main.update(RouteChanged(Parts(p)))` while `model.page` is `PartsList(m)`: the page is
+  **not** re-initialised — `Main` calls `PartsList.update(m, FolderChanged(p))` **directly** (never
+  as a cmd, which would render one frame at the old folder), sets `route`, and maps the cmd.
+  `hashchange` is the only source of `RouteChanged`, so `Route.push` and browser Back/Forward take
+  the same path. Any other transition re-initialises as today; `PartsList.init(~folder)` takes
+  the folder from the route on cold load / reload. What `FolderChanged` does to the model:
+
+  | Kept | Set | Cleared |
+  |---|---|---|
+  | `loaded`, `parts`, `error`, `partImages`, `folders`, `foldersLoaded` | `folder = p` | `form`, `rowStates`, `rowError`, `editing`, `announcement`, `query`, `picker`, `selected`, `confirmingDelete`, `folderEdit`, `newFolder` |
+
+  Its cmd scrolls the scroll container to the top: `Canvas.setScrollTop` (new `@set external
+  setScrollTop: (Dom.element, int) => unit = "scrollTop"`) on `Canvas.querySelector(".shell")` —
+  `.shell` is the `overflow-y: auto` container.
+- [ ] Model: gains `folder: string` (from the route), `foldersLoaded: bool` (set by
+  `FoldersLoaded` **and** `FoldersFailed` — on failure folders derive from part paths and the
+  existing error line shows) and `newFolder: option<string>` (the folder view's New Folder draft;
+  the picker keeps its own `picker.newFolder`).
+
+**Folder view (`#/` and `#/f/…`)**
+- [ ] Bar: root keeps the static Large Title "Parts", no subtitle, the gear leading. In a folder
+  the bar is every other pushed screen's shape: the centred **Headline** `Folder.leaf(path)`,
+  subtitle `Folder.display(Folder.parent(path))` (none when the parent is root), Back chevron
+  (`PartsList.back = Some(Parts(Folder.parent(path)))` — `Shell` then drops the leading slot, so
+  the gear is root-only for free). `PartsList.largeTitle` is true only at root with no picker
+  open; **no Large Title below the root** (hig-brief §5 Do 2; DESIGN §11.1 Layout unchanged).
+  Trailing actions, **per view**: **Edit / Done** iff the view has ≥ 1 part row or folder row,
+  the folder exists, and no form or picker is open; **"+"** iff the folder exists and no form is
+  open — the bar icon while any part exists anywhere, else the empty state's capsule (still
+  exactly one `new-part` on screen). `NewPartClicked` (from either) presets `draft.path =
+  model.folder`, so the create form's Folder row shows the current folder; picking another folder
+  there is fine — `Part.back` lands wherever the part went.
+- [ ] Loading and existence: the folder view renders "Loading parts…" until `loaded &&
+  foldersLoaded` (`folders` is `[]` until the A12a migration's `FoldersLoaded` lands, one round
+  trip after `PartsLoaded` — judging "unknown" earlier flashes `folder-missing` on a reload of an
+  empty explicit folder). A folder **exists** when it is the root, or `model.folders` holds it,
+  or any part's `path` equals it or is under it (`Folder.isUnder` — the half that keeps a
+  pre-migration ancestor with no doc yet browsable). Known folders = `Folder.tree(model.folders ∪
+  foldersOf(parts))`; the current folder's direct children are those whose `Folder.parent` is it.
+  Exact-string: `#/f/miata` is unknown when the folder is `Miata` (no snap, no redirect).
+- [ ] Body order: the search field (A10; shown on every folder screen whenever there is at least
+  one part or folder anywhere), then a **Folders** group (`folders-list`, a `Ui.ListGroup
+  asList=true`, header "Folders" only when the Parts group also renders): one row per direct
+  subfolder (`folder-row`, `data-path` on the row) as a `Ui.ListRow` with `href={Route.href(
+  Parts(child))}` (a real link, like `part-row`), `chevron=true`, leading `Icon.Folder`, title =
+  leaf name, meta = the **direct-child** counts through `countNoun`, halves joined with " · " and
+  a zero half omitted — "2 parts · 1 folder", "1 part", "3 folders", "Empty" (never descendants);
+  rows sorted by lower-cased leaf. Then a **Parts** group (`parts-list`, `role="list"`, header
+  "Parts" only when the Folders group also renders): the parts whose `path` equals the current
+  folder exactly, rows as today (`part-row`), `updatedAt` desc. A folder with neither shows one
+  Footnote line "Empty folder" (`folder-empty`). The root with no parts and no folders shows A10's
+  empty state (`parts-empty`) unchanged; the root with folders but no parts shows the
+  `parts-empty` copy, the `new-part` capsule, then the Folders group; a non-root folder with zero
+  parts anywhere shows its Folders group or `folder-empty`, then the capsule.
+- [ ] **New Folder** is A12a's secondary capsule `folder-new` (leading `Icon.FolderPlus`, "New
+  Folder") **under** the Parts group — not a list row (a button inside `role="list"` is announced
+  as an item, and a lone row would sit on every leaf-folder screen) — present in the folder view
+  whenever the query is blank, Edit mode included; disabled with the Footnote "Folders go six
+  deep." (`folder-new-depth`) at depth 6; absent in an unknown folder. Tap → the same inline
+  field (`folder-new-name`, `folder-new-create`, `folder-new-cancel`, `folder-new-error`, the
+  one-segment `Folder.validateSegment` rule, focused on open, Enter creates), its draft in the
+  model's `newFolder` (`renderNewFolder` takes `~selected` and `~draft`; the picker passes its
+  own). Create = `Folder.join(~parent=current, ~name)` → `Folder.snap` against the current
+  folder's known children → `ensureFolder` → `folders` grows by what it returned, the field
+  closes, focus lands on the new row's **link** (`[data-testid="folder-row"][data-path="<p>"] a` —
+  `Ui.ListRow` puts the testid on the outer `<div>`; the anchor is the focusable element; in Edit
+  mode, on that row's `folder-rename`). One inline editor at a time: opening the field resets
+  `rowStates` and `folderEdit`; a row or folder rename closes it.
+- [ ] Unknown folder (`#/f/Nope`: no doc and no part in or under it, judged only once both loads
+  are in): render as a folder with the Footnote "This folder doesn't exist." (`folder-missing`),
+  no capsule, no "+", no Edit, no search, Back to root. No redirect — a typo'd hash is not a reason
+  to move the user.
+- [ ] Reload on `#/f/Miata/Interior` shows that folder (`init(~folder)` loads everything, then
+  renders it).
+
+**Search** (A10's field, now global)
+- [ ] While the query is non-empty the body is **search results** in A10's shape: a first section
+  "Folders" (`folders-list`, header "Folders") of `folder-row`s whose **leaf name** matches the
+  query (case-insensitive substring — a folder is found by its own name, never through an
+  ancestor's), ordered by `Folder.compareTree`, meta = the location (`Folder.display(parent)` or
+  "Top level"), tap navigates and clears the query; then flat part sections with full-path
+  headers (`parts-section`, `parts-section-header` "`<display> · n`", root section first and
+  headerless), parts matching by name or path (A10) across **all** folders regardless of the
+  current one; `parts-search-empty` when nothing matches at all. Clearing the query returns to
+  the current folder view. `FolderChanged` clears the query. **Edit stays available** while a
+  query is active: the flat sections' part rows are A12b's checkbox rows and the toolbar works on
+  them; section headers carry **no** editors (rename / delete live on folder rows in the folder
+  view); folder rows in results are plain links. `QueryChanged` keeps clearing the selection and
+  the confirm strip, nothing else. The New Folder capsule is hidden while a query is active.
+
+**Edit mode in a folder**
+- [ ] As A12b: part rows selectable, the footer toolbar with "Move n" / "Delete n", the same
+  picker for Move (preselecting the root as A12b — parts have no descendants, so nothing is
+  excluded; moving into the folder being viewed is A12b's silent no-op). Subfolder rows in Edit
+  mode are a plain `<div class="list-row" role="listitem" data-testid="folder-row" data-path>` —
+  no link, no chevron, never a checkbox — with trailing `folder-rename` (pencil) and
+  `folder-delete` (trash, present only when the folder has no parts and no subfolders), both
+  carrying `data-path`; rename is A12b's inline editor in place of the row (`folder-rename-form`,
+  `folder-rename-input` / `-save` / `-cancel` / `-error`, one segment, the subtree follows, focus
+  back on that row's `folder-rename`); delete removes the row (live region "Deleted folder
+  <display>", focus to `parts-edit`). A12b's section-header editors (`Ui.ListGroup
+  ~headerTrailing` / `~headerEl` on `parts-section`), the `parts-folder` / `parts-folder-header`
+  intermediate rows and the `parts-section-empty` row are retired. Folders are not selectable
+  (moving a folder stays v1). Moving parts out of the current folder removes them from view with
+  A12b's live text. **Edit exits** when a move, delete or folder delete leaves the view with no
+  part rows and no folder rows: `editing` resets and focus goes to `new-part`; otherwise A12b's
+  targets (`parts-move` / `parts-edit`).
+
+**Other**
+- [ ] `PartCreated` navigates to the part as today; Back from it lands in its folder. Delete flows
+  unchanged.
+- [ ] `DESIGN.md` §11.2 Parts entry: replace "rows grouped into one inset section per folder (SPEC
+  §8a A10: root first and headerless, then folders A–Z with an uppercase "<path> · n" header)"
+  with the browser — a Folders group (chevron rows, folder glyph, direct-count meta) over a Parts
+  group, the Headline + parent-path subtitle in a folder, flat sections only under a query, the
+  New Folder capsule under the lists; replace "Section headers gain a 44 px pencil … never inside
+  it" and "An empty leaf folder is a "<path> · 0" section … while editing" with the folder-row
+  editors and the two empty texts ("Empty folder" / "This folder doesn't exist."). §11.1 Layout is
+  unchanged (Large Title root-only still holds). `docs/testids.md`: heading → "Parts list (`#/`,
+  `#/f/…`)"; `parts-edit` "every row becomes selectable" → part rows (folder rows: pencil / trash,
+  no checkbox); `parts-search` "present once the list is non-empty" → once any part or folder
+  exists, on every folder screen; `parts-section` / `parts-section-header` → search results only,
+  no editors; strike `parts-section-empty`, `parts-folder`, `parts-folder-header` and the "Empty
+  folders" bullet; "Folder rename / delete … on the header" → on the `folder-row` while editing;
+  add `folders-list`, `parts-list`, `folder-row` (`data-path`; a link outside Edit mode),
+  `folder-empty`, `folder-missing`; `folder-new` is now also the folder view's capsule. LOGBOOK
+  section. Screenshot tour (`scripts/screenshot-tour.mjs`): seed as today (13, the picker, stays
+  where it is), then `#/` → `12-parts-list` (Norcold at root, folder rows Archive and Miata —
+  shot 12 moves **after** the seeding; today it is taken before any folder exists);
+  `#/f/Miata/Interior` → `16-parts-folder`; Edit, check both → `14-parts-edit-toolbar` (today's
+  `part-select.nth(1)` / `.nth(2)` at root would wait forever — only Norcold is there); Done;
+  `#/f/Miata` → Edit → `folder-rename[data-path="Miata/Interior"]` → `15-folder-rename` (that
+  row lives in `#/f/Miata`, not at root); `#/` → query `clip` → `17-parts-search`.
+- [ ] Playwright (`parts.spec.js`, new describe "folders — drill-down (SPEC §8a A13)"): root shows
+  `folder-row` Miata with meta "1 folder" and no `part-row` from inside it; tap → URL `#/f/Miata`,
+  `.shell-title` "Miata", `.shell-large-title` count 0, `folder-row` Interior with "2 parts"; tap
+  → `#/f/Miata/Interior`, `.shell-subtitle` "Miata", two `part-row`s, Back → `#/f/Miata`; reload
+  on `#/f/Miata/Interior` renders the same; "+" there → `part-folder-row` reads `Miata /
+  Interior` → create → the new part's page → Back → `#/f/Miata/Interior` with three rows;
+  `folder-new` there creates `Dashboard` inside — it appears as a `folder-row` ("Empty") whose
+  link is focused; search `clip` from root → `parts-section-header` `Miata / Interior · 1` and no
+  `folder-row`; search `inter` → Folders section `folder-row` Interior with meta "Miata", tap →
+  `#/f/Miata/Interior` with the query cleared; clear → the root view; Edit in `Miata/Interior` →
+  select two → Move to root → rows gone, root shows them; rename `Interior` → `Cabin` on its row
+  from `#/f/Miata` → the row reads Cabin, that part's page subtitle reads `Miata / Cabin`;
+  `folder-delete` absent on a non-empty row, present on an empty one, removes it; `#/f/Nope`
+  shows `folder-missing` and no `new-part`, `parts-edit` or `folder-new`. `a11y.spec.js`: inside
+  a folder the first Tab lands on Back. `export.spec.js`'s helper is unchanged (it walks the
+  picker).
+- [ ] **Existing specs that change** (review §5):
+  - `parts.spec.js` "parts — folders (SPEC §8a A10) › sections with counts, root first and
+    headerless; search filters; rename moves and re-sorts": root shows one `part-row` (Hinge pin)
+    and one `folder-row` Miata (meta "1 folder"), `parts-section` count 0; search assertions stay
+    (`bezel` → 1 row, header `Miata / Interior · 1`; `interior` → 2; `zzz` → `parts-search-empty`;
+    clear → root view again); the rename-move: `part-rename` on the only root row → picker → Done →
+    save → root has 0 `part-row`; `#/f/Miata/Interior` has 3 with Hinge pin first; reload there.
+  - `parts.spec.js` A12a "New Folder nests under the selection; Done fills the row; …": the two
+    `parts-section-header` checks → `folder-row` Miata "1 folder" at root / `#/f/Miata/Interior`
+    1 row; the root-part move: `part-rename` (only root row) … after save root 0 rows, the folder 2.
+  - `parts.spec.js` A12b "an empty folder is a · 0 section; Edit selects rows; Move 2 …": root =
+    2 `part-row` + `folder-row`s Archive ("Empty") and Miata ("1 folder"); search `arch` → Folders
+    section `folder-row` Archive, `bezel` → header `Miata / Interior · 1`; Edit: `parts-list` has no
+    link, 2 `part-select`, pencil check as today; Move 2 → Archive → root 0 rows, Archive meta
+    "2 parts", live text, `parts-move` focused; the no-op move and Delete 1 run inside
+    `#/f/Archive`; after delete the folder shows 1 row (not `· 0`); reload there.
+  - `parts.spec.js` A12b "folder rename: an intermediate folder is a header-only row …": at root
+    `folder-rename` count 2 (Archive, Miata), no `parts-folder-header`; rename Miata → MX-5 on the
+    row (prefill, `a/b` refused, Save) → row reads MX-5, focus on its pencil; `#/f/MX-5` → Interior
+    row; case-only `interior` there; the twin (`archive`) error on MX-5's row at root; the
+    one-editor-at-a-time check needs a root part (add one); Part page subtitle `MX-5 / interior`.
+  - `parts.spec.js` A12b "folder delete: only on an empty leaf …": at root `folder-delete` on the
+    Archive row only, live text, focus `parts-edit`; delete the last part from `#/f/Miata/Interior`
+    → `folder-empty`, Edit gone, `new-part` focused; `#/` → `parts-empty` copy + `folder-row` Miata.
+  - `a11y.spec.js` "parts list — Edit mode: Tab reaches the gear, Edit, +, search, then the first
+    part-select": `parts-section` → `parts-list` (the current locator would pass on zero matches).
+  - `screenshot-tour.mjs` steps 12, 14, 15 (above).
+  - **Unchanged:** `parts.spec.js` "creating a part…", "rename persists…", "delete with confirm…",
+    A12a "new-folder field…", "at six deep…" and helpers `pickFolder` / `createPartIn` /
+    `createEmptyFolder`; `a11y.spec.js` "#/ …", "parts list — folder picker …", "parts list —
+    rename autofocuses …"; `shell.spec.js` (gear at root, `Settings.back` → `#/`);
+    `export.spec.js` (`createPart` walks the picker; asserts the Part page only).
+
+### A14 — Hybrid glass: monochrome tokens, glass language with two blurred surfaces, the lens icon — **no JSON delta**
+
+Owner: "as glass-like as possible. Simple. Minimal. Monochrome." Explored in
+`docs/design/branding-snapkin.md` §7 (real screens re-rendered in Graphite, Paper and Glass;
+`mockups/mono-*.png`, `brand-mono.png`); reviewed before build in `docs/design/a14-glass-review.md`
+(read it first — every number below is measured there). The full-glass mock blurs 10–20 surfaces a
+screen — the scroll-jank case `docs/design/liquid-glass-web.md` documents — so A14 is the hybrid:
+monochrome tokens, the glass *language* everywhere, real blur on the two sticky surfaces only.
+Dark only stays. No data or export-contract change. Two build agents, disjoint files: **A14a**
+(tokens, materials, headers) and **A14b** (overlays, icon, export test, docs) — see the split at the
+end.
+
+**Tokens (`src/theme.css`, the §7 "Glass" column — confirmed over §7's own "Graphite tokens"
+recommendation, which predates G1: under the ambient wash the frame's hottest corner is ground +
+14 % ink = (46,47,48) and a 55 % fill over it is (36,37,39); Glass `text-3 #8C8F94` is 4.73:1
+there, Graphite's `#83868B` 4.20:1, and Graphite's lighter ground leaves the wash less headroom):**
+- [ ] `ground #0E0F11 · surface #1B1C1F · surface-2 #26272B · field #151618 · border #34363A ·
+  text #F2F2F0 · text-2 #A9ABAF · text-3 #8C8F94 · accent = text #F2F2F0 · accent-pressed #D9DADB ·
+  accent-ink #0E0F11 · live #C9CBCE · live-border #45484D · live-wash #26272B · live-ink #F2F2F0 ·
+  error #F0605A · error-ink #2B0A0A · error-wash rgb(240 96 90 / 0.2) · photo-mat #1E1F22 ·
+  scrim #0E0F11cc`. Glass: `--glass-fill rgba(28,29,32,.55) · --glass-fill-strong rgba(14,15,17,.70)
+  · --glass-stroke rgba(242,242,240,.18) · --glass-highlight rgba(242,242,240,.28) · --glass-blur 24px
+  · --glass-saturate 1.2`; `--glass-radius-sm` / `--glass-radius-pill` stay. `error` is the one
+  chroma in the app. `theme-color` in `index.html` and `theme_color` / `background_color` in
+  `public/manifest.json` = `#0E0F11`. Rule: `text-3` never sits on bare ground (4.14:1 under the
+  wash's peak) — only on `surface`, `field` or a glass fill (DESIGN §2 gets the sentence).
+- [ ] Semantic names stay (`accent`, `live`): the *rule* changes from hue to fill, and "accent =
+  text" is **not** a value swap — three controls need their own treatment. The fill/outline table:
+
+  | Control | Off / normal | On / selected / primary |
+  |---|---|---|
+  | `.btn-primary` | ivory `text` fill, `accent-ink` label (17:1); pressed `accent-pressed`; disabled 40 % opacity (a 1.8:1 ghost — disabled controls are exempt, DESIGN §6 says so) | — |
+  | `.btn-secondary`, `.btn-danger` | hairline material (below); danger = `error` fill, `error-ink` label | — |
+  | `.chip`, `capture-chip-*`, `.annotate-tools .annotate-snap` | hairline; the Snap pill off = `text-2` label on transparent (as today) | `[aria-pressed="true"]`: `background: var(--cc-text); color: var(--cc-accent-ink)` — the Snap pill is `.annotate-snap`, not a `.chip`; today its on state is a *text* colour (`Annotate.css:130-136`), so the fill is a new rule on that selector |
+  | `.segmented-option` | transparent, `text-2` label | `rgba(242,242,240,.16)` over `field`, `text` label (10.3:1) — a lighter neutral, **not** ivory (§7 G4 "lighter glass"), so the primary stays the one ivory capsule on Annotate |
+  | `.toggle` | track `surface-2`, knob `text` | track `text`, knob **`ground`** (with knob `text` the knob vanishes — `global.css:942-956`) |
+  | `.face-card` | `surface-2` mat + hairline; empty = 2 px dashed `border` | captured = 2 px `live` ring + `live` check badge (`ground` check); selected = 2 px `text` ring |
+  | Edit toolbar text actions | `text`; "Delete n" `error`; disabled 40 % | — |
+  | `.shutter` | `text` fill, `box-shadow: 0 0 0 3px var(--cc-ground), 0 0 0 6px var(--cc-text)` — the iOS gap ring; drop the 4 px border (`text` ring on an `accent` fill is one flat disc) | pressed `accent-pressed` |
+  | `.bar-action` (Edit / Done / +) | `text` — the title's colour; `.bar-action-strong` 600 already separates them | — |
+  | focus-visible | 2 px `text` outline, offset 2 (rule unchanged, value follows the token) | — |
+  | `Ui.WarningRow` Live, `.annotate-dim-row` selected | the only `live-wash` / `live-border` / `live-ink` surfaces | — |
+
+  Flagged / conflict rows keep `error` (`Part.css` `.flag-marker`, `Ui.WarningRow` Error).
+
+**Glass language (`src/global.css`; the §7 rule list G1–G8):**
+- [ ] **G1 ambient light**: `.app-frame { background: radial-gradient(120vmax 80vmax at 0 0,
+  rgba(242,242,240,.14), transparent 60%), radial-gradient(100vmax 70vmax at 100% 100%,
+  rgba(242,242,240,.08), transparent 60%) var(--cc-ground) }`; `.shell` stays transparent.
+  `.app-frame` is `100dvh` and does not scroll, so the wash is viewport-stable without
+  `background-attachment: fixed`. `html, body` keep `--cc-ground`.
+- [ ] **G2 the materials**: real `backdrop-filter` on **exactly two surfaces**, the sticky bar
+  (`.shell-topbar::before`) and the sticky footer (`.shell-footer::before`), both with
+  `--glass-fill-strong` (70 %): content does pass under them — the annotate stage, face cards,
+  thumbnails — and 55 % over a white photo composites to (130,131,132), title `text` 3.4:1 and
+  `text-2` 1.7:1; 70 % gives (86,87,88), `text` 6.5:1 (7.4:1 on the pale fixture; today's 72 % is
+  5.5:1). Everything else is the **hairline material**: `background: var(--glass-fill)` (55 %,
+  translucent, **no filter** — nothing is behind an in-flow surface but the G1 wash, and a blur of
+  a smooth gradient is the gradient), 1 px `--glass-stroke`, `inset 0 1px 0 --glass-highlight` on
+  capsules, chips, cards, `.list-group`, `.panel` and `.a2hs-hint` (not on fields, the segmented
+  track or the toggle track, which keep `field` / `surface-2` and the stroke only). Inner list
+  dividers stay `border`. No route-scoped selector: every `.list-group` — Parts groups, search
+  sections, the picker's listbox, the create form's grouped fields, Capture's `custom-card` /
+  `recapture-card` (they use the class directly, `Capture.res:851, :904`), Settings, Debug — is the
+  same material. Inside the annotate `.panel`: `.annotate-tools { background: transparent }` (an
+  opaque band inside a translucent panel otherwise), the Dimensions list keeps its opaque
+  `surface-2`. Nothing blurs inside anything that blurs. Blur count per screen, for the LOGBOOK:
+
+  | Screen | Blurred surfaces |
+  |---|---|
+  | Parts root, folder view, search results, picker, create form | bar (1); + footer toolbar while editing (2) |
+  | Part, Capture, Annotate, Settings, Debug | bar (1) |
+
+- [ ] **G3 primary** = ivory fill, not glass (§7's glass + 55 % hairline primary reads as a large
+  secondary in `mono-glass.png`). **G4** selected segment = 16 % ink neutral (table above).
+- [ ] **G5 fewer words**: `Ui.ListGroup` gains `~headerHidden: bool=false`, which puts
+  `visually-hidden` on the `<h2>`. Clip-hidden headings stay in the accessibility tree (the two
+  adjacent `role="list"`s keep their names for VoiceOver) and in every existing e2e
+  `getByRole('heading')` count. Passed by: PartsList's "Folders" and "Parts" groups
+  (`PartsList.res:1718, :1723`) and Part's "Features · n" (`Part.res:428`; the empty state is a
+  separate branch, `Part.res:426`, so nothing reads oddly). Kept visible: search-result path
+  headers (`parts-section-header`, they *are* the information), Settings' "Default tolerances" /
+  "Diagnostics", Debug's "Timers" / "Viewport", the picker's "Choose Folder" title.
+- [ ] **G6** Lucide icons at `stroke-width 1.5`: `Icon.res:164` is a literal `strokeWidth="2"`,
+  no prop — change the literal; `.face-card-check svg { stroke-width: 3 }` still wins (CSS beats
+  presentation attributes). Size unchanged. **G7** bar hairlines at 18 % ink (`--glass-stroke`,
+  already the bar's border). Capsule and group radii unchanged.
+- [ ] **G8 fallbacks**: `@supports not (backdrop-filter)` and
+  `@media (prefers-reduced-transparency: reduce)` cover the two blurred surfaces (the existing
+  blocks, `global.css:284-306`, unchanged — don't extend them to `.list-group` / `.panel`).
+  `prefers-reduced-transparency` never fires on iOS (caniuse, 2026-09-18: Safari / iOS "not
+  supported" through 27.x; Chrome 118+; Firefox behind a flag) — but **`prefers-contrast: more`
+  does** map to iOS "Increase Contrast", so add `@media (prefers-contrast: more)`: the two blurred
+  surfaces opaque `surface`, no filter; `--glass-stroke` → 28 % ink. `prefers-reduced-motion`
+  handling unchanged. An in-app "Reduce glass" toggle (the only working fallback on the target
+  platform) is **A15**, noted in §13, not built here.
+- [ ] Colour-literal sweep, beyond the canvas grep: `.face-card-scrim`'s gradient
+  `rgba(23,26,30,…)` → `rgba(14,15,17,…)` (`global.css:1284`); the `<select>` chevron data-URI
+  `stroke='%23b9b5ab' stroke-width='2'` → `%23A9ABAF`, `1.5` (`global.css:728`); `Draw.scrim`
+  (below). `e2e/specs/capture.spec.js:63, :65` are fixtures — leave them.
+
+**Canvas and export overlays (A3 in monochrome):**
+- [ ] Every hard-coded overlay colour in `Draw.res:24-30` and `Render.res:205-209` moves into
+  **`src/app/Overlay.res`** (app level — both `annotate/` and `export/` read it; the canvas cannot
+  read CSS variables cheaply): `ink "#F2F2F0" · inkOn "#0E0F11" · halo "rgba(14,15,17,0.85)" ·
+  scrim "rgba(14,15,17,0.8)" · live "#C9CBCE" · savedAlpha 0.7`. `Draw.colourFor` / `pill` and
+  `Render.*Color` read it. No flagged / conflict colour: nothing on the canvas or in the export
+  paints those states (they are the Part page's rows, `Part.css` `.flag-marker` and
+  `Ui.WarningRow`, which keep `error`).
+
+  | Style | Line, extensions, arrowheads | Handle | Pill |
+  |---|---|---|---|
+  | Pending | `ink` over `halo`, alpha 1 | disc `ink`, ring and dot `inkOn` (with the style colour the ring and dot vanish into the disc) | `ink` fill, 1 px `inkOn` border, `inkOn` label (17:1) |
+  | Selected | as Pending | as Pending | `scrim` fill, `ink` label |
+  | Dimmed | at `savedAlpha` 0.7, halos included (`dimension`'s `globalAlpha` group) | none (as today) | drawn **after** `restore`, at alpha 1: `scrim` fill, `ink` label — inside the group a 100 % label on a 70 % pill is 3.9:1 on white |
+  | Snap ring | `live` over `halo` | — | — |
+  | Export (`Render`) | `halo`, `ink`, alpha 1 | `ink` / `inkOn` | `ink` fill, `inkOn` border and label |
+
+  Measured (white / pale / black photo, line vs halo): active 11.3 / 12.0 / 17.4 (orange was
+  4.95 / 6.84); dimmed at 0.7 → 4.6 / 5.0 / 8.5 (0.6 gives 3.5 / 3.8 — §7's numbers, confirmed);
+  saved label on the full-alpha scrim pill 9.4 / 10.3 / 17.5. Pending and Selected now differ by
+  the pill alone (DESIGN §5 says so).
+- [ ] `export.spec.js` "render legibility (SPEC §8a A3)": `sampleLegibility` returns
+  `{sawInk, sawHalo}`. `isHalo = r < 70 && g < 70 && b < 70` (unchanged — the code's 70, not 60,
+  for the documented rounding margin; the halo over the new ground is (50,51,53) on white,
+  (12,13,14) on black). `isInk = [r, g, b].every(c => c >= 225 && c <= 250) && max − min <= 12`
+  (the line is exactly (242,242,240); white is 255, so an unbounded `≥ 200` window would pass the
+  white photo with no line drawn). `sawInk` is true only for an ink pixel with a halo pixel at a
+  smaller y **and** one at a larger y in the same column (white → halo → ink → halo → white).
+  Titles: `` `ink line + halo are both visible on an all-${bg.name} photo` `` for `white` and
+  `black`; the comment block `:429-439` rewritten for ink. `RenderTest.res` gains one tabled case:
+  `contrastRatio(Overlay.inkOn, Overlay.ink) ≥ 4.5`.
+
+**Icon (`scripts/make-icons.mjs`):**
+- [ ] The **m2** lens from `brand-mono`, re-weighted for the tile (the board's stroke 44 with open
+  chevrons is `brand-mono.html:108-110`; the numbers here keep its proportions at a system-glyph
+  weight and fill the heads): one ink, one weight — a circle r 300 centred (512, 512) with a
+  **64 px** stroke (outer r 332: 180–844; inner r 268), and a ⌀ dimension across it: line from
+  **x 316 to 708** at y 512 with round caps (ends 284–740; 40 px clear of the inner ring = 0.6 px at
+  16 px, 2.3 px at 60 — with a 72 stroke and a 300–724 line the gap is 16 px = 0.25 px at 16 and
+  the favicon reads as θ), filled arrowheads **112 × 96** with tips at x 252 and 772 (8 px inside
+  the inner ring; bases at 364 / 660, where the ring's inner half-height is 223), no ticks; ink
+  `#F2F2F0` on `#0E0F11`. Safe zone: the mark sits 78 px inside Android's **maskable circle, ⌀ 80 %
+  (r 410; 102–922 on the axes)**; iOS only clips corners. (The "205–819" figure is the 60 % box;
+  `make-icons.mjs:25`'s "250–774 … 80 %" is 51 % — fix that comment to "the maskable 80 % circle,
+  r 410".) Favicon `rx 224`; PNGs full-bleed. The napkin mark stays in the doc as the expressive
+  variant, not shipped. Remove-and-re-add on the phone to see it.
+
+**Docs and gates:**
+- [ ] `DESIGN.md` §2 token table replaced (mono, plus the `text-3` rule), §4 rows Primary button,
+  Chip, Segmented control, Face card, Shutter, Scrim pill and Warning row rewritten from the table
+  above, §5 (`:103-106`) colours rewritten from the overlay table, §11.1 "Colour" (the two-accent
+  rule becomes the fill rule), "Materials" (two blurred surfaces + the hairline material), "Icons"
+  (1.5), "Interaction feel" (`accent-pressed` is now grey), §11.2 per-screen notes (Parts / Part
+  headers hidden, Capture's selected ring, Annotate's capsule, Settings' toggle);
+  `docs/testids.md:47-53, :69-70, :141` (header wording: hidden, not absent);
+  `docs/design/palettes-2026-09-17.md` gets a one-line pointer to §7 ("superseded by A14");
+  `branding-snapkin.md` gains "§8 Adopted" (what shipped, what stayed a mock, and that the Glass
+  column — not Graphite — was taken, with the `text-3` reason); §13 gains the A15 "Reduce glass"
+  line; LOGBOOK section with the blur table above and every contrast pair actually measured on the
+  built CSS (a small node script over the tokens is fine).
+- [ ] Screenshot tour regenerated (all of `01`–`17`) and looked at; icon PNGs regenerated.
+- [ ] Playwright: the full suite green twice. **Changes:** `export.spec.js` "render legibility
+  (SPEC §8a A3)" — both tests (titles, `sampleLegibility` `:440-453`, comment `:429-439`) as above.
+  **Unchanged, by construction of G5:** `parts.spec.js` "the root lists only its own parts…"
+  (`:191-192`) and "one folder per screen…" (`:747`, `:782-783`) — the heading counts hold with
+  `headerHidden`; `shell.spec.js` (Timers / Viewport), `a11y.spec.js` (`features-list` by testid,
+  no heading), `faces.spec.js` / `annotate.spec.js` (`aria-pressed` attribute assertions, not
+  style), `capture.spec.js`. Unit suite unchanged except the one added `RenderTest` case.
+- [ ] **Build split.** **A14a** (sonnet): `src/theme.css`, `src/global.css`,
+  `src/app/pages/Annotate.css`, `src/app/pages/Capture.css`, `src/app/components/Icon.res:164`,
+  `src/app/components/Ui.res` (`headerHidden`), `src/app/pages/PartsList.res:1718, :1723`,
+  `src/app/pages/Part.res:428`, `index.html:7`, `public/manifest.json:9-10`; its LOGBOOK section.
+  **A14b** (sonnet, parallel — disjoint files): `src/app/Overlay.res` (new),
+  `src/app/annotate/Draw.res`, `src/app/export/Render.res`, `src/app/export/tests/RenderTest.res`,
+  `e2e/specs/export.spec.js:429-499`, `scripts/make-icons.mjs` + `public/` icons; then, **after
+  A14a lands**, the docs bullet above and its own LOGBOOK section (both agents append to LOGBOOK —
+  serialize that). Conductor: tour `01`–`17`, suite twice.
+- [ ] **Not in A14**: a light appearance; a theme toggle; Paper; the "Reduce glass" toggle (A15);
+  blur on anything but the bar and footer; any change to `features.json`, `parameters.csv`, the
+  export PNG's geometry, or the skill.
+
+### A16 — Motion: page transitions, take-overs, and micro-interactions — **no JSON delta**
+
+Owner: "lovely transitions to make the app feel more fluid… a little more polish before I show this
+thing off." Today the app has three transitions (press fills, the toggle knob, the face-card ring)
+and every route change is a hard cut. A16 adds motion in the HIG's register — `DESIGN.md` §6's
+rule stands: opacity and transform only, nothing bounces, everything zeroed under
+`prefers-reduced-motion` (§6 also holds the 120–160 ms range) — with one deliberate exception:
+page pushes and pops run at the HIG's ~350 ms, because they move a whole screen. Reviewed before
+build: `docs/design/a16-motion-review.md` (2026-09-18); its blockers and shoulds are folded in
+below, and every "measured" figure is from that review's probe in the repo's own Playwright
+Chromium 148 (WebKit could not launch there — iOS is eyeballed on the phone). **Two waves, serial:
+A16a lands first, A16b after it.** A15 (Reduce glass) is unrelated and stays queued.
+
+**Tokens (`src/theme.css`) — A16a:**
+- [ ] `--cc-motion-nav: 350ms` (push / pop), `--cc-motion-sheet: 280ms` (take-overs), `--cc-motion:
+  160ms` (existing; enter / settle), `--cc-motion-press: 80ms` (existing), `--cc-ease-out:
+  var(--cc-ease)` (an alias of the existing §11.1 curve `cubic-bezier(0.2, 0.8, 0.2, 1)` — one
+  curve, two names would drift), `--cc-ease-in: cubic-bezier(0.4, 0, 1, 1)` (exit),
+  `--cc-ease-standard: cubic-bezier(0.2, 0, 0, 1)` (§6, moves). No spring, no overshoot.
+
+**A16a — Page navigation (the View Transitions API, `document.startViewTransition`; iOS 18+ /
+Chrome 111+ / Firefox 144+ per caniuse; unsupported → the plain dispatch, no attribute, no
+animation):**
+- [ ] `src/bindings/WebApi.res` gains `ViewTransition` — `type t`, `@get startFn: Dom.document =>
+  Nullable.t<fn>` (feature detection; also sees a test's `addInitScript` wrapper), `@send start:
+  (Dom.document, unit => unit) => t = "startViewTransition"` (`@send`, so `this` is the document),
+  `@get finished: t => promise<unit>` — a `Document` module with `setAttribute` / `removeAttribute`
+  on `documentElement` for `data-nav`, and `@module("react-dom") external flushSync: (unit => unit)
+  => unit` (**not** in `@rescript/react`). `flushSync` is what makes React commit inside the
+  callback; React batches otherwise.
+- [ ] New `src/app/Motion.res` (`Tea.res` stays DOM-free) — the one animated dispatch:
+  ```rescript
+  let gen = ref(0)
+  let transition = (~nav: string, dispatch: 'msg => unit, msg: 'msg): unit =>
+    if !WebApi.ViewTransition.supported() { dispatch(msg) } else {
+      gen := gen.contents + 1
+      let mine = gen.contents
+      WebApi.Document.setDataNav(nav) // before `start`: the old capture and the CSS must see it
+      let clear = _ => { if gen.contents == mine { WebApi.Document.removeDataNav() }; Promise.resolve() }
+      WebApi.ViewTransition.start(WebApi.ViewTransition.document, () => WebApi.flushSync(() => dispatch(msg)))
+      ->WebApi.ViewTransition.finished->Promise.then(clear)->Promise.catch(clear)->ignore
+    }
+  ```
+  Why this shape (review B2, measured): the update callback is **asynchronous** — it runs at the
+  next rendering opportunity, after microtasks, `setTimeout(0)` and rAF (3–38 ms), so the model
+  lags the URL by about one frame. Two hash changes in flight (a Back double-tap): the first
+  transition's `ready` rejects `AbortError`, **its callback still runs, its `finished` fulfils,
+  and only then does the second callback run** — a cleanup keyed on "my `finished`" would strip the
+  second transition's `data-nav` before its animations exist (measured: the pseudos fall back to
+  the UA 250 ms crossfade). Hence the generation counter: clear only if no newer transition has
+  started. `finished` **rejects** when the callback throws (`dispatch` → `update`), so `clear` runs
+  on both branches. `Tea.use` is `useState` + a model ref and runs cmds synchronously inside
+  `dispatch` (before the commit) — the same order as today, so nothing regresses; a cmd that calls
+  `Route.push` from inside the callback starts a second transition that skips this one (its
+  callback still runs) — acceptable.
+- [ ] `Route.subscribe`'s `hashchange` listener keeps `let prev = ref(current())` (it has no state
+  today) and on each change computes `next = current()`, `nav = direction(prev.contents, next)`,
+  sets `prev := next`, then `Motion.transition(~nav, dispatch, toMsg(next))`. `Route.depth`:
+  `Parts(folder)` = 1 + `Folder.depth(folder)`; `Settings` = 2; `Debug` = 3; `Part(_)` = 10;
+  `Capture(_)` = 11; **`Annotate(_, _)` = 12** (capture → annotate is the most-travelled forward
+  step, `Capture.res` pushes it after every capture; at equal depth it would fade). Deeper →
+  `push`, shallower → `pop`, equal → `fade` (same-depth sibling folders reached from search, both
+  ways). `direction` and `depth` live in `Route`, not `Motion`. The Back chevron, folder rows,
+  `Route.push` and the browser's own back/forward all go through `hashchange`, so they all animate.
+  Settings is only reachable from the root's leading slot and Debug only from Settings, so the
+  depth table is right for every pair the UI can produce.
+- [ ] Scroll (review S3): `Main` renders **one** `<Shell>`, so `.shell` — the scroll container —
+  and its `scrollTop` persist across pages; a push from a scrolled list would snapshot the new
+  screen scrolled. `PartsList.scrollToTop` moves to `Shell.res` as `Shell.scrollToTop:
+  Tea.cmd<'msg>`; `PartsList.FolderChanged` keeps using it and the cross-page `RouteChanged`
+  branch in `Main.update` batches it too (pushes and pops alike — the returning list re-inits
+  anyway). It runs inside `dispatch`, before the commit, which is fine because the element persists;
+  the new screen is therefore snapshotted at the top. The annotate canvas keeps painting during a
+  transition (the new view is a live capture; nothing to do).
+- [ ] CSS (`global.css`), keyed on `html[data-nav]` (`push` | `pop` | `fade`, nothing else) and the
+  `(root)` pseudos only — the sticky bar is part of the root snapshot (a persistent-bar effect is a
+  later A16c), and **nothing in A16 ever transforms `.shell` or `.app-frame`** (a transform on an
+  ancestor of the sticky bar or footer would make them scroll away). Keyframes: `cc-nav-in` (from
+  `translateX(100%)`), `cc-nav-out` (to `translateX(-30%)` + opacity 0.6 — UIKit's parallax),
+  `cc-nav-back-in` (from `translateX(-30%)` + 0.6), `cc-nav-back-out` (to `translateX(100%)`),
+  `cc-fade-in` / `cc-fade-out`. **push**: old `cc-nav-out`, new `cc-nav-in`; **pop**: old
+  `cc-nav-back-out`, new `cc-nav-back-in`, plus `z-index: 1` on the old layer so the leaving screen
+  slides out *over* the returning one (the pseudos are positioned; the builder confirms the
+  stacking by eye in the `no-preference` run); both layers `var(--cc-motion-nav) var(--cc-ease-out)
+  both` — one curve for both layers so they stay locked. **fade**: 200 ms, old `--cc-ease-in`,
+  new `--cc-ease-out`. Setting `animation` on the pseudos also replaces the UA's `plus-lighter`
+  blend animation (measured: only the author animations remain), so opaque slides composite
+  normally.
+- [ ] Reduced motion (review B1, measured): the API still runs under `prefers-reduced-motion`
+  (Chromium played the UA crossfade to 311 ms with no CSS), and a rule on
+  `::view-transition-group(*)` alone does **not** stop the nav slides — `html[data-nav="push"]
+  ::view-transition-old(root)` outranks the bare pseudo in the cascade (measured: the push slide
+  ran to 442 ms under `reduce` with the group-only rule). So, after the nav rules:
+  `@media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important } }` — Chrome's canonical rule; the
+  transition then lasts ≈ 2 frames and is a cut. The existing `*, *::before, *::after` zero-duration
+  block never reaches these pseudos.
+
+**A16a — Take-overs and in-page state (CSS enter animations on mount; no exit animations — an
+unmount is a cut, and the route transition above covers the big exits):**
+- [ ] Create form and the folder picker enter by sliding up 24 px and fading in over
+  `--cc-motion-sheet` `--cc-ease-out` (`@keyframes cc-rise`). Elements: the picker root
+  `.folder-picker` (exists), and the create form's outermost element, which has no class today —
+  the form renders `Ui.ListGroup` rows `.parts-form-row` / `.parts-form-field`; wrap it in one
+  `<div className="parts-form">` and animate that. **Only take-overs rise**: nothing inside a
+  `.list-group` gets a transform (the group clips overflow; a rising row paints over its
+  neighbour).
+- [ ] Edit mode: `.shell-footer` (the toolbar) rises from `translateY(100%)` over
+  `--cc-motion-sheet` `--cc-ease-out` via `animation` on mount — the footer exists only while
+  editing (`Shell.res` renders it from the footer slot), so mount is the hook. Its blurred
+  `::before` riding a transforming element is the allowed pattern (liquid-glass-web.md:
+  animate transform of a pre-blurred layer; check once on the phone). Leaving Edit mode is a cut.
+  The selection-circle stagger is A16b.
+- [ ] Press feedback: `.btn`'s transition line already eases `transform` over `--cc-motion` (160 ms)
+  — change it to `transform var(--cc-motion-press) linear` and add `transform: scale(0.97)` on
+  `:active`, so the scale is just the added value. `.chip` (0.97), `.face-card` and `.folder-row`
+  (0.985) get `transition: transform var(--cc-motion-press) linear` (they have none today) and the
+  scale. Rows: `.list-row-link` is the text-only `<a>` beside the thumbnail, so scale the row —
+  `.list-row:has(> .list-row-link:active) { transform: scale(0.985) }` (Safari 15.4+). Existing
+  pressed fills and opacities stay. Nothing else moves on press.
+- [ ] Live-region text and focus targets are unchanged: motion never delays a focus move (focus
+  cmds run inside `dispatch`, before the animation starts, not on `finished`). `focusWhenReady`'s
+  rAF retries land on an element that is still rising — `focus()` works on a transformed element
+  and Safari's focus scroll is at most 24 px early, then the element arrives.
+- [ ] **Cut (review S6, no TEA trigger):** "rows appearing" (a created part navigates to its Part
+  page; a moved part leaves the screen you are on) and the face-card check-badge pop (a capture
+  navigates to Annotate) — the row or badge is next seen on a fresh page init after an async load,
+  so every row and every badge would animate on every visit, under the route slide. Also cut:
+  picker-option stagger (double motion inside a rising sheet). If wanted later: a `justAdded:
+  option<id>` model marker cleared on the next `FolderChanged`.
+
+**A16b — after A16a lands (serial; both touch `global.css` and the LOGBOOK):**
+- [ ] Segmented control (review B3 — **no `view-transition-name` anywhere in A16**, and no wrapped
+  dispatch: nothing in A16b needs `Motion.transition`; the Snap pill and the hidden units
+  `<select>` are unchanged): `Ui.Segmented` renders `<span className="segmented-indicator"
+  aria-hidden="true" />` first and carries `data-index` / `data-count` (the `@as("data-…")`
+  record trick already used for `data-path`). CSS: `.segmented { position: relative }`,
+  `.segmented-option { position: relative; z-index: 1 }`, `.segmented-option[aria-pressed="true"]
+  { background: transparent }` (label colour unchanged), `.segmented-indicator { position:
+  absolute; top: 2px; bottom: 2px; left: 2px; border-radius: inherit; background:
+  var(--cc-live-fill); transition: transform var(--cc-motion) var(--cc-ease-standard) }`, widths
+  `[data-count="n"]` = `calc((100% - 4px - (n − 1) × 4px) / n)` for n = 2, 3, 4 (options are
+  `flex: 1 1 0`, so equal), offsets `[data-index="i"]` = `translateX(calc(i × 100% + i × 4px))`.
+  Reduced motion: the existing zero-duration block. Why not the API: two elements with one name
+  make `ready` reject `InvalidStateError` and turn *every* transition on that page into a cut
+  (measured), a named element is lifted out of the root snapshot during pushes, and the page is
+  non-interactive for the transition's length.
+- [ ] Selection circles: each row's `.part-select` enters with a `cc-rise`-style fade + 8 px slide
+  from the left over `--cc-motion`, staggered 20 ms per row up to 8 rows via
+  `.part-row-selectable:nth-child(2…8) .part-select { animation-delay: 20…140ms }` — pure CSS, no
+  `--i` from the view (JSX `style` cannot carry a custom property without an unsafe helper).
+- [ ] Annotate canvas (drawn by `Draw.res`; the canvas has no CSS and cannot read the tokens, so
+  durations are the existing constants): the **snap ring** keeps A5's geometry (grows 1 → 1.6 and
+  fades, `ringMs` 150) and `Draw.snapRing` maps `progress` through `Viewport.ease` (the §11.1
+  curve) — one line; the "now-based ease" already exists as the `frames` cmd (a per-animation rAF
+  loop, generation-guarded, single-ticks under reduced motion). **Pill settle**: a saved
+  dimension's pill settles 1.04 → 1 over 160 ms — `settle: option<{id, gen, progress}>` on the
+  model, `SettleTick` through `frames(~ms=160)`, `Draw.pill ~scale` for that dimension only, drawn
+  after `restore` like the Dimmed pill; the one A16b item to drop first (model plumbing for 4 px).
+  **Reading field**: when it takes focus after p2, `[data-testid="reading"]:focus { animation:
+  cc-ring-fade 400ms }` — a one-shot 2 px ring fade so the eye lands where the keyboard is about
+  to type (restarts on each focus; fine). §6's "handles appear with a 120 ms scale-from-0.6" is
+  **not implemented today** (`Draw.handle` has no progress) and is struck, not "kept".
+
+**Reduced motion and tests (A16a):**
+- [ ] `prefers-reduced-motion: reduce` → the existing zero-duration block, the `!important`
+  view-transition rule above, and the canvas ease skip (already: `frames` single-ticks).
+  `prefers-reduced-transparency` and `prefers-contrast` are untouched.
+- [ ] Playwright: `e2e/playwright.config.js` sets `use.reducedMotion: 'reduce'` globally. That
+  emulates the media feature only — the API still runs (≈ 2 frames under our rule) and the model
+  lags the URL by ~1 frame; no existing assertion observes either (below). One new spec,
+  `e2e/specs/motion.spec.js` (chromium-only, like `export.spec.js`), opens a context with
+  `reducedMotion: 'no-preference'` and records **in-page** via `context.addInitScript`:
+  `window.__vt = []; const orig = Document.prototype.startViewTransition;
+  Document.prototype.startViewTransition = function (cb) { const rec = {nav:
+  document.documentElement.dataset.nav ?? null, names: null}; window.__vt.push(rec); const t =
+  orig.call(this, cb); t.ready.then(() => { rec.names = getComputedStyle(document.documentElement,
+  '::view-transition-old(root)').animationName }, () => { rec.names = 'skipped' }); return t }`.
+  The pseudo's computed `animation-name` is only readable between `ready` and `finished` (≈ 2
+  frames under `reduce`), so the test asserts the log, never the live pseudo. Assertions: one
+  `__vt` entry per route change; `nav` is `push` going Parts → Part and `pop` on Back; `names`
+  contains `cc-nav-out` under `no-preference`; in a second context with `reducedMotion: 'reduce'`
+  the same route change logs `names === 'none'` (the attribute may exist); `html` has no
+  `data-nav` once `finished` (negated `toHaveAttribute`, retrying); the Edit toolbar has a
+  non-`none` `animation-name` on entry; and **one `no-preference` A6 case** — place a pair and
+  assert `data-autofit` passes through `fitting` — because the global `reduce` single-ticks
+  `frames`, so this is the only e2e that still exercises the rAF loop. The suite count today is
+  58 (57 `test(` declarations plus `export.spec.js`'s two-background loop); report the new count.
+- [ ] **Existing e2e that must change: none.** Every assertion after a hash change is `page.url()`
+  (synchronous — the URL is already set), `waitForURL` / `toHaveURL`, a retrying `expect`, or an
+  auto-waiting locator action; the four `document.activeElement` reads in `a11y.spec.js` follow a
+  `reload()` and a visibility wait (no view transition on a full load). `annotate.spec.js`'s two
+  `emulateMedia({reducedMotion: 'reduce'})` calls become redundant under the global setting — keep
+  them.
+- [ ] `DESIGN.md` §6 gains the two nav/sheet durations as the stated exceptions and the token
+  names; §11.1 "Interaction feel" lists the press scale; `docs/testids.md` unchanged unless a
+  hook needs an id; LOGBOOK section listing every animation with its duration, easing and the
+  reduced-motion behaviour.
+- [ ] **Build plan and risk.** A16a (sonnet): `theme.css`, `global.css`, `WebApi.res`,
+  `Motion.res` (new), `Route.res`, `Main.res`, `Shell.res`, `PartsList.res` (form wrapper,
+  `Shell.scrollToTop`), `PartsList.css`, `playwright.config.js`, `motion.spec.js` (new),
+  `DESIGN.md`, LOGBOOK. Risk: tokens none; `Motion.res` medium (the async callback and the counter
+  — the measured behaviour above is the contract); direction low; scroll reset low; nav CSS
+  low-medium (pop stacking, eyeball on the phone); reduced-motion rule low (measured); take-over
+  and footer rises low (blur on a moving layer: one phone check); press scale low; Playwright
+  config low (no existing spec races); `motion.spec.js` medium (timing-sensitive — assert the log,
+  not the live DOM). A16b (sonnet, after a): `Ui.res`, `global.css` (segmented), `PartsList.css`
+  (stagger), `Draw.res`, `Annotate.res` / `Annotate.css`, LOGBOOK. Risk: indicator low; stagger
+  low; ring ease trivial; pill settle moderate (drop first); ring fade trivial. **Drop for
+  "show it off"**: rows appearing, picker-option stagger, check-badge pop, pill settle, Snap-pill
+  transition, handle scale-in — none is seen in a fresh install's first two minutes.
+- [ ] **Not in A16**: a persistent nav bar across pushes and the face-thumbnail → annotate hero
+  transition (both need `view-transition-name`; a later A16c), `Motion.transition` for in-page
+  state, a `history.state` index for same-depth Back (review J2; optional if it ever matters),
+  swipe-back gesture (the browser's own edge swipe works in Safari standalone and already fires
+  `hashchange` → `pop`), any JS animation library, spring physics.
+
+### A17 — Adaptive layout: compact, medium and expanded size classes (iPad and desktop) — **no JSON delta**
+
+Owner: "it looks ok on mobile… on desktop it's not great… I'll look at it on iPad… make it more
+adaptive." Today the only width rule in the app is one `max-width: 360px` query: every screen is
+the 390 px phone column stretched to whatever the window is. The tour now takes `TOUR_VIEWPORT=WxH
+TOUR_DSF=1`; the before-state is committed as `docs/design/mockups/adaptive-before-*.png` — at
+1440 × 900 the Parts rows run 1400 px wide, the Part page shows two 700 px face cards with the
+features and Export below the fold, and Annotate pillarboxes the photo into a 300 px strip over a
+1400 px form; at 820 × 1180 (iPad portrait) the face cards are 380 px squares. Reviewed before the
+build in `docs/design/a17-adaptive-review.md` (B1–B3 and S1–S12 are applied in the text below;
+every layout claim there was measured in the repo's Playwright Chromium); the target boards are
+`docs/design/mockups/adaptive-after-*.png` and `adaptive-compare.png`, rendered with these edits.
+
+**Size classes** (HIG's compact / regular, expressed as three widths of the layout viewport):
+- [ ] **compact** < 600 px — every phone in portrait; today's layout, unchanged. **medium** 600–1023 px —
+  iPad portrait (mini 744, iPad 820, Air / Pro 11 834), iPhone landscape (667–956), narrow windows.
+  **expanded** ≥ 1024 px — iPad landscape (1133–1210), 13-inch iPads in *both* orientations (1024 /
+  1032 wide in portrait; Annotate alone adds an aspect condition, below), desktop. Plain `@media
+  (min-width: 600px)` / `(min-width: 1024px)`; the two numbers live once as a comment block at the
+  top of `theme.css` and appear as literals only in `@media` prelude lines. **No container queries**
+  (review S4: `auto-fill` reads the grid's own width; nothing else depends on a column being narrower
+  than the viewport).
+- [ ] Tokens: `--cc-page-x` becomes 16 / 20 / 24 by size class; `--cc-column: 720px` (the reading
+  column for lists, Capture), `--cc-column-narrow: 560px` (the create form, the picker, Settings,
+  Debug), `--cc-column-wide: 1120px` (the Part page at expanded), `--cc-panel: 420px` (Annotate's
+  side panel at expanded), **`--cc-bar-height: calc(var(--cc-tap-min) + env(safe-area-inset-top))`**
+  (the nav bar's height — nothing named it before; the sticky offsets and the Annotate grid need
+  it), **`--glass-fill-hover: rgba(38, 39, 43, 0.55)`** (`surface-2` at the hairline alpha — the
+  pointer hover fill, review S1). No `--cc-card-max` (review S4: no card reaches 240 px in any
+  class — 212 px at expanded, 216 at medium). Type scale unchanged — HIG does not scale body text
+  by size class; the Large Title stays 34 px.
+
+**Shell (medium and expanded):**
+- [ ] The column is the Shell's, not the page's (review S2 — `.shell-content` is one element in
+  `Shell.res` a page cannot reach, and the pages want three widths): `Shell` takes `~column:
+  Shell.column=Column` (`Column | Narrow | Wide | Bleed`) and renders it as `data-column` on
+  `.shell`; `Main.view` maps it beside `largeTitle` — PartsList → `Narrow` while `picker` or `form`
+  is `Some`, else `Column`; Part → `Wide`; Capture → `Column`; Settings, Debug → `Narrow`; Annotate
+  → `Bleed`. CSS at ≥ 600: `.shell { --col: var(--cc-column) }`, `.shell[data-column="narrow"] {
+  --col: var(--cc-column-narrow) }`, `.shell[data-column="wide"] { --col: var(--cc-column-wide) }`
+  at ≥ 1024 only (720 at medium), `.shell[data-column="bleed"] { --col: 100% }`; `.shell-content,
+  .shell-large-title { width: 100%; max-width: var(--col); margin-inline: auto }`. `.shell-content`
+  keeps its padding; a page that wants the edges keeps undoing it with negative margins as Annotate
+  does today.
+- [ ] The nav bar and the footer toolbar stay full-bleed (the glass strip spans the window); their
+  *contents* (leading / title / trailing; Move / Delete) align to the column with one padding rule
+  and no DOM change (review S8, measured at 1440: leading button at x 376 against content at 384,
+  the 24 px glyph at 386): `.shell-topbar, .shell-footer { padding-inline: max(calc(var(--cc-space-2)
+  + env(safe-area-inset-left)), calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2)))
+  … }` (right side mirrored; `100%` resolves against `.shell`'s content width, so the scrollbar is
+  excluded consistently). The ambient G1 wash keeps filling the frame outside the column, so a wide
+  window is not a black void with a strip in it.
+- [ ] `.btn-block { max-width: 400px; margin-inline: auto }` at ≥ 600 — the primary capsule caps at
+  400 (HIG: buttons don't span a tablet) and the secondary block capsules (New Folder, From library)
+  with it, so the two never disagree on one screen.
+- [ ] Pointer: under `@media (hover: hover) and (pointer: fine)` rows, cards, chips and the hairline
+  capsules get a hover fill — **`--glass-fill-hover`**, one step *up* the surface scale, so rest →
+  hover → press reads dark → lighter → opaque `surface-2` (review S1: `--glass-fill-strong` is
+  `ground` at 70 % and composites *darker* than rest) — and `cursor: pointer`. Exact rule:
+  `.list-row:has(> .list-row-link):hover, button.list-row:hover:not([aria-selected="true"]),
+  .face-card:hover, .chip:hover:not([aria-pressed="true"]), .btn-secondary:hover, .btn-icon:hover {
+  background: var(--glass-fill-hover) }` plus `.face-card, .list-row-link { cursor: pointer }`.
+  Selected states (`aria-pressed`, `aria-selected`, the empty dashed card) are never repainted; the
+  primary and live fills get the cursor only. Timing is the existing press transition (`.btn`
+  already transitions `background-color` at `--cc-motion-press`; a second `transition` declaration
+  would lose it). Press scales and focus rings unchanged. Never on touch.
+- [ ] Keyboard (**A17-ii**): **Escape** closes whichever take-over or inline editor is open. `Shell`
+  has no dispatch and page msgs flow only through `Main.msg`, so this is a `Main` subscription in
+  the shape of `Route.subscribe` (review S7), not a Shell listener. `WebApi.Keyboard`: `type event`,
+  `@get key: event => string`, `@get defaultPrevented: event => bool`, `@get isComposing: event =>
+  bool`, `@send preventDefault: event => unit`, `@send external onKeyDown: (Document.t,
+  @as("keydown") _, event => unit) => unit = "addEventListener"`. `Main.msg` gains
+  `KeyPressed(string)`; `Main.init` batches `Keyboard.subscribe(k => KeyPressed(k))` (a `Tea.Effect`
+  registering the listener once, dispatching only when `!defaultPrevented && !isComposing && key ==
+  "Escape"`); `Main.update` routes it into the mounted page by a direct `update` call, the
+  `FolderChanged` shape: `| KeyPressed("Escape") => switch model.page { | PartsList(pm) =>
+  PartsList.update(pm, PartsList.Escape) | Part(pm) => Part.update(pm, Part.Escape) | Capture(pm)
+  => Capture.update(pm, Capture.Escape) | Annotate(_) | Settings(_) | Debug(_) => (model, Tea.none)
+  }` (each arm re-wraps the page and `Tea.map`s the cmd as the page-msg arms do). `PartsList.Escape`
+  = the first of: `picker.newFolder` open → `NewFolderCancel`; picker → `PickerCancel`; form →
+  `FormCancel`; `confirmingDelete` → `DeleteCancel`; a `Renaming` row → `RenameCancel(id)`; folder
+  rename → `FolderRenameCancel`; else `(model, Tea.none)`. `Part.Escape` = `pendingDelete` →
+  `FaceDeleteCancelled`. `Capture.Escape` = `RecaptureConfirm` → `RecaptureCancelClicked`;
+  `customDraft` → `CustomCancel`. The rename strip's own `onKeyDown` Escape (`PartsList.res`) calls
+  `preventDefault` so the document listener skips it. Arrow keys in the picker listbox and list rows
+  are A17b.
+
+**Parts root / folder / search:**
+- [ ] medium and expanded: the 720 column, centred; rows, sections, the New Folder capsule and the
+  Edit toolbar contents unchanged inside it. The create form and the picker use the narrow column
+  (`Narrow` from `Main`). A persistent sidebar browser next to the detail is **A17b** (below).
+
+**Part page:**
+- [ ] medium: the face grid is 3-up — `.face-grid, .face-grid-dense { grid-template-columns:
+  repeat(3, minmax(0, 1fr)) }` at ≥ 600 (216 px cards in the 720 column); cards keep
+  `aspect-ratio: 1`. Features group and Export in the 720 column; Export caps at 400, centred (the
+  `.btn-block` rule above).
+- [ ] expanded: **two columns**, and a small DOM change in `Part.res` (review S3): `view`'s root
+  becomes `<div className="stack-lg part-columns">` holding `Ui.Live`, the error `p`, then `<div
+  className="part-gallery">{renderFacesSection}</div>` and `<div className="part-aside
+  stack-lg">{renderFeatures}{renderExport}{renderTimer}</div>`; the `Pending` / `Missing` branches
+  are unchanged. CSS at ≥ 1024 (the shell's `Wide` column, 1120): `.part-columns { display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); gap: var(--cc-space-6); align-items:
+  start }`, `.page-error { grid-column: 1 / -1 }`, `.part-columns .face-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) }` (the gallery is 668 px → 3 × 212
+  px cards, "+ Capture" last; no container query, no card cap), `.part-aside { position: sticky;
+  top: calc(var(--cc-bar-height) + var(--cc-page-x)); align-self: start }`. **`align-self: start`
+  is load-bearing** (review B1, measured with this grid inside `.shell`: after scrolling 1000 px the
+  aside's top was −932 with the default `stretch` — a grid child with auto height stretches to the
+  gallery's row and has no room to stick — and 44, stuck under the bar, with `start`). A second
+  sticky inside the `.shell` scroller is fine: nothing between `.shell` and the page has `overflow`.
+  Edit mode's face list lands in the gallery column. This is the left-and-right of Linked Mode's §5
+  desktop (faces | … | queue + saved), so the v1 three-column layout is a column inserted, not a
+  redesign.
+
+**Capture:**
+- [ ] medium and expanded: the 720 column, the kind grid 3-up (the same rule as Part's; review S9:
+  there is no live preview to enlarge — the shutter is a `<label>` for a hidden file input, and the
+  cards carry the captured / selected state a chip row would lose; 4-up in 720 would give 168 px
+  cards, smaller than medium's); the shutter block and "From library" centred at a 480 px max
+  (`.shutter-block { max-width: 480px; margin-inline: auto }`). The A2HS hint is unchanged (it keys
+  on standalone, not width).
+
+**Annotate (the one that matters most; A17-ii):**
+- [ ] medium (≥ 600): `.annotate-stage { height: max(300px, min(var(--vv-height, 100dvh) * 0.55,
+  720px)) }` (today: a 300 px cap — half a phone's height; the `max` keeps an iPhone in landscape,
+  375–440 tall, from getting *less* than compact, review S5); the panel below in the 720 column; the
+  Dimensions list under it.
+- [ ] expanded, **`@media (min-width: 1024px) and (min-aspect-ratio: 1/1)`** — the aspect condition
+  keeps a 13-inch iPad in portrait (1024 / 1032 × 1366) on the stacked medium layout, where side by
+  side would give a 604 × 1322 canvas with a landscape photo in a third of it (review S6): **side by
+  side**. `.annotate` is a grid `minmax(0, 1fr) var(--cc-panel)`, `gap: 0`, filling the visual
+  viewport under the bar and *fitting inside `.shell`* (review B2, measured: with only the side and
+  bottom margins undone the grid overshoots `.shell` by 48 px — `.shell-content`'s top and bottom
+  padding — and the page scrolls under its own panel scroller): `.annotate { margin: calc(-1 *
+  var(--cc-page-x)) calc(-1 * (var(--cc-page-x) + env(safe-area-inset-right))) calc(-1 *
+  (var(--cc-space-5) + env(safe-area-inset-bottom))) calc(-1 * (var(--cc-page-x) +
+  env(safe-area-inset-left))); min-height: 0; height: calc(var(--vv-height, 100dvh) -
+  var(--cc-bar-height)) }` — all four of `.shell-content`'s paddings are undone by the margins and
+  the compact rule's `min-height: calc(100% + …)` is overridden to `0`, so `.shell` has exactly its
+  own height of content (the spec asserts `scrollHeight === clientHeight`; the board renders at 0 px
+  overflow). `--vv-height`, not `100dvh` (review S12): iPadOS keeps the layout viewport when the
+  on-screen keyboard shows and only `visualViewport` shrinks (`Index.res` mirrors it), so the grid
+  follows the keyboard — the canvas cell shrinks and the panel scrolls with the reading field at its
+  top; a hardware keyboard opens nothing and nothing moves. The canvas fills the left cell:
+  `.annotate-stage { height: auto; min-height: 0; margin: var(--cc-page-x) }` (972 × 808 at 1440 ×
+  900, 712 × 728 at 1180 × 820). The panel is the right column with its own scroll: `.annotate
+  .panel { min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-width: 0 0 0 1px;
+  border-radius: 0; box-shadow: none }`, the tools strip at its top, then Reading / Name / Kind /
+  Tolerance / Save / Clear / Dimensions. **No ReScript change** (review S11): the canvas reports its
+  box through `ResizeObserver` → `ViewSized` → `refit`, an untouched A6 pair re-fits on resize, the
+  snap radii are CSS px scaled through `viewport.scale` (a tighter window at the larger fit scale,
+  as designed), and the export renders from the image. Focus order and the A2 keyboard behaviour
+  unchanged. Mouse: drag already works via pointer events; **wheel / trackpad-pinch zoom at the
+  cursor is A17b**.
+- [ ] The export PNG is unchanged in every class (it renders from the photo, not the viewport).
+
+**Settings, Debug:** the narrow column, centred (`Narrow` from `Main`).
+
+**Motion:** push / pop transitions unchanged (the whole root still slides); A17b's split view
+transitions the detail column alone.
+
+**Scope — two agents, serial** (review §2.9; A17-ii needs `--cc-bar-height`, `Bleed` and the
+column rules from A17-i):
+- [ ] **A17-i:** tokens and the breakpoint comment block; the Shell `~column` prop and `Main`'s
+  mapping; the column, bar / footer padding and `.btn-block` rules; Parts / Part / Capture /
+  Settings / Debug columns and grids, the `Part.res` DOM change and the sticky aside; hover; the
+  `TOUR_ONLY` filter and the wide screenshots of `12`, `08`, `04`; the LOGBOOK section with
+  before / after measurements for those screens.
+- [ ] **A17-ii:** Annotate medium height and expanded side-by-side (`Annotate.css` only); the Escape
+  subscription (`WebApi.res`, `Main.res`, the three pages' `Escape` msg); `e2e/specs/adaptive.spec.js`
+  in full; the wide screenshots of `07`; `DESIGN.md` "§12 Size classes"; its LOGBOOK section.
+
+**Tests and docs:**
+- [ ] Playwright (A17-ii): a second describe file `e2e/specs/adaptive.spec.js` with two `describe`
+  blocks. The 1440 block is **`test.use({viewport: {width: 1440, height: 900}, hasTouch: false,
+  isMobile: false})`** — `hasTouch: true` (the chromium project's default) makes Chromium report
+  `(hover: hover)` false and `(pointer: coarse)` true regardless of `isMobile` (review B3, measured
+  for all four combinations), so under it the hover media block never matches and the hover
+  assertion cannot pass while the CSS is correct. The 820 block is `test.use({viewport: {width:
+  820, height: 1180}})` and keeps the project's touch (it is an iPad). `viewport`, `hasTouch` and
+  `isMobile` are first-class test options, so the config's `contextOptions.reducedMotion: 'reduce'`
+  survives both blocks. Assertions: the Parts column's bounding box is ≤ 720 wide and horizontally
+  centred (±2 px); the Part page at 1440 has `.part-columns` with two grid tracks, the aside's box
+  top stays at `bar + 24` after `.shell` is scrolled (the sticky), and the Export capsule ≤ 400 wide;
+  the face grid at 820 has three columns (computed `grid-template-columns` has three tracks) and a
+  card ≤ 240; Annotate at 1440 has the panel to the right of the canvas (canvas box right edge ≤
+  panel box left edge), the canvas ≥ 600 tall and `.shell`'s `scrollHeight === clientHeight`;
+  Annotate at 820 has the canvas ≥ 500 tall; hover on a part row at 1440 changes its computed
+  background (Playwright `hover()`); Escape closes the picker. Every existing spec stays at 390 × 844
+  and green (count today 65; report the new count per project — the webkit project cannot launch in
+  the sandbox, `e2e/README.md`).
+- [ ] Existing e2e that must change: none at 390 × 844 by construction — compact is untouched, the
+  hover block never matches under `hasTouch`, the Escape listener fires only on Escape and no spec
+  presses it, Part's wrappers keep DOM order for a11y's Tab tests. `e2e/specs/shell.spec.js`'s
+  `viewport-row` count (13) changes only if Debug gains a size-class row — then 14, in the same
+  commit. `docs/screenshots/*.png` at 390 are regenerated by the same tour runs and must not change.
+- [ ] Screenshots: no `--wide` mode — the tour already takes `TOUR_VIEWPORT` / `TOUR_DSF` and an
+  `outDir`; it gains a **`TOUR_ONLY=12,08,07,04`** filter inside `shot()` (the whole tour still
+  runs: later steps depend on earlier seeding) and names those files `${W}x${H}-${id}.png`. Two
+  runs — `TOUR_ONLY=12,08,07,04 TOUR_VIEWPORT=1440x900 TOUR_DSF=1 node scripts/screenshot-tour.mjs
+  docs/screenshots/wide` and the same at `820x1180` — give the eight PNGs, committed and looked at
+  (A17-i shoots `12`, `08`, `04`; A17-ii adds `07`).
+- [ ] `DESIGN.md` gains "§12 Size classes" (the table above, the columns, what changes per screen,
+  what never changes: type scale, tokens, the blur budget, the export); `docs/testids.md` unchanged
+  unless a hook needs an id; LOGBOOK section with before/after measurements per screen.
+
+**A17b — later, on top:** the expanded **split view** — a persistent Parts browser sidebar (320
+px: search, folders, parts, Edit) beside the detail (Part / Capture / Annotate), `Main` holding
+the browser's model alongside the page so the list never reloads on navigation, `#/parts/:id`
+rendering sidebar + part, an empty-detail state ("Select a part"), the detail column transitioning
+alone; arrow-key navigation in lists and the picker; wheel / trackpad zoom at the cursor on the
+canvas; Linked Mode's three-column desktop as the end state.

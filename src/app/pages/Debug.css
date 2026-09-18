@@ -1,0 +1,36 @@
+/* Debug — page-scoped styles. The inset grouped list and mono trailing
+   value come from src/global.css / Ui.res; nothing here is specific to this
+   screen beyond the error banner. Tokens: src/theme.css (--cc-*). */
+
+.page-error {
+  padding: 10px 14px;
+  border: 1px solid var(--cc-error);
+  border-radius: var(--cc-radius);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
+}
+
+/* Viewport probes for the Debug readout: hidden, zero-width, `position:
+   fixed` so they add no scrollable overflow (an absolute 100lvh box inside
+   `.shell` would). No background on purpose — Safari 26 reads fixed
+   elements' colours to tint its own chrome (docs/design/liquid-glass-web.md). */
+.vp-probe {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.vp-probe-vh { height: 100vh; }
+.vp-probe-lvh { height: 100lvh; }
+.vp-probe-svh { height: 100svh; }
+.vp-probe-dvh { height: 100dvh; }
+.vp-probe-fixed { bottom: 0; }
+.vp-probe-safe-top { height: 0; padding-top: env(safe-area-inset-top); }
+.vp-probe-safe-bottom { height: 0; padding-top: env(safe-area-inset-bottom); }
+.vp-ua { word-break: break-all; }

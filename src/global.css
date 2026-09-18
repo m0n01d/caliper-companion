@@ -1,0 +1,1790 @@
+/* global.css — reset, app frame, the glass navigation bar, and the shared
+   component classes. Tokens live in theme.css; both are plain
+   <link rel="stylesheet"> tags in index.html (no CSS-in-JS).
+
+   Contract: DESIGN.md §11 (overrides §1–§10 where they differ), §4 components,
+   §6 states, §9 accessibility; SPEC §8a A14 (G1–G8) and
+   docs/design/a14-glass-review.md for the two materials below;
+   docs/design/liquid-glass-web.md §3 for the blur recipe;
+   docs/design/hig-brief.md §1/§2 for the numbers.
+
+   Materials (A14 G2). Real `backdrop-filter` on exactly two surfaces, the
+   sticky nav bar and the sticky Shell footer (`--glass-fill-strong`, 70 %):
+   content really passes under them. Everything else is the HAIRLINE
+   MATERIAL — `background: var(--glass-fill)` (55 %, translucent, no filter:
+   nothing is behind an in-flow surface but the frame's G1 wash, and a blur
+   of a smooth gradient is the gradient), a 1 px `--glass-stroke` edge and,
+   on capsules, chips, cards, groups, the panel and the A2HS hint, an
+   `inset 0 1px 0 --glass-highlight` top line. Fields, the segmented track
+   and the toggle track keep their `field` / `surface-2` fill and take the
+   stroke only. Inner list dividers stay `border`. Nothing blurs inside
+   anything that blurs; per screen that is the bar (1) plus, while editing
+   Parts, the footer (2).
+
+   Phone portrait only, 360–430 px wide. Layout per SPEC §5: 100dvh,
+   env(safe-area-inset-*), no `position: fixed` anywhere. `.app-frame` is a
+   100dvh flex column; `.shell` is the ONE scroll container, so the nav bar
+   can be `position: sticky` inside it (never fixed — Safari 26 reads
+   fixed/sticky edge elements to tint its own chrome, see the glass brief §2)
+   and the A2HS hint docks under it without `fixed`.
+
+   Sections: 1 reset · 2 frame + shell + glass bar · 3 type utilities ·
+   4 buttons · 5 inset grouped lists · 6 fields · 7 chips · 8 segmented ·
+   9 toggle · 10 warning rows · 11 pills + slots + panel · 12 utilities +
+   reduced motion · 13 A2HS hint · 14 face card.
+
+   Vertical rhythm (DESIGN.md §11.1 "Vertical rhythm", added design wave
+   P1/agent/p1-darksky per docs/design/review-2026-09-17.md §2): sections
+   are 24 px apart (`--cc-space-6`, `.stack-lg`'s gap below); a group
+   header sits 8 px above its group (`--cc-space-2`, `.list-group-section`'s
+   gap); siblings inside one section are 12 px apart (`--cc-space-3`,
+   `.stack`'s gap). 14 px survives nowhere in the vertical rhythm — the one
+   place it's still correct is a text input's own side padding (§6 below),
+   which is horizontal, not part of this scale.
+
+   Design wave 3a (agent/w3-foundation) deleted the wave-1→2 compatibility
+   block that used to sit here (`--color-*` legacy token aliases + the
+   wave-1 stub pages' class renames) once every page was confirmed restyled
+   onto the classes in this file — see LOGBOOK.md "Design wave 3a". */
+
+/* ── 1. Reset ─────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  /* DESIGN.md §11.1 "Interaction feel": no iOS/Android tap flash on ANY
+     element, not just the ones under `html`'s own rule below — this isn't a
+     true inherited CSS property, so some browsers only honour it reliably
+     set close to the tapped element itself. Belt and suspenders with the
+     `html` rule, which stays for browsers that do walk it down the tree. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  background: var(--cc-ground);
+  color: var(--cc-text);
+  font: var(--cc-text-body);
+}
+
+body {
+  min-height: 100dvh;
+  /* Judgment call: keep `none` on the document. Nothing scrolls at the
+     document level (the frame is exactly 100dvh and .shell scrolls), iOS
+     standalone PWAs have no pull-to-refresh anyway, and on Chrome/Android an
+     accidental refresh mid-annotation costs more than the gesture is worth. */
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3 {
+  font: var(--cc-text-headline);
+}
+
+a {
+  color: var(--cc-accent);
+  text-decoration: none;
+}
+
+/* Every plain `<a>` gets the standard ring (DESIGN.md §9/§11.1 "Interaction
+   feel": focus-visible on every interactive element) — `.btn`-classed
+   anchors already get one from the button rule below (higher specificity,
+   so this doesn't fight it); this rule is for the ones that aren't, chiefly
+   `Ui.ListRow`'s `~href` anchor and `Part.res`'s face-slot tiles. */
+a:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 2px;
+}
+
+/* ── 2. App frame, shell, glass navigation bar ───────────────────────── */
+#root {
+  min-height: 100dvh;
+}
+
+/* A14 G1 ambient light: two soft ivory washes on the ground (14 % at the
+   top-left, 8 % at the bottom-right) so the translucent hairline surfaces
+   have something to be translucent over. The frame is exactly 100dvh and
+   never scrolls (`.shell` does), so the wash is viewport-stable without
+   `background-attachment: fixed`. `html, body` keep plain `--cc-ground`. */
+.app-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 100dvh;
+  background:
+    radial-gradient(120vmax 80vmax at 0 0, rgba(242, 242, 240, 0.14), transparent 60%),
+    radial-gradient(100vmax 70vmax at 100% 100%, rgba(242, 242, 240, 0.08), transparent 60%)
+    var(--cc-ground);
+}
+
+/* The scroll container. The sticky bar lives inside it, so blur samples the
+   content scrolling underneath rather than the document. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shell-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: minmax(var(--cc-tap-min), auto) minmax(0, 1fr) minmax(var(--cc-tap-min), auto);
+  grid-template-rows: minmax(var(--cc-tap-min), auto);
+  align-items: center;
+  padding-top: env(safe-area-inset-top);
+  padding-right: calc(var(--cc-space-2) + env(safe-area-inset-right));
+  padding-left: calc(var(--cc-space-2) + env(safe-area-inset-left));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The glass sits on an absolutely-positioned pseudo-child, not on the sticky
+   element itself (liquid-glass-web.md §2: fixed/sticky + backdrop-filter has a
+   scroll-lag compositing bug on iOS). Same recipe as `.glass`, bar-shaped:
+   square corners, hairline on the bottom edge only. */
+.shell-topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.shell-topbar-leading,
+.shell-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-1);
+  min-width: var(--cc-tap-min);
+  min-height: var(--cc-tap-min);
+}
+
+.shell-topbar-actions {
+  justify-content: flex-end;
+}
+
+.shell-topbar-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 var(--cc-space-1);
+}
+
+.shell-title {
+  max-width: 100%;
+  font: var(--cc-text-headline);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-subtitle {
+  max-width: 100%;
+  font: var(--cc-text-footnote);
+  /* A14: `text`, not `text-2` — the Part page's folder path is the one
+     subtitle that can scroll over a white photo, where text-2 on the 70 %
+     bar fill measures 3.15:1 (text: 6.46:1). Hierarchy comes from the
+     Footnote size, not the shade. */
+  color: var(--cc-text);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Static Large Title (root screen only, DESIGN.md §11.1 "Layout"): in the
+   content flow under the bar, at the page margin. Does not collapse on
+   scroll — the bar keeps only its leading/trailing controls. */
+.shell-large-title {
+  flex: 0 0 auto;
+  padding: var(--cc-space-1) calc(var(--cc-page-x) + env(safe-area-inset-right)) var(--cc-space-2)
+    calc(var(--cc-page-x) + env(safe-area-inset-left));
+}
+
+.shell-title.shell-title-large {
+  font: var(--cc-text-large-title);
+  letter-spacing: -0.01em;
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
+}
+
+.shell-large-title .shell-subtitle {
+  text-align: left;
+  white-space: normal;
+}
+
+.shell-content {
+  flex: 1 1 auto;
+  padding: var(--cc-page-x) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-5) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
+}
+
+/* The Shell's footer slot (SPEC §8a A12b, review B1): the second and last
+   glass surface (DESIGN.md §11.1 "Materials" — the nav bar and, while
+   editing, the Parts bottom toolbar). A sibling after `main` directly in
+   `.shell`: `main` is `flex: 1 1 auto`, so a short page still pushes it to
+   the bottom edge, and on a long one `position: sticky; bottom: 0` inside
+   the scroll container catches it — never `fixed` (SPEC §5; inside the page
+   body a sticky element would sit mid-screen under a three-part list). Same
+   pseudo-child recipe as the top bar, hairline on the top edge, safe-area
+   padding on the bottom. Contents are the page's (`Shell ~footer`). */
+.shell-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex: 0 0 auto;
+  padding: var(--cc-space-2) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-2) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.shell-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+/* The blurred material (liquid-glass-web.md §3's recipe; A14 G2 / review
+   B2). The nav bar and the Shell footer slot ONLY (DESIGN.md §11.1
+   "Materials") — the two surfaces content scrolls under: the annotate stage,
+   face cards and thumbnails pass beneath the bar, so the fill is the 70 %
+   `--glass-fill-strong` (over a white photo it composites to (86,87,88),
+   `text` 6.5:1; the 55 % hairline fill would give 3.4:1 there). Never on
+   content, inputs, or anything over the canvas. `-webkit-backdrop-filter`
+   stays first. */
+.glass,
+.shell-topbar::before,
+.shell-footer::before {
+  background: var(--glass-fill-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 1px 3px rgba(0, 0, 0, 0.3);
+  border-radius: var(--glass-radius-sm);
+}
+
+.shell-topbar::before {
+  border-radius: 0;
+  border-width: 0 0 1px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.shell-footer::before {
+  border-radius: 0;
+  border-width: 1px 0 0;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .shell-topbar::before,
+  .shell-footer::before {
+    background: var(--cc-surface); /* fall back to a plain opaque cc-surface card */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Safari can't tell us prefers-reduced-transparency (see the brief §2) — so
+   glass surfaces must already clear DESIGN.md's 4.5:1 contrast rule on their
+   own, not rely on a fallback to become legible. This rule exists for other
+   browsers that DO report the preference, and as a statement of intent. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .shell-topbar::before,
+  .shell-footer::before {
+    background: var(--cc-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* A14 G8: `prefers-reduced-transparency` never fires on iOS (caniuse,
+   2026-09-18: Safari / iOS "not supported" through 27.x), but iOS "Increase
+   Contrast" DOES map to `prefers-contrast: more` — so this is the fallback
+   that actually reaches the target platform. The two blurred surfaces go
+   opaque `surface` with no filter, and every hairline edge steps up from
+   18 % to 28 % ink. The in-flow hairline surfaces keep their translucent
+   fill (their backdrop is the wash, so nothing gets less legible). */
+@media (prefers-contrast: more) {
+  :root {
+    --glass-stroke: rgba(242, 242, 240, 0.28);
+  }
+
+  .glass,
+  .shell-topbar::before,
+  .shell-footer::before {
+    background: var(--cc-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ── 3. Type utilities ───────────────────────────────────────────────── */
+.t-large-title { font: var(--cc-text-large-title); }
+.t-title-3 { font: var(--cc-text-title-3); }
+.t-headline { font: var(--cc-text-headline); }
+.t-body { font: var(--cc-text-body); }
+.t-callout { font: var(--cc-text-callout); }
+.t-subhead { font: var(--cc-text-subhead); }
+.t-footnote { font: var(--cc-text-footnote); }
+.t-caption-1 { font: var(--cc-text-caption-1); }
+.t-caption-2 { font: var(--cc-text-caption-2); }
+.t-reading { font: var(--cc-text-reading); font-variant-numeric: tabular-nums; }
+
+.mono {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--cc-text-2);
+}
+
+.text-live {
+  color: var(--cc-live);
+}
+
+.text-error {
+  color: var(--cc-error);
+}
+
+/* ── 4. Buttons ──────────────────────────────────────────────────────── */
+/* Bare <button> elements (the pages still render them until wave 2) get the
+   secondary capsule; the `.btn-*` classes refine it. `.btn` also dresses a
+   <label> or <a> as a button (the capture file-input labels). */
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-space-2);
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-2) var(--cc-space-5);
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--cc-radius-capsule);
+  background: var(--glass-fill);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  color: var(--cc-text);
+  font: 600 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    background-color var(--cc-motion-press) linear,
+    opacity var(--cc-motion-press) linear,
+    transform var(--cc-motion-press) linear;
+}
+
+/* Pressed = opacity 0.6 (UIKit plain buttons); nothing bounces. */
+button:active,
+.btn:active {
+  opacity: 0.6;
+}
+
+/* SPEC §8a A16 press feedback: the capsule also scales to 0.97 over
+   `--cc-motion-press`, linear — `.btn` only, never a bare <button> (a list
+   row, a segmented option): nothing else moves on press. */
+.btn:active {
+  transform: scale(0.97);
+}
+
+button:focus-visible,
+.btn:focus-visible,
+.btn:focus-within:has(input:focus-visible) {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 2px;
+}
+
+/* Disabled: 40% opacity. `aria-disabled` keeps the element focusable so the
+   reason can be read (§6); a native `disabled` gets the same look. */
+button:disabled,
+.btn:disabled,
+button[aria-disabled="true"],
+.btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button:disabled:active,
+.btn:disabled:active,
+button[aria-disabled="true"]:active,
+.btn[aria-disabled="true"]:active {
+  opacity: 0.4;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  min-height: var(--cc-btn-height);
+  padding-left: var(--cc-space-6);
+  padding-right: var(--cc-space-6);
+}
+
+/* A14 G3: the primary is the one ivory fill on a screen (`accent` = `text`
+   now; `accent-ink` = ground, 17:1). Not glass — a 55 % primary reads as a
+   large secondary. The base capsule's highlight is dropped: 28 % ivory on
+   ivory paints nothing, and the danger/plain variants below need it gone. */
+.btn-primary {
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  box-shadow: none;
+  color: var(--cc-accent-ink);
+}
+
+.btn-primary:active {
+  background: var(--cc-accent-pressed);
+  border-color: var(--cc-accent-pressed);
+  opacity: 1;
+}
+
+.btn-primary:disabled:active,
+.btn-primary[aria-disabled="true"]:active {
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  opacity: 0.4;
+}
+
+/* Hairline material, stated again so a page can't opt a secondary out of it
+   by restyling the base `.btn`. */
+.btn-secondary {
+  background: var(--glass-fill);
+  border-color: var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  color: var(--cc-text);
+}
+
+/* `error` is the app's one chroma (A14): the danger capsule keeps it. */
+.btn-danger {
+  background: var(--cc-error);
+  border-color: var(--cc-error);
+  box-shadow: none;
+  color: var(--cc-error-ink);
+}
+
+/* Borderless, `cc-text` on transparent (Ui.Button ~variant=Plain). Pressed
+   state is the base `button:active`/`.btn:active` rule (opacity 0.6) —
+   nothing extra needed here. */
+.btn-plain {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--cc-text);
+}
+
+/* The old combined variant+size (kept for the deprecated Ui.Button
+   ~variant=Small alias — see Ui.res). New code should reach for
+   ~size=Small on a colour variant instead, which gets this same compact
+   sizing from `.btn-compact` below without baking `cc-field` into it. */
+.btn-small {
+  min-height: 40px;
+  padding: var(--cc-space-1) var(--cc-space-4);
+  background: var(--cc-field);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+/* Size, decoupled from colour (Ui.Button ~size=Small on any variant except
+   Icon/the deprecated Small, which already have their own compact metrics). */
+.btn-compact {
+  min-height: 40px;
+  padding: var(--cc-space-1) var(--cc-space-4);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+.btn-icon {
+  width: var(--cc-tap-min);
+  height: var(--cc-tap-min);
+  min-height: var(--cc-tap-min);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--glass-fill);
+}
+
+.btn-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.btn-block {
+  display: flex;
+  width: 100%;
+}
+
+/* Bar buttons: the nav bar is glass, so its icon buttons are borderless and
+   transparent — glass on glass is the one thing the brief forbids. */
+.shell-topbar .btn-icon {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--cc-accent);
+}
+
+.btn-row {
+  display: flex;
+  gap: var(--cc-space-2);
+}
+
+.btn-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ── 5. Inset grouped lists (DESIGN.md §11.1 "Shape", hig-brief §2) ─── */
+.list-group-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-2);
+}
+
+.list-group-header {
+  padding: 0 var(--cc-page-x);
+  font: 600 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+  color: var(--cc-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* SPEC §8a A12b (review S1): a header with trailing controls — PartsList's
+   folder Rename/Delete while editing — the <h2> and the 44 px icon buttons
+   side by side as siblings (never inside the heading, which would leak the
+   button names into its accessible name). The buttons set the row height;
+   the heading keeps its page-x padding and ellipsises rather than wraps. */
+.list-group-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-2);
+  min-height: var(--cc-tap-min);
+}
+
+.list-group-header-row .list-group-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-group-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--cc-space-1);
+  padding-right: var(--cc-space-2);
+}
+
+.list-group-footer {
+  padding: 0 var(--cc-page-x);
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+/* Hairline material (A14 G2): every `.list-group` — Parts groups, search
+   sections, the folder picker's listbox, the create form's grouped fields,
+   Capture's custom/recapture cards, Settings, Debug — is this one material;
+   no route-scoped selector. The rows' inset dividers below stay `border`. */
+.list-group {
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--cc-radius-card);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  overflow: hidden;
+}
+
+.list-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-3);
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-3) var(--cc-space-4);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cc-text);
+  font: var(--cc-text-body);
+  text-align: left;
+  text-decoration: none;
+  white-space: normal;
+}
+
+/* Inset separator: starts 16 px in like a UITableView separator, while the
+   row stays tappable edge to edge (a border-top would need a margin). */
+.list-row:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--cc-space-4);
+  right: 0;
+  height: 1px;
+  background: var(--cc-border);
+}
+
+button.list-row {
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button.list-row:active {
+  background: var(--cc-surface-2);
+  opacity: 1;
+}
+
+button.list-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.list-row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+/* The real <a> for Ui.ListRow's `~href` (a navigational row with sibling
+   actions — see that module). It is its own flex ROW, not `.list-row-body`
+   itself (a flex COLUMN of Title over Meta) — it holds that column plus the
+   chevron side by side, so the chevron sits beside the text instead of
+   stacking under the meta line as a third line. Takes over `.list-row-body`'s
+   share of the row's width (`flex: 1 1 auto`, `min-width: 0`) since it's the
+   direct sibling of `leading`/`trailing` now. */
+.list-row-link {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.list-row-link:active {
+  opacity: 0.6;
+}
+
+/* SPEC §8a A16 press feedback: scale the *row* (0.985) while its link is
+   pressed — the link is the text-only <a> beside the thumbnail, so scaling
+   it would leave the thumb still. `:has` (Safari 15.4+); the rule covers
+   part rows and folder rows alike, both `.list-row` with a `.list-row-link`.
+   A scale-down never overflows the clipping `.list-group`. */
+.list-row:has(> .list-row-link) {
+  transition: transform var(--cc-motion-press) linear;
+}
+
+.list-row:has(> .list-row-link:active) {
+  transform: scale(0.985);
+}
+
+/* Inward ring, like `button.list-row:focus-visible` below: `.list-group`
+   clips overflow, so an outward ring on a row at the top/bottom edge would
+   get cut off by the card's own rounded corners. */
+.list-row-link:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -2px;
+}
+
+.list-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-meta {
+  overflow: hidden;
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-meta-live {
+  color: var(--cc-accent);
+}
+
+.list-row-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--cc-text-3);
+}
+
+.list-row-trailing {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--cc-space-2);
+  color: var(--cc-text-2);
+}
+
+.list-thumb {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--cc-radius-sm);
+  background: var(--cc-surface-2);
+  object-fit: cover;
+  overflow: hidden;
+}
+
+/* ── 6. Fields (DESIGN.md §4 text input, §6 states, §11: text ≥ 16 px) ─ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label {
+  font: var(--cc-text-caption-1);
+  color: var(--cc-text-2);
+}
+
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="email"],
+input[type="url"],
+input[type="tel"],
+select,
+textarea,
+.field-input {
+  display: block;
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  padding: var(--cc-space-2) 14px;
+  background: var(--cc-field);
+  border: 1px solid var(--glass-stroke); /* A14: fields keep `field`, take the stroke only */
+  border-radius: var(--cc-radius);
+  color: var(--cc-text);
+  font: var(--cc-text-body);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+select {
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A9ABAF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px 20px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--cc-text-3);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.field-input:focus {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 0;
+}
+
+/* Numeric entry (inputmode="decimal", SPEC §5) and feature names are mono. */
+input[inputmode="decimal"],
+input[inputmode="numeric"],
+.field-mono input,
+.field-mono textarea,
+.field-mono .field-input,
+input.mono {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+input[inputmode="decimal"] {
+  font-size: 20px;
+}
+
+input[aria-invalid="true"],
+.field-invalid input,
+.field-invalid select,
+.field-invalid textarea,
+.field-invalid .field-input {
+  border-color: var(--cc-error);
+}
+
+.field-error {
+  font: var(--cc-text-footnote);
+  color: var(--cc-error);
+}
+
+.help-text {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.4;
+}
+
+/* ── 7. Chips ────────────────────────────────────────────────────────── */
+.chip-row {
+  display: flex;
+  gap: var(--cc-space-2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-row-wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--cc-radius-capsule);
+  background: var(--glass-fill);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  color: var(--cc-text);
+  font: 500 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-mono);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform var(--cc-motion-press) linear; /* A16 press scale */
+}
+
+.chip-lg {
+  min-height: var(--cc-tap-min);
+  padding: 0 var(--cc-space-4);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+.chip:active {
+  opacity: 0.6;
+  transform: scale(0.97); /* SPEC §8a A16 press feedback */
+}
+
+/* On = the ivory fill at chip size (A14 table): solid against the hairline
+   chips around it, and `aria-pressed` carries the state for everyone else. */
+.chip-selected,
+.chip[aria-pressed="true"] {
+  /* S2: "on" is the live fill (Fusion blue-500), tappable stays ivory. */
+  background: var(--cc-live-fill);
+  border-color: var(--cc-live-fill);
+  box-shadow: none;
+  color: var(--cc-accent-ink);
+}
+
+/* ── 8. Segmented control (capsule, concentric selection) ────────────── */
+/* Full width by default (a <div> with `display: flex` is a flex ITEM inside
+   any flex row parent, which sizes it to shrink-to-fit content instead of
+   filling — the reported bug: the bar rendered as a tiny content-hugging
+   blob inside a horizontal .list-row). `.segmented-inline` (Ui.Segmented's
+   `~inline` prop) opts back into content width. */
+.segmented {
+  position: relative; /* A16b: the indicator's containing block */
+  display: flex;
+  width: 100%;
+  min-height: var(--cc-tap-min);
+  gap: 4px;
+  padding: 2px;
+  background: var(--cc-field);
+  border: 1px solid var(--glass-stroke); /* A14: the track keeps `field`, stroke only */
+  border-radius: var(--cc-radius-capsule);
+}
+
+.segmented-inline {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* 12 px side padding + the container's 4 px gap so the selected accent
+   capsule never touches the next label (the annotate kind row used to show
+   "Length" touching "Diameter"). `white-space: nowrap` is needed for
+   `text-overflow: ellipsis` to actually trigger instead of the option
+   silently wrapping to a clipped second line. */
+.segmented-option {
+  position: relative; /* A16b: the labels paint over the indicator */
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: calc(var(--cc-tap-min) - 6px);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--cc-radius-capsule);
+  background: transparent;
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A14 G4: the selected segment is a LIGHTER GLASS — 16 % ink over the
+   `field` track, `text` label (10.3:1) — not the ivory fill, so the primary
+   stays the one ivory capsule on Annotate (review S2). A literal, not a
+   token: it is the only 16 % surface in the app. */
+.segmented-option[aria-pressed="true"] {
+  /* S2: the selected segment is "on" — live fill, ground label (5.80:1).
+     A16b: the fill is the indicator below; the option itself stays flat so
+     the capsule can glide. The label colour is unchanged. */
+  background: transparent;
+  color: var(--cc-accent-ink);
+}
+
+/* SPEC §8a A16b (review B3): one selected capsule, `.segmented-indicator`,
+   rendered first by Ui.Segmented and moved on a transform — not the View
+   Transitions API (two elements with one `view-transition-name` reject
+   `ready` and turn every transition on the page into a cut, and a named
+   element is lifted out of the root snapshot during a push). The group's
+   `data-count` sets the width and `data-index` the offset: options are
+   `flex: 1 1 0` inside 2 px padding and 4 px gaps, so each is
+   (100% − 4px − (n − 1) × 4px) / n wide and the i-th starts i widths plus
+   i gaps in. `100%` in the translate is the indicator's own width. Reduced
+   motion: §12's zero-duration block. */
+.segmented-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  border-radius: inherit;
+  background: var(--cc-live-fill);
+  transition: transform var(--cc-motion) var(--cc-ease-standard);
+}
+
+.segmented[data-count="2"] .segmented-indicator {
+  width: calc((100% - 4px - 1 * 4px) / 2);
+}
+
+.segmented[data-count="3"] .segmented-indicator {
+  width: calc((100% - 4px - 2 * 4px) / 3);
+}
+
+.segmented[data-count="4"] .segmented-indicator {
+  width: calc((100% - 4px - 3 * 4px) / 4);
+}
+
+.segmented[data-index="0"] .segmented-indicator {
+  transform: translateX(0);
+}
+
+.segmented[data-index="1"] .segmented-indicator {
+  transform: translateX(calc(1 * 100% + 1 * 4px));
+}
+
+.segmented[data-index="2"] .segmented-indicator {
+  transform: translateX(calc(2 * 100% + 2 * 4px));
+}
+
+.segmented[data-index="3"] .segmented-indicator {
+  transform: translateX(calc(3 * 100% + 3 * 4px));
+}
+
+/* No option selected (a key outside `options`; no caller does this today):
+   no capsule rather than one parked on the first option. */
+.segmented[data-index="-1"] .segmented-indicator {
+  display: none;
+}
+
+.segmented-option:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ── 9. Toggle (system-style switch on a real checkbox) ──────────────── */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  position: relative;
+  min-height: var(--cc-tap-min);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Purely decorative (aria-hidden on the element itself), later in the DOM
+   than the real `<input>` sibling it's paired with — at equal stacking
+   (both `position`, `z-index: auto`) it would otherwise paint on top and
+   intercept every pointer event meant for the input. `pointer-events: none`
+   keeps it decoration-only; a real tap anywhere in the wrapping `<label>`
+   still activates the input via native click-forwarding either way. */
+.toggle-track {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 32px;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-surface-2);
+  /* A14: the track keeps `surface-2` and takes the stroke only — as an
+     inset shadow, not a border, so the 28 px knob's 2 px inset geometry
+     inside the 52×32 track is untouched. */
+  box-shadow: inset 0 0 0 1px var(--glass-stroke);
+  pointer-events: none;
+  transition: background-color var(--cc-motion) var(--cc-ease);
+}
+
+/* The real control. It covers the whole 52×32 track and stays invisible via
+   `opacity: 0` rather than the shared `.visually-hidden` utility: that
+   class's `clip: rect(0,0,0,0)` makes an element unpaintable, which browsers
+   also exclude from hit-testing entirely — so a direct click at the input's
+   own coordinates (what Playwright's `.click()` does, and the only thing
+   `docs/testids.md`'s `wedge-toggle` id promises) fell through to whatever
+   was behind it instead of landing on the input. `opacity: 0` keeps the
+   element fully hit-testable while staying invisible. */
+.toggle-input {
+  position: absolute;
+  inset: 0;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cc-text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition:
+    transform var(--cc-motion) var(--cc-ease),
+    background-color var(--cc-motion) var(--cc-ease);
+}
+
+/* On (A14 table, review B3a): track `text`, knob `ground` — with `accent`
+   = `text` the old `accent` track + `text` knob is one flat ivory capsule
+   and the knob vanishes. Off stays `surface-2` track + `text` knob. */
+.toggle input:checked + .toggle-track {
+  background: var(--cc-text);
+}
+
+.toggle input:checked + .toggle-track .toggle-knob {
+  transform: translateX(20px);
+  background: var(--cc-ground);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 2px;
+}
+
+.toggle input:disabled + .toggle-track {
+  opacity: 0.4;
+}
+
+/* ── 10. Warning rows (DESIGN.md §4) ─────────────────────────────────── */
+.warning-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-3);
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--cc-live-border);
+  border-radius: var(--cc-radius);
+  background: var(--cc-live-wash);
+  color: var(--cc-live-ink);
+  font: var(--cc-text-footnote);
+  text-align: left;
+  white-space: normal;
+}
+
+.warning-row-icon {
+  display: flex;
+  flex: 0 0 auto;
+  margin-top: -1px;
+  color: var(--cc-live);
+}
+
+.warning-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.warning-row-error {
+  border-color: var(--cc-error);
+  background: var(--cc-error-wash);
+  color: var(--cc-text);
+}
+
+.warning-row-error .warning-row-icon {
+  color: var(--cc-error);
+}
+
+button.warning-row {
+  min-height: var(--cc-tap-min);
+  cursor: pointer;
+}
+
+/* ── 11. Scrim pill, thumbnail slot, panel ───────────────────────────── */
+/* Flat, no blur: pills sit over the live canvas (brief §3, §5 #3). */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--cc-radius-capsule);
+  background: var(--cc-scrim);
+  color: var(--cc-text);
+  font: var(--cc-text-footnote);
+  white-space: nowrap;
+}
+
+.pill-mono {
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-live);
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--cc-radius-sm);
+  overflow: visible;
+  color: var(--cc-text-3);
+}
+
+.slot-captured {
+  background: var(--cc-surface-2);
+  border: 2px solid var(--cc-live);
+  overflow: hidden;
+}
+
+.slot-empty {
+  border: 2px dashed var(--cc-border);
+}
+
+.slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--cc-radius-sm) - 2px);
+}
+
+/* DESIGN.md §9 "Color is never the only signal": the live ring already
+   differs from the empty slot's dashed border by *shape*, not just hue, but
+   a small check badge makes "captured" unambiguous even before its thumbnail
+   image has loaded (there's a gap between the face record resolving and its
+   object-URL fetch finishing) or for anyone who can't distinguish the ring
+   colour. `overflow: visible` on `.slot` (was `hidden`, moved onto
+   `.slot-captured` alone) lets the badge sit half outside the tile without
+   clipping; the image itself still clips to the tile via `.slot-captured`. */
+.slot-check {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--cc-live);
+  color: var(--cc-ground);
+  border: 2px solid var(--cc-ground);
+}
+
+/* The annotate control area: in-flow, non-modal (§11.1 "Sheets"), the
+   hairline material (A14 G2) — translucent over the wash, never BLURRED
+   (it sits under a live-repainting canvas, and nothing is behind it but
+   the frame). Stroke on the three visible edges; the sheet runs off the
+   bottom of the screen. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+  padding: var(--cc-space-4);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  border-bottom-width: 0;
+  border-radius: var(--cc-radius-card) var(--cc-radius-card) 0 0;
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-3);
+}
+
+/* Wave 2/3a gap (LOGBOOK.md): this rule only ever set `gap`, so a bare
+   `.stack-lg` (not also carrying `.stack`) rendered as a plain block with no
+   flex column at all — every page's outermost `view` wrapper is
+   `className="stack-lg"` alone (not `"stack stack-lg"`), so this silently
+   collapsed the whole page's vertical rhythm to margin-collapsed block flow
+   instead of the intended section gap (most visible under Part's
+   "Edit faces" list, per the report). Restated standalone rather than
+   requiring callers to also add `.stack`.
+
+   Gap bumped `cc-space-5` (20) -> `cc-space-6` (24), design wave P1
+   (docs/design/review-2026-09-17.md §2): 20 read barely larger than the
+   12 px in-section gap, so the page read as one column instead of
+   separated sections; `cc-space-6` had never been used as a vertical-
+   rhythm step before (see the file header's "Vertical rhythm" note). */
+.stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-6);
+}
+
+/* ── 12. Utilities, reduced motion ───────────────────────────────────── */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important; /* A16b: a stagger is motion too — the circles appear at once */
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── 13. A2HS hint (see A2hsHint.res) ──────────────────────────────────── */
+/* A card docked under the shell (never `fixed`, never BLURRED — hairline
+   material per A14 G2), owned by A2hsHint.res. This used to live inside the wave-1→2 compatibility
+   block (former §13j) because that's where it was written, not because it
+   was ever a rename shim — deletion wave (design wave 3a) removed the rest
+   of that section (§13a-i: `--color-*` legacy token aliases and the
+   page-class renames from wave 1's stub pages) once
+   `grep -rn -- "--color-" src/` and a class-by-class usage sweep confirmed
+   every page had been restyled onto the shared `cc-`/`.list-row`/etc.
+   classes above and nothing referenced them any more — this block is the
+   one exception, still real, current styling for a component this track
+   doesn't own, so it stays. */
+.a2hs-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-3);
+  flex: 0 0 auto;
+  margin: var(--cc-space-2) calc(var(--cc-page-x) + env(safe-area-inset-right))
+    calc(var(--cc-space-2) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
+  padding: var(--cc-space-3) var(--cc-space-4);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--cc-radius-card);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+.a2hs-hint-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--cc-accent);
+}
+
+.a2hs-hint-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+}
+
+.a2hs-hint-dismiss {
+  flex: 0 0 auto;
+}
+
+/* ── 14. Face card (Ui.FaceCard; DESIGN.md §4 "Face card",
+   docs/design/review-2026-09-17.md §3 layout A / docs/design/mockups/part-a.html) ─
+   A square photo card: the Part page's face gallery and the Capture kind
+   picker share this one component. `.face-grid`/`.face-grid-dense` are the
+   grids that hold them; the card itself never sets its own width, so it
+   sizes off the grid's column track (171 px at 390 in a 2-up grid, 109 px
+   3-up). `.face-card-selected` can land on an image-less card (Capture's
+   kind picker on an uncaptured, selected kind) — see the
+   `.face-card-empty.face-card-selected` override below the empty look. */
+.face-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cc-space-4);
+  width: 100%;
+}
+
+/* ≥ 5 faces (review §3 "A. Gallery-first"): 3-up, tighter gap so three
+   columns still clear a comfortable tap target at 390 px. */
+.face-grid-dense {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--cc-space-3);
+}
+
+/* A14 table: a `surface-2` mat with the hairline edge (a real border — an
+   inset shadow would sit under the photo). No top highlight: the photo
+   covers it, and the empty card's dashed border has no edge to highlight.
+   The captured / selected rings below sit just inside this hairline. */
+.face-card {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: var(--cc-radius-card);
+  background: var(--cc-surface-2);
+  border: 1px solid var(--glass-stroke);
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform var(--cc-motion-press) linear; /* A16 press scale */
+}
+
+.face-card:active {
+  opacity: 0.6;
+  transform: scale(0.985); /* SPEC §8a A16 press feedback */
+}
+
+.face-card:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -2px;
+}
+
+.face-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Captured/Selected rings sit just inside the edge (`inset: 0` on a
+   `border`, not outset) so they don't get clipped by the grid gutter and
+   don't shift the card's own box size. Colour is never the only signal
+   here either (DESIGN.md §9): captured also carries the check badge, and
+   selected is the one state Capture's picker is ever tappable into "kind
+   already chosen" from — the ring is reinforcement, not the sole cue. */
+.face-card-captured::after,
+.face-card-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.face-card-captured::after {
+  border: 2px solid var(--cc-live);
+}
+
+.face-card-selected::after {
+  border: 2px solid var(--cc-live); /* S2: selected and captured both ring in the live blue */
+}
+
+/* Bottom scrim: cc-ground/cc-scrim's rgb (A14 mono: 14,15,17) at a
+   stronger 94% (cc-scrim itself is 80%, tuned for a small pill, not a
+   full-width label) fading to transparent over 44 px, so the label and
+   caption sit on solid-enough ground over any photo. Literal, not the
+   `--cc-scrim` token — CSS can't override just a custom property's alpha
+   channel, and this file already states colours by rgba literal next to a
+   token name in comments elsewhere (see Draw.res for the same pattern in
+   canvas code). */
+.face-card-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 36px var(--cc-space-3) 10px;
+  background: linear-gradient(to top, rgba(14, 15, 17, 0.94) 0 44px, rgba(14, 15, 17, 0));
+}
+
+.face-card-label {
+  font: var(--cc-text-headline);
+  color: var(--cc-text);
+  text-transform: capitalize;
+}
+
+.face-card-caption {
+  font: var(--cc-text-footnote);
+  color: var(--cc-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Caller slot (Ui.FaceCard's `badge` prop): the captured check on Part,
+   an EXIF marker elsewhere. This wrapper only positions it; content and
+   colour are the caller's. */
+.face-card-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* The conventional badge content for the captured state — a caller passes
+   `<span className="face-card-check"><Icon name=Check /></span>` (or
+   equivalent) as `~badge`. */
+.face-card-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cc-live);
+  color: var(--cc-ground);
+}
+
+.face-card-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+
+.face-card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-space-2);
+  background: transparent;
+  border: 2px dashed var(--cc-border);
+  color: var(--cc-text-2);
+  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+/* Selected-but-uncaptured (Capture's kind picker, `Ui.FaceCard`'s
+   `(None, Selected)` case): the `.face-card-selected::after` accent ring is
+   inset from the *padding* box, so it would sit visibly inside this card's
+   own 2px dashed border rather than replacing it, reading as two concentric
+   rings. Drop the border here so the ring is flush with the card edge, same
+   as a captured/selected card with a photo — the solid accent ring replaces
+   the dashed one instead of doubling up with it. */
+.face-card-empty.face-card-selected {
+  border: none;
+}
+
+/* ── 15. Motion (SPEC §8a A16; DESIGN.md §6) ──────────────────────────── */
+/* Opacity and transform only, nothing bounces. Two stated exceptions to
+   §6's 120–160 ms: a page push / pop moves a whole screen and runs at the
+   HIG's ~350 ms (`--cc-motion-nav`); a take-over rises over 280 ms
+   (`--cc-motion-sheet`). Everything here is zeroed under
+   `prefers-reduced-motion` — §12's block for the CSS animations, the
+   `!important` rule at the end of this section for the view-transition
+   pseudos, which §12's `*, *::before, *::after` never reaches. */
+
+/* Page navigation. `Motion.res` sets `html[data-nav]` (`push` | `pop` |
+   `fade`, nothing else) before `document.startViewTransition` and clears it
+   after `finished`; the CSS is keyed on the `(root)` pseudos only — the
+   sticky bar is part of the root snapshot (a persistent-bar effect is a
+   later A16c). NOTHING here ever transforms `.shell` or `.app-frame`: a
+   transform on an ancestor of the sticky bar or footer would make them
+   scroll away. The pseudos are positioned, so the slides are pure
+   compositor work, and setting `animation` on them replaces the UA's
+   `plus-lighter` crossfade (measured: only the author animations remain),
+   so opaque slides composite normally. UIKit's parallax: the screen
+   underneath moves 30 % and dims to 0.6 while the top screen travels the
+   full width; one curve for both layers so they stay locked. */
+@keyframes cc-nav-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes cc-nav-out {
+  to {
+    transform: translateX(-30%);
+    opacity: 0.6;
+  }
+}
+
+@keyframes cc-nav-back-in {
+  from {
+    transform: translateX(-30%);
+    opacity: 0.6;
+  }
+}
+
+@keyframes cc-nav-back-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes cc-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cc-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+html[data-nav="push"]::view-transition-old(root) {
+  animation: cc-nav-out var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+html[data-nav="push"]::view-transition-new(root) {
+  animation: cc-nav-in var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+/* Pop: the leaving screen slides out to the right *over* the returning one
+   (`z-index: 1` on the old layer — the new layer paints later by default). */
+html[data-nav="pop"]::view-transition-old(root) {
+  z-index: 1;
+  animation: cc-nav-back-out var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+html[data-nav="pop"]::view-transition-new(root) {
+  animation: cc-nav-back-in var(--cc-motion-nav) var(--cc-ease-out) both;
+}
+
+/* Fade: same-depth siblings (folders reached from search, both ways). */
+html[data-nav="fade"]::view-transition-old(root) {
+  animation: cc-fade-out 200ms var(--cc-ease-in) both;
+}
+
+html[data-nav="fade"]::view-transition-new(root) {
+  animation: cc-fade-in 200ms var(--cc-ease-out) both;
+}
+
+/* Take-overs enter by rising 24 px and fading in on mount (the create form
+   `.parts-form` and the folder picker `.folder-picker`, PartsList.css); the
+   Edit toolbar rises from below the edge. No exit animations — an unmount
+   is a cut, and the route transition covers the big exits. Only take-overs
+   rise: nothing inside a `.list-group` gets a transform (the group clips
+   overflow; a rising row would paint over its neighbour). */
+@keyframes cc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@keyframes cc-rise-footer {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+/* The footer exists only while editing (`Shell.res` renders it from the
+   footer slot), so mount is the hook. Its blurred `::before` rides the
+   transforming element — the allowed pattern (liquid-glass-web.md: animate
+   the transform of a pre-blurred layer). The element is the sticky footer
+   itself, not an ancestor of it, so its stickiness is untouched. */
+.shell-footer {
+  animation: cc-rise-footer var(--cc-motion-sheet) var(--cc-ease-out);
+}
+
+/* Reduced motion (review B1, measured): the View Transitions API still runs
+   under `prefers-reduced-motion` (Chromium played the UA crossfade to
+   311 ms with no CSS), and a rule on `::view-transition-group(*)` alone does
+   not stop the nav slides — `html[data-nav="push"]::view-transition-old(root)`
+   outranks the bare pseudo in the cascade (the slide ran to 442 ms). Chrome's
+   canonical rule, after the nav rules and with `!important`: the transition
+   then lasts ≈ 2 frames and is a cut. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ── 16. Size classes and pointer hover (SPEC §8a A17-i) ─────────────── */
+/* Medium (≥ 600) and expanded (≥ 1024) — the table is theme.css's header;
+   the two numbers appear here only in the `@media` preludes. Nothing in
+   this section touches compact: every rule is inside a `min-width` block
+   or the pointer block, and the chromium e2e project (390 × 844,
+   `hasTouch`) matches neither (review B3). */
+
+@media (min-width: 600px) {
+  /* The column is the Shell's, not the page's (review S2): `.shell-content`
+     is one element in Shell.res a page cannot reach, and the pages want
+     three widths. `Main.view` maps each page to `Shell.column`, rendered as
+     `data-column` on `.shell`; `--col` is what the content, the Large
+     Title and the two bars read. `wide` stays 720 here — 1120 only at
+     expanded, below. `bleed` is Annotate's (A17-ii). `.shell-content`
+     keeps its padding; a page that wants the edges keeps undoing it with
+     negative margins as Annotate does today. */
+  .shell {
+    --col: var(--cc-column);
+  }
+
+  .shell[data-column="narrow"] {
+    --col: var(--cc-column-narrow);
+  }
+
+  .shell[data-column="bleed"] {
+    --col: 100%;
+  }
+
+  .shell-content,
+  .shell-large-title {
+    width: 100%;
+    max-width: var(--col);
+    margin-inline: auto;
+  }
+
+  /* The nav bar and the footer toolbar stay full-bleed (the glass strip
+     spans the window); their *contents* align to the column with one
+     padding expression and no DOM change (review S8, measured at 1440:
+     the leading button at x 376 against content at 384, the 24 px glyph
+     at 386). `100%` resolves against `.shell`'s content width, so the
+     scrollbar is excluded consistently. Each bar keeps its own compact
+     floor — `space-2` for the bar's icon buttons, `page-x` for the
+     footer's text actions — for the widths where the column is wider
+     than the window (600–712 px). The ambient wash keeps filling the
+     frame outside the column, so a wide window is not a black void with
+     a strip in it. */
+  .shell-topbar {
+    padding-left: max(
+      calc(var(--cc-space-2) + env(safe-area-inset-left)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+    padding-right: max(
+      calc(var(--cc-space-2) + env(safe-area-inset-right)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+  }
+
+  .shell-footer {
+    padding-left: max(
+      calc(var(--cc-page-x) + env(safe-area-inset-left)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+    padding-right: max(
+      calc(var(--cc-page-x) + env(safe-area-inset-right)),
+      calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))
+    );
+  }
+
+  /* HIG: a button does not span a tablet. The primary capsule (Export)
+     caps at 400, centred, and the secondary block capsules (New Folder,
+     From library) with it, so the two never disagree on one screen. */
+  .btn-block {
+    max-width: 400px;
+    margin-inline: auto;
+  }
+
+  /* 3-up face and kind grids in the 720 column (216 px cards); `.face-grid-
+     dense` already is. Cards keep `aspect-ratio: 1`. The Part page's
+     expanded gallery switches to `auto-fill` in Part.css. */
+  .face-grid,
+  .face-grid-dense {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .shell[data-column="wide"] {
+    --col: var(--cc-column-wide);
+  }
+}
+
+/* Pointer devices only — never on touch (a touch context reports
+   `hover: none`, review B3). Rows, cards, chips and the hairline capsules
+   get `--glass-fill-hover`, one step *up* the surface scale, so rest →
+   hover → press reads dark → lighter → opaque surface-2 (review S1:
+   `--glass-fill-strong` composites *darker* than rest). Selected states
+   (`aria-pressed`, `aria-selected`, the empty dashed card) are never
+   repainted; the primary and live fills get the cursor only. Timing rides
+   the existing press transition (`.btn` already transitions
+   `background-color` at `--cc-motion-press`; a second `transition` here
+   would lose it). Press scales and focus rings unchanged. */
+@media (hover: hover) and (pointer: fine) {
+  .list-row:has(> .list-row-link):hover,
+  button.list-row:hover:not([aria-selected="true"]),
+  .face-card:hover:not(.face-card-empty),
+  .chip:hover:not([aria-pressed="true"]),
+  .btn-secondary:hover,
+  .btn-icon:hover {
+    background: var(--glass-fill-hover);
+  }
+
+  /* `button.list-row:active` (§4, 0-2-1) would lose to the hover selector
+     above (0-3-1): the press stays the opaque surface-2. */
+  button.list-row:hover:active {
+    background: var(--cc-surface-2);
+  }
+
+  .face-card,
+  .list-row-link {
+    cursor: pointer;
+  }
+}

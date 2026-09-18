@@ -1,0 +1,302 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Annotate · iPad landscape 1180</title>
+<!-- A17 target-layout board (docs/design/a17-adaptive-review.md). Rendered at 1180 × 820; tokens are src/theme.css verbatim, classes mirror global.css. Not the app. -->
+<style>
+/* theme.css — Snapkin design tokens. Tokens only; the classes that
+   consume them live in global.css.
+
+   Source of truth: DESIGN.md §2 (the `cc-` colours, spacing, radii) as amended
+   by DESIGN.md §11 (system type stack, HIG type scale, capsule shapes, 16 px
+   page margin, dark only), SPEC §8a A14 (the monochrome palette and the
+   two-material glass tokens) and docs/design/liquid-glass-web.md §3 (the
+   `--glass-*` names). Ternpike's palette is gone; nothing here is inherited
+   from it. */
+
+:root {
+  /* Dark only (DESIGN.md §11.1 "Colour"): form controls, scrollbars and the
+     UA stylesheet render in their dark variants. */
+  color-scheme: dark;
+
+  /* ── Colour (DESIGN.md §2, monochrome per SPEC §8a A14 — the "Glass"
+     column of docs/design/branding-snapkin.md §7, reviewed in
+     docs/design/a14-glass-review.md S3; applied 2026-09-18). One ink, one
+     chroma: `error` is the only hue in the app. `accent` = `text` — the
+     rule changed from hue to fill (see the A14 fill/outline table), so the
+     semantic names stay. `text-3` never sits on bare ground (4.14:1 under
+     the G1 wash's peak) — only on `surface`, `field` or a glass fill. ───── */
+  --cc-ground: #0e0f11;
+  --cc-surface: #1b1c1f;
+  --cc-surface-2: #26272b;
+  --cc-field: #151618;
+  --cc-border: #34363a;
+  --cc-text: #f2f2f0;
+  --cc-text-2: #a9abaf;
+  --cc-text-3: #8c8f94;
+  --cc-accent: #f2f2f0; /* = text: the primary is an ivory fill, not a hue */
+  --cc-accent-pressed: #d9dadb; /* §6: pressed = the ivory fill, −8 L */
+  --cc-accent-ink: #0e0f11; /* = ground: the label on an ivory fill (17:1) */
+  /* S2 splash (branding-snapkin.md §9): "live / verified" is Fusion's sketch
+     blue. 400 for rings, badges, text and the canvas (7.36:1 on ground);
+     500 as a fill with a ground label (5.80:1) for the "on" states — Snap
+     pill, selected segment, pressed chips. Tappable stays the ivory fill. */
+  --cc-live: #38abdf; /* autodeskBlue-400: captured ring, selected ring, check badge, snap ring, live readouts */
+  --cc-live-wash: #0a324d; /* autodeskBlue-900 */
+  --cc-live-ink: #cdeaf7; /* autodeskBlue-100: text on live wash (10.6:1) */
+  --cc-live-border: #0696d7; /* autodeskBlue-500 */
+  --cc-live-fill: #0696d7; /* autodeskBlue-500: the "on" fill */
+  --cc-live-fill-pressed: #0684be; /* −8 L, 4.61:1 with a ground label */
+  --cc-error: #f0605a;
+  --cc-error-ink: #2b0a0a;
+  --cc-error-wash: rgb(240 96 90 / 0.2); /* §4 warning row (error): cc-error at 20% */
+  --cc-photo-mat: #1e1f22;
+  --cc-scrim: #0e0f11cc;
+
+  /* ── Type (DESIGN.md §11.1: system stack, HIG "Large" Dynamic Type step) ─ */
+  --cc-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --cc-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --cc-size-large-title: 34px;
+  --cc-leading-large-title: 41px;
+  --cc-size-title-3: 20px;
+  --cc-leading-title-3: 25px;
+  --cc-size-headline: 17px;
+  --cc-leading-headline: 22px;
+  --cc-size-body: 17px;
+  --cc-leading-body: 22px;
+  --cc-size-callout: 16px;
+  --cc-leading-callout: 21px;
+  --cc-size-subhead: 15px;
+  --cc-leading-subhead: 20px;
+  --cc-size-footnote: 13px;
+  --cc-leading-footnote: 18px;
+  --cc-size-caption-1: 12px;
+  --cc-leading-caption-1: 16px;
+  --cc-size-caption-2: 11px;
+  --cc-leading-caption-2: 13px;
+  --cc-size-reading: 38px; /* the live caliper reading, mono 500, leading 1.0 */
+  --cc-leading-reading: 1;
+
+  /* `font:` shorthand values for each text style, e.g. `font: var(--cc-text-body)`.
+     Weight is the HIG default for the style; Headline is semibold by definition,
+     Large Title is used bold (its emphasized weight). */
+  --cc-text-large-title: 700 var(--cc-size-large-title) / var(--cc-leading-large-title) var(--cc-font-ui);
+  --cc-text-title-3: 600 var(--cc-size-title-3) / var(--cc-leading-title-3) var(--cc-font-ui);
+  --cc-text-headline: 600 var(--cc-size-headline) / var(--cc-leading-headline) var(--cc-font-ui);
+  --cc-text-body: 400 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
+  --cc-text-callout: 400 var(--cc-size-callout) / var(--cc-leading-callout) var(--cc-font-ui);
+  --cc-text-subhead: 400 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+  --cc-text-footnote: 400 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-ui);
+  --cc-text-caption-1: 400 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-ui);
+  --cc-text-caption-2: 400 var(--cc-size-caption-2) / var(--cc-leading-caption-2) var(--cc-font-ui);
+  --cc-text-reading: 500 var(--cc-size-reading) / var(--cc-leading-reading) var(--cc-font-mono);
+
+  /* ── Spacing and shape (DESIGN.md §2, page margin per §11.1 "Layout") ─── */
+  --cc-space-1: 4px;
+  --cc-space-2: 8px;
+  --cc-space-3: 12px;
+  --cc-space-4: 16px;
+  --cc-space-5: 20px;
+  --cc-space-6: 24px;
+  --cc-page-x: 16px;
+
+  --cc-radius-sm: 10px; /* thumbnails, small buttons */
+  --cc-radius: 12px; /* inputs, inner elements of a 16 px container (concentric: 16 − 4) */
+  --cc-radius-lg: 14px;
+  --cc-radius-card: 16px; /* inset grouped list containers, cards, the panel */
+  --cc-radius-photo: 16px;
+  --cc-radius-capsule: 999px;
+
+  --cc-tap-min: 44px; /* every interactive element */
+  --cc-btn-height: 50px; /* capsule primary/secondary buttons (§11.1 "Shape") */
+  --cc-shutter: 76px;
+
+  /* ── Glass (docs/design/liquid-glass-web.md §3, re-tuned by SPEC §8a A14
+     G2/G7 and docs/design/a14-glass-review.md B2) ─────────────────────────
+     Two materials. `--glass-fill-strong` (70 %) is the blurred one, on the
+     two sticky surfaces only (the nav bar and the Shell footer), where
+     content really passes underneath: over a white photo it composites to
+     (86,87,88), `text` 6.5:1. `--glass-fill` (55 %, no filter) is the
+     hairline material on every in-flow surface — capsules, chips, cards,
+     groups, the panel — whose only backdrop is the frame's ambient wash. */
+  --glass-fill: rgba(28, 29, 32, 0.55); /* the hairline material: cc-surface at 55%, never blurred */
+  --glass-fill-strong: rgba(14, 15, 17, 0.7); /* cc-ground at 70%, the two blurred sticky surfaces */
+  --glass-stroke: rgba(242, 242, 240, 0.18); /* cc-text at 18%, hairline edge (G7) */
+  --glass-highlight: rgba(242, 242, 240, 0.28); /* top inset highlight */
+  --glass-blur: 24px;
+  --glass-saturate: 1.2; /* a no-op on mono chrome; only matters where the bar crosses a photo */
+  --glass-radius-sm: 14px; /* matches cc-radius-lg neighborhood, rounder than opaque cards */
+  --glass-radius-pill: 999px;
+
+  /* ── Motion (DESIGN.md §11.1 "Interaction feel") ──────────────────────── */
+  --cc-motion: 160ms; /* enter / settle */
+  --cc-motion-press: 80ms; /* §6: pressed-state fill change, and the A16 press scale */
+  --cc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* SPEC §8a A16: the two stated exceptions to §6's 120–160 ms range — a
+     page push / pop moves a whole screen (the HIG's ~350 ms) and a take-over
+     (create form, folder picker, Edit toolbar) rises over 280 ms. */
+  --cc-motion-nav: 350ms;
+  --cc-motion-sheet: 280ms;
+  /* `--cc-ease-out` is an alias of `--cc-ease` (one curve, two names would
+     drift); `--cc-ease-in` is the exit curve; `--cc-ease-standard` is §6's
+     move curve. No spring, no overshoot. */
+  --cc-ease-out: var(--cc-ease);
+  --cc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --cc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* liquid-glass-web.md §3 also carries a `prefers-color-scheme: light` remap of
+   the glass fill. It is deliberately NOT here: the app ships dark only with
+   `color-scheme: dark` forced, so that block would fire on every phone set to
+   light appearance and put a 55%-white bar under off-white text. Add it back
+   together with a light theme, not before. */
+
+:root { --cc-bar-height: var(--cc-tap-min); --cc-column: 720px; --cc-column-narrow: 560px; --cc-column-wide: 1120px; --cc-panel: 420px;
+  --glass-fill-hover: rgba(38, 39, 43, 0.55); /* recommended: surface-2 at the hairline alpha */ }
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; background: var(--cc-ground); color: var(--cc-text); font: var(--cc-text-body); -webkit-font-smoothing: antialiased; }
+p, h1, h2 { margin: 0; }
+a { color: inherit; text-decoration: none; }
+.app-frame { display: flex; flex-direction: column; height: 100vh; background:
+  radial-gradient(120vmax 80vmax at 0 0, rgba(242,242,240,0.14), transparent 60%),
+  radial-gradient(100vmax 70vmax at 100% 100%, rgba(242,242,240,0.08), transparent 60%) var(--cc-ground); }
+.shell { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; --col: var(--cc-column); }
+.shell[data-column="wide"] { --col: var(--cc-column-wide); }
+.shell[data-column="bleed"] { --col: 100%; }
+/* size classes (A17): the two numbers live once, in theme.css */
+@media (min-width: 600px) { :root { --cc-page-x: 20px; } }
+@media (min-width: 1024px) { :root { --cc-page-x: 24px; } }
+.shell-topbar { position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr) minmax(44px, auto); grid-template-rows: minmax(44px, auto); align-items: center;
+  padding-inline: max(var(--cc-space-2), calc((100% - var(--col)) / 2 + var(--cc-page-x) - var(--cc-space-2))); }
+.shell-topbar::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--glass-fill-strong); backdrop-filter: blur(24px); border-bottom: 1px solid var(--glass-stroke); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.shell-topbar-leading, .shell-topbar-actions { display: flex; align-items: center; gap: 4px; min-width: 44px; min-height: 44px; }
+.shell-topbar-actions { justify-content: flex-end; }
+.shell-topbar-center { display: flex; justify-content: center; min-width: 0; padding: 0 4px; }
+.shell-title { font: var(--cc-text-headline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 999px; background: var(--glass-fill); border: 1px solid var(--glass-stroke); box-shadow: inset 0 1px 0 var(--glass-highlight); color: var(--cc-text); }
+.shell-topbar .btn-icon { background: transparent; border-color: transparent; box-shadow: none; color: var(--cc-accent); }
+.bar-action { padding: 0 8px; min-height: 44px; display: inline-flex; align-items: center; font: 600 17px/22px var(--cc-font-ui); color: var(--cc-accent); }
+.shell-large-title { flex: 0 0 auto; width: 100%; max-width: var(--col); margin-inline: auto; padding: 4px var(--cc-page-x) 8px; }
+.shell-title-large { font: var(--cc-text-large-title); letter-spacing: -0.01em; }
+.shell-content { flex: 1 1 auto; width: 100%; max-width: var(--col); margin-inline: auto; padding: var(--cc-page-x) var(--cc-page-x) 20px; }
+.stack-lg { display: flex; flex-direction: column; gap: 24px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.search { width: 100%; min-height: 44px; padding: 8px 14px; background: var(--cc-field); border: 1px solid var(--glass-stroke); border-radius: var(--cc-radius); color: var(--cc-text-3); font: var(--cc-text-body); }
+.list-group { display: flex; flex-direction: column; background: var(--glass-fill); border: 1px solid var(--glass-stroke); border-radius: var(--cc-radius-card); box-shadow: inset 0 1px 0 var(--glass-highlight); overflow: hidden; }
+.list-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 16px; }
+.list-row + .list-row::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--cc-border); }
+.list-row-body { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.list-row-meta { font: var(--cc-text-footnote); color: var(--cc-text-2); }
+.list-row-chevron { color: var(--cc-text-3); display: flex; }
+.folder-row-glyph { width: 72px; min-height: 44px; display: flex; align-items: center; justify-content: center; color: var(--cc-text-2); }
+.list-thumb { flex: 0 0 auto; width: 72px; height: 72px; border-radius: var(--cc-radius-sm); background: var(--cc-surface-2); overflow: hidden; }
+.list-thumb svg { display: block; }
+/* A17 pointer hover (recommended token, one step up the surface scale, never darker) */
+.list-row.is-hover { background: var(--glass-fill-hover); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 20px; border: 1px solid var(--glass-stroke); border-radius: 999px; background: var(--glass-fill); box-shadow: inset 0 1px 0 var(--glass-highlight); color: var(--cc-text); font: 600 17px/22px var(--cc-font-ui); white-space: nowrap; }
+.btn-primary, .btn-secondary { min-height: 50px; padding-inline: 24px; }
+.btn-primary { background: var(--cc-accent); border-color: var(--cc-accent); box-shadow: none; color: var(--cc-accent-ink); }
+.btn-block { display: flex; width: 100%; }
+@media (min-width: 600px) { .btn-block { max-width: 400px; margin-inline: auto; } }
+.btn[aria-disabled="true"] { opacity: .4; }
+.btn-small { min-height: 40px; padding: 4px 16px; font: 600 15px/20px var(--cc-font-ui); align-self: flex-start; }
+.t-footnote { font: var(--cc-text-footnote); } .muted { color: var(--cc-text-2); } .mono { font-family: var(--cc-font-mono); }
+/* face cards */
+.face-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; width: 100%; }
+@media (min-width: 600px) { .face-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .part-columns .face-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
+.face-card { position: relative; display: block; aspect-ratio: 1; border-radius: var(--cc-radius-card); background: var(--cc-surface-2); border: 1px solid var(--glass-stroke); overflow: hidden; }
+.face-card-captured::after { content: ""; position: absolute; inset: 0; border: 2px solid var(--cc-live); border-radius: inherit; pointer-events: none; }
+.face-card-photo { position: absolute; inset: 0; }
+.face-card-photo svg { display: block; width: 100%; height: 100%; }
+.face-card-scrim { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 1px; padding: 36px 12px 10px; background: linear-gradient(to top, rgba(14,15,17,.94) 0 44px, rgba(14,15,17,0)); }
+.face-card-label { font: var(--cc-text-headline); text-transform: capitalize; }
+.face-card-caption { font: var(--cc-text-footnote); color: var(--cc-text-2); font-variant-numeric: tabular-nums; }
+.face-card-badge { position: absolute; top: 10px; right: 10px; }
+.face-card-check { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--cc-live); color: var(--cc-ground); }
+.face-card-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: transparent; border: 2px dashed var(--cc-border); color: var(--cc-text-2); font: 600 15px/20px var(--cc-font-ui); }
+/* part page */
+.part-columns { display: flex; flex-direction: column; gap: 24px; }
+@media (min-width: 1024px) { .part-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); gap: 24px; align-items: start; }
+  .part-aside { position: sticky; top: calc(var(--cc-bar-height) + var(--cc-page-x)); align-self: start; } }
+.feature-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 8px; align-items: start; min-height: 44px; padding: 12px 16px; position: relative; }
+.feature-row + .feature-row::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--cc-border); }
+.feature-row-name { display: flex; flex-direction: column; gap: 2px; }
+.feature-row-faces { font: var(--cc-text-footnote); color: var(--cc-text-2); }
+.feature-row-value { text-align: right; white-space: nowrap; font-family: var(--cc-font-mono); }
+.feature-row-unit { font: var(--cc-text-subhead); color: var(--cc-text-2); }
+.feature-row-tol { text-align: right; white-space: nowrap; font: var(--cc-text-footnote); font-family: var(--cc-font-mono); color: var(--cc-text-2); }
+/* annotate */
+.annotate { display: flex; flex-direction: column; gap: 12px; margin: 0 calc(-1 * var(--cc-page-x)) -20px; min-height: calc(100% + 20px); }
+.annotate-stage { position: relative; flex: 0 0 auto; margin: 0 var(--cc-page-x); height: min(300px, 50vh); min-height: 200px; border-radius: var(--cc-radius-photo); background: var(--cc-photo-mat); overflow: hidden; }
+@media (min-width: 600px) { .annotate-stage { height: min(var(--vv-height, 100vh) * 0.55, 720px); } }
+.annotate-photo { position: absolute; inset: 0; }
+.annotate-photo > svg { display: block; width: 100%; height: 100%; }
+.annotate-overlay { position: absolute; top: 8px; left: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--cc-scrim); color: var(--cc-text); font: var(--cc-text-footnote); white-space: nowrap; }
+.pill-mono { font: 500 13px/18px var(--cc-font-mono); color: var(--cc-live); }
+.panel { display: flex; flex-direction: column; gap: 16px; padding: 16px var(--cc-page-x) 16px; background: var(--glass-fill); border: 1px solid var(--glass-stroke); border-bottom-width: 0; border-radius: var(--cc-radius-card) var(--cc-radius-card) 0 0; box-shadow: inset 0 1px 0 var(--glass-highlight); flex: 1 0 auto; }
+@media (min-width: 1024px) {
+  /* expanded: side by side, filling the visual viewport under the bar; the panel scrolls itself */
+  .annotate { display: grid; grid-template-columns: minmax(0, 1fr) var(--cc-panel); gap: 0; margin: calc(-1 * var(--cc-page-x)) calc(-1 * var(--cc-page-x)) -20px; height: calc(var(--vv-height, 100vh) - var(--cc-bar-height)); min-height: 0; }
+  .annotate-stage { height: auto; margin: var(--cc-page-x); }
+  .annotate .panel { overflow-y: auto; overscroll-behavior: contain; border-width: 0 0 0 1px; border-radius: 0; box-shadow: none; min-height: 0; }
+}
+.annotate-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 44px; }
+.annotate-snap { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 8px; border-radius: 999px; background: var(--cc-live-fill); color: var(--cc-accent-ink); font: 600 13px/18px var(--cc-font-ui); }
+.dim-count { min-width: 20px; padding: 0 8px; font: 500 13px/18px var(--cc-font-mono); text-align: center; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field-label { font: var(--cc-text-caption-1); color: var(--cc-text-2); }
+.input { display: block; width: 100%; min-height: 44px; padding: 8px 14px; background: var(--cc-field); border: 1px solid var(--glass-stroke); border-radius: var(--cc-radius); color: var(--cc-text-3); font: var(--cc-text-body); }
+.annotate-reading { display: flex; align-items: center; gap: 8px; }
+.annotate-reading .input { flex: 1 1 auto; min-height: 56px; font: var(--cc-text-reading); letter-spacing: -0.01em; }
+.annotate-unit { font: var(--cc-text-subhead); color: var(--cc-text-2); flex: 0 0 auto; }
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--glass-stroke); border-radius: 999px; background: var(--glass-fill); box-shadow: inset 0 1px 0 var(--glass-highlight); font: 500 12px/16px var(--cc-font-mono); }
+.annotate-kind-row { display: flex; align-items: flex-start; gap: 12px; }
+.annotate-kind { flex: 1 1 auto; }
+.segmented { position: relative; display: flex; width: 100%; min-height: 44px; gap: 4px; padding: 2px; background: var(--cc-field); border: 1px solid var(--glass-stroke); border-radius: 999px; }
+.segmented-option { flex: 1 1 0; min-width: 0; min-height: 38px; padding: 0 12px; border-radius: 999px; color: var(--cc-text-2); font: 600 15px/20px var(--cc-font-ui); display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+.segmented-option[aria-pressed="true"] { background: var(--cc-live-fill); color: var(--cc-accent-ink); }
+.tol { flex: 0 0 auto; width: 104px; }
+.annotate-tolerance { display: flex; align-items: center; gap: 4px; }
+.annotate-tolerance .input { padding: 8px; color: var(--cc-text); font-family: var(--cc-font-mono); }
+.annotate-actions { display: flex; flex-direction: column; gap: 8px; }
+.list-group-header { padding: 0 16px; font: 600 13px/18px var(--cc-font-ui); color: var(--cc-text-2); text-transform: uppercase; letter-spacing: .04em; }
+.annotate-dimensions { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.annotate-dimensions .list-group { background: var(--cc-surface-2); border-radius: var(--cc-radius); }
+.annotate-dim-row { gap: 8px; }
+.annotate-dim-glyph { width: 1.1em; font: 500 17px/22px var(--cc-font-mono); color: var(--cc-text-2); text-align: center; }
+.annotate-dim-figures { font-family: var(--cc-font-mono); white-space: nowrap; }
+.annotate-dim-tol { font-size: 13px; color: var(--cc-text-2); }
+.cursor { position: absolute; width: 18px; height: 22px; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
+</style></head><body><div class="app-frame"><div class="shell" data-column="bleed">
+  <header class="shell-topbar">
+  <div class="shell-topbar-leading"><button class="btn-icon" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button></div>
+  <div class="shell-topbar-center"><h1 class="shell-title">End · Norcold freezer hinge pin</h1></div>
+  <div class="shell-topbar-actions"></div></header>
+  <main class="shell-content"><div class="annotate">
+    <div class="annotate-stage"><div class="annotate-photo" role="img"><svg viewBox="0 0 1200 1600" preserveAspectRatio="xMidYMid meet" width="100%" height="100%"><rect width="1200" height="1600" fill="#e2dccf"/><rect x="440" y="180" width="320" height="1260" fill="#bd5a38"/><circle cx="600" cy="420" r="78" fill="#1b1b1b"/><text transform="translate(1120 120) rotate(90)" font-family="DejaVu Sans, sans-serif" font-size="88" fill="#1b1b1b">END (EXIF 6)</text></svg><svg viewBox="0 0 1200 1600" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="position:absolute;inset:0" font-family="ui-monospace, Menlo, DejaVu Sans Mono, monospace">
+  <g stroke="#38abdf" stroke-width="5" fill="#38abdf">
+    <line x1="600" y1="330" x2="600" y2="510"/><path d="M600 318l-14 26h28z"/><path d="M600 522l-14-26h28z"/>
+    <line x1="440" y1="700" x2="760" y2="700"/><path d="M428 700l26-14v28z"/><path d="M772 700l-26-14v28z"/>
+    <path d="M440 686v28M760 686v28" stroke-width="4"/>
+  </g>
+  <g><rect x="650" y="395" width="300" height="52" rx="26" fill="#0e0f11" fill-opacity="0.8"/><text x="800" y="431" text-anchor="middle" font-size="30" fill="#38abdf">⌀ pin_dia 6.51</text></g>
+  <g><rect x="420" y="612" width="360" height="52" rx="26" fill="#0e0f11" fill-opacity="0.8"/><text x="600" y="648" text-anchor="middle" font-size="30" fill="#38abdf">overall_l 42.18</text></g>
+</svg></div>
+      <div class="annotate-overlay"><span class="pill">Tap the first edge</span></div></div>
+    <div class="panel">
+      <div class="annotate-tools"><span class="annotate-snap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>Snap</span><span class="dim-count">2</span><span class="btn-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/></svg></span><span class="pill-mono">1.00</span><span class="btn-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/></svg></span></div>
+      <div class="field"><span class="field-label">Reading</span><div class="annotate-reading"><div class="input">0.00</div><span class="annotate-unit">mm</span></div></div>
+      <div class="field"><span class="field-label">Name</span><div class="input mono">feature_name</div>
+        <div class="chip-row"><span class="chip">overall_l</span><span class="chip">overall_w</span><span class="chip">overall_h</span><span class="chip">hole_dia</span><span class="chip">wall</span><span class="chip">slot_w</span><span class="chip">slot_l</span><span class="chip">chamfer</span></div></div>
+      <div class="annotate-kind-row">
+        <div class="field annotate-kind"><span class="field-label">Kind</span><div class="segmented"><span class="segmented-option" aria-pressed="true">Length</span><span class="segmented-option">Diameter</span><span class="segmented-option">Depth</span></div></div>
+        <div class="field tol"><span class="field-label">Tolerance</span><div class="annotate-tolerance"><span class="annotate-unit">±</span><div class="input">0.1</div><span class="annotate-unit">mm</span></div></div>
+      </div>
+      <div class="annotate-actions"><span class="btn btn-primary btn-block" aria-disabled="true">Save dimension</span><span class="btn btn-small">Clear</span></div>
+      <div class="annotate-dimensions"><h2 class="list-group-header">Dimensions</h2><div class="list-group">
+        <div class="list-row annotate-dim-row"><span class="annotate-dim-glyph"></span><span class="list-row-body"><span class="mono">overall_l</span></span><span class="annotate-dim-figures">42.18 mm <span class="annotate-dim-tol">±0.10</span></span></div>
+        <div class="list-row annotate-dim-row"><span class="annotate-dim-glyph">⌀</span><span class="list-row-body"><span class="mono">pin_dia</span></span><span class="annotate-dim-figures">6.51 mm <span class="annotate-dim-tol">±0.10</span></span></div>
+      </div></div>
+    </div>
+  </div></main></div></div></body></html>
