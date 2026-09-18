@@ -102,22 +102,37 @@
   margin: 6px;
   border-radius: 50%;
   border: 0;
-  background: var(--cc-text);
+  /* Polish pass 2026-09-18: the disc is lit from above and the whole shutter
+     floats; pressing it is the Camera app's — the ring holds still and the
+     disc shrinks inside it (an inset ground band growing 0 → 5 px; the four
+     shadows keep one list shape so they interpolate), in fast, out slow. */
+  background-color: var(--cc-text);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 50%, rgba(14, 15, 17, 0.08));
   box-shadow:
+    inset 0 0 0 0 var(--cc-ground),
     0 0 0 3px var(--cc-ground),
-    0 0 0 6px var(--cc-text);
+    0 0 0 6px var(--cc-text),
+    0 12px 28px -6px rgba(0, 0, 0, 0.6);
   color: var(--cc-accent-ink);
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
   transition:
-    background-color var(--cc-motion-press) linear,
-    opacity var(--cc-motion-press) linear;
+    background-color var(--cc-motion-release) var(--cc-ease-out),
+    box-shadow var(--cc-motion-release) var(--cc-ease-spring),
+    opacity var(--cc-motion-release) var(--cc-ease-out);
 }
 
 .shutter:active {
-  background: var(--cc-accent-pressed);
+  background-color: var(--cc-accent-pressed);
+  box-shadow:
+    inset 0 0 0 5px var(--cc-ground),
+    0 0 0 3px var(--cc-ground),
+    0 0 0 6px var(--cc-text),
+    0 12px 28px -6px rgba(0, 0, 0, 0.6);
+  transition-duration: var(--cc-motion-press);
+  transition-timing-function: var(--cc-ease-out);
 }
 
 .shutter-disabled {
@@ -126,7 +141,12 @@
 }
 
 .shutter-disabled:active {
-  background: var(--cc-text);
+  background-color: var(--cc-text);
+  box-shadow:
+    inset 0 0 0 0 var(--cc-ground),
+    0 0 0 3px var(--cc-ground),
+    0 0 0 6px var(--cc-text),
+    0 12px 28px -6px rgba(0, 0, 0, 0.6);
 }
 
 .shutter-caption {

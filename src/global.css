@@ -138,7 +138,11 @@ a:focus-visible {
   flex-direction: column;
   height: 100dvh;
   min-height: 100dvh;
+  /* Polish pass 2026-09-18: a third, faint wash of the live blue from the
+     top-right (7 % of blue-500) so the ground is not one flat grey — the
+     S2 splash colour as ambient light, never as a fill. */
   background:
+    radial-gradient(90vmax 60vmax at 100% 0, rgba(6, 150, 215, 0.07), transparent 60%),
     radial-gradient(120vmax 80vmax at 0 0, rgba(242, 242, 240, 0.14), transparent 60%),
     radial-gradient(100vmax 70vmax at 100% 100%, rgba(242, 242, 240, 0.08), transparent 60%)
     var(--cc-ground);
@@ -238,10 +242,11 @@ a:focus-visible {
 
 .shell-title.shell-title-large {
   font: var(--cc-text-large-title);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.022em; /* polish pass: SF's own tracking at 34 px (was −0.01) */
   text-align: left;
   white-space: normal;
   overflow: visible;
+  text-wrap: balance;
 }
 
 .shell-large-title .shell-subtitle {
@@ -357,6 +362,43 @@ a:focus-visible {
   }
 }
 
+/* Polish pass 2026-09-18: the bar is clear at rest and turns to glass as
+   content starts to pass under it — UIKit's scroll-edge appearance. A
+   scroll-driven animation on the glass pseudo-child only (`scroll(nearest)`
+   is `.shell`, the bar's scroll container): opacity 0 → 1 over the first
+   24 px of scroll. No JS, no `useState`; it runs off the main thread.
+   Where `animation-timeline` is missing (Safari < 26, Firefox) the rule is
+   skipped and the bar is the always-on glass it was; the same under
+   reduced motion (§12 forces `animation-duration: 0ms`, whose meaning on a
+   scroll timeline is not worth depending on), `prefers-contrast: more` and
+   reduced transparency. */
+@keyframes cc-bar-glass {
+  to {
+    opacity: 1;
+  }
+}
+
+/* The resting state is the clear one (`opacity: 0`) and the keyframes go TO
+   1: a page too short to scroll has an inactive scroll timeline, where the
+   animation contributes nothing at all — and nothing is under the bar
+   there, so clear is right (measured: with `from { opacity: 0 }` the short
+   Parts list kept the full glass while Annotate's bar was clear). */
+@supports (animation-timeline: scroll()) {
+  .shell-topbar::before {
+    opacity: 0;
+    animation: cc-bar-glass linear both;
+    animation-timeline: scroll(nearest block);
+    animation-range: 0 24px;
+  }
+}
+
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce), (prefers-reduced-motion: reduce) {
+  .shell-topbar::before {
+    opacity: 1;
+    animation: none;
+  }
+}
+
 /* ── 3. Type utilities ───────────────────────────────────────────────── */
 .t-large-title { font: var(--cc-text-large-title); }
 .t-title-3 { font: var(--cc-text-title-3); }
@@ -413,23 +455,31 @@ button,
   -webkit-user-select: none;
   -webkit-appearance: none;
   appearance: none;
+  /* Polish pass 2026-09-18: this is the RELEASE transition — slow, with the
+     spring on the scale — and `:active` below swaps in the fast press, so a
+     tap goes in at 80 ms and lets go over 320. CSS transitions retarget, so
+     a finger that leaves mid-press never jumps. Explicit properties, never
+     `all`. */
   transition:
-    background-color var(--cc-motion-press) linear,
-    opacity var(--cc-motion-press) linear,
-    transform var(--cc-motion-press) linear;
+    background-color var(--cc-motion-release) var(--cc-ease-out),
+    box-shadow var(--cc-motion-release) var(--cc-ease-out),
+    opacity var(--cc-motion-release) var(--cc-ease-out),
+    transform var(--cc-motion-release) var(--cc-ease-spring);
 }
 
-/* Pressed = opacity 0.6 (UIKit plain buttons); nothing bounces. */
+/* Pressed = opacity 0.6 (UIKit plain buttons). */
 button:active,
 .btn:active {
   opacity: 0.6;
+  transition-duration: var(--cc-motion-press);
+  transition-timing-function: var(--cc-ease-out);
 }
 
-/* SPEC §8a A16 press feedback: the capsule also scales to 0.97 over
-   `--cc-motion-press`, linear — `.btn` only, never a bare <button> (a list
-   row, a segmented option): nothing else moves on press. */
+/* SPEC §8a A16 press feedback: the capsule also scales (0.96 since the
+   polish pass) — `.btn` only, never a bare <button> (a list row, a
+   segmented option). */
 .btn:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 button:focus-visible,
@@ -454,6 +504,7 @@ button:disabled:active,
 button[aria-disabled="true"]:active,
 .btn[aria-disabled="true"]:active {
   opacity: 0.4;
+  transform: none; /* a disabled control does not answer a press */
 }
 
 .btn-primary,
@@ -468,24 +519,38 @@ button[aria-disabled="true"]:active,
    now; `accent-ink` = ground, 17:1). Not glass — a 55 % primary reads as a
    large secondary. The base capsule's highlight is dropped: 28 % ivory on
    ivory paints nothing, and the danger/plain variants below need it gone. */
+/* Polish pass 2026-09-18: the ivory fill is lit from above (white → ivory →
+   a shade under it, over the flat `accent` colour so `:active` can still
+   swap the colour alone) and floats on the raised shadow; pressing it sinks
+   it — the shadow collapses with the scale. */
 .btn-primary {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
-  box-shadow: none;
+  background-color: var(--cc-accent);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 45%, rgba(14, 15, 17, 0.07));
+  border-color: transparent;
+  box-shadow: var(--cc-shadow-raised);
   color: var(--cc-accent-ink);
 }
 
 .btn-primary:active {
-  background: var(--cc-accent-pressed);
-  border-color: var(--cc-accent-pressed);
+  background-color: var(--cc-accent-pressed);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   opacity: 1;
 }
 
+/* Disabled primary — polish pass: a quiet filled well with a dim label
+   (UIKit's disabled filled button), not the whole ivory slab at 40 % — that
+   read as a grey block and was the heaviest thing on Annotate. The fill
+   eases to ivory when the form becomes valid (the base transition). */
+.btn-primary:disabled,
+.btn-primary[aria-disabled="true"],
 .btn-primary:disabled:active,
 .btn-primary[aria-disabled="true"]:active {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
-  opacity: 0.4;
+  background-color: rgba(242, 242, 240, 0.12);
+  background-image: none;
+  box-shadow: none;
+  color: var(--cc-text-2);
+  opacity: 1;
+  transform: none;
 }
 
 /* Hairline material, stated again so a page can't opt a secondary out of it
@@ -499,9 +564,10 @@ button[aria-disabled="true"]:active,
 
 /* `error` is the app's one chroma (A14): the danger capsule keeps it. */
 .btn-danger {
-  background: var(--cc-error);
-  border-color: var(--cc-error);
-  box-shadow: none;
+  background-color: var(--cc-error);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 45%, rgba(14, 15, 17, 0.08));
+  border-color: transparent;
+  box-shadow: var(--cc-shadow-raised);
   color: var(--cc-error-ink);
 }
 
@@ -632,7 +698,8 @@ button[aria-disabled="true"]:active,
   background: var(--glass-fill);
   border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius-card);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  /* Polish pass: the group floats — top highlight plus the layered shadow. */
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--cc-shadow-card);
   overflow: hidden;
 }
 
@@ -647,6 +714,7 @@ button[aria-disabled="true"]:active,
   border: 0;
   border-radius: 0;
   background: transparent;
+  box-shadow: none; /* a <button> row must not inherit the capsule's top highlight */
   color: var(--cc-text);
   font: var(--cc-text-body);
   text-align: left;
@@ -663,7 +731,7 @@ button[aria-disabled="true"]:active,
   left: var(--cc-space-4);
   right: 0;
   height: 1px;
-  background: var(--cc-border);
+  background: var(--glass-stroke); /* polish pass: a translucent hairline, not the opaque `border` grey */
 }
 
 button.list-row {
@@ -673,8 +741,11 @@ button.list-row {
   -webkit-user-select: none;
 }
 
+/* Polish pass: a pressed row lights up (UITableView's highlight) — a
+   translucent ink step, in fast and out slow via the base button's
+   press / release transitions. */
 button.list-row:active {
-  background: var(--cc-surface-2);
+  background: var(--glass-fill-pressed);
   opacity: 1;
 }
 
@@ -708,21 +779,23 @@ button.list-row:focus-visible {
   touch-action: manipulation;
 }
 
-.list-row-link:active {
-  opacity: 0.6;
-}
-
-/* SPEC §8a A16 press feedback: scale the *row* (0.985) while its link is
-   pressed — the link is the text-only <a> beside the thumbnail, so scaling
-   it would leave the thumb still. `:has` (Safari 15.4+); the rule covers
-   part rows and folder rows alike, both `.list-row` with a `.list-row-link`.
-   A scale-down never overflows the clipping `.list-group`. */
+/* SPEC §8a A16 press feedback, polish pass 2026-09-18: the *row* answers
+   while its link is pressed — the link is the text-only <a> beside the
+   thumbnail, so dimming or scaling it alone would leave the thumb still.
+   The row lights up (the same highlight as `button.list-row:active`) and
+   scales to 0.985; in over `--cc-motion-press`, out over the slow release.
+   `:has` (Safari 15.4+); covers part rows and folder rows alike. A
+   scale-down never overflows the clipping `.list-group`. */
 .list-row:has(> .list-row-link) {
-  transition: transform var(--cc-motion-press) linear;
+  transition:
+    background-color var(--cc-motion-release) var(--cc-ease-out),
+    transform var(--cc-motion-release) var(--cc-ease-out);
 }
 
 .list-row:has(> .list-row-link:active) {
+  background: var(--glass-fill-pressed);
   transform: scale(0.985);
+  transition-duration: var(--cc-motion-press);
 }
 
 /* Inward ring, like `button.list-row:focus-visible` below: `.list-group`
@@ -765,6 +838,15 @@ button.list-row:focus-visible {
   color: var(--cc-text-2);
 }
 
+/* Polish pass: a row's trailing action (the Edit-mode pencil) is a bare
+   glyph — the group is already a surface, and a glass disc on every row was
+   one more outline. The 44 px hit area is unchanged. */
+.list-row-trailing .btn-icon {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .list-thumb {
   flex: 0 0 auto;
   width: 52px;
@@ -773,6 +855,10 @@ button.list-row:focus-visible {
   background: var(--cc-surface-2);
   object-fit: cover;
   overflow: hidden;
+  /* Polish pass: a neutral inset edge so a pale photo does not bleed into
+     the row (white alpha — never tinted). */
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  outline-offset: -1px;
 }
 
 /* ── 6. Fields (DESIGN.md §4 text input, §6 states, §11: text ≥ 16 px) ─ */
@@ -801,13 +887,20 @@ textarea,
   width: 100%;
   min-height: var(--cc-tap-min);
   padding: var(--cc-space-2) 14px;
-  background: var(--cc-field);
-  border: 1px solid var(--glass-stroke); /* A14: fields keep `field`, take the stroke only */
+  /* Polish pass 2026-09-18: a FILLED field (one ink step up from whatever
+     it sits on, UIKit's tertiary fill) with the hairline edge, instead of
+     a dark well with a bright outline. Focus is a ring that eases in. */
+  background: var(--glass-fill-field);
+  border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius);
   color: var(--cc-text);
   font: var(--cc-text-body);
   -webkit-appearance: none;
   appearance: none;
+  transition:
+    background-color var(--cc-motion) var(--cc-ease-out),
+    border-color var(--cc-motion) var(--cc-ease-out),
+    box-shadow var(--cc-motion) var(--cc-ease-out);
 }
 
 textarea {
@@ -832,8 +925,14 @@ input:focus,
 select:focus,
 textarea:focus,
 .field-input:focus {
-  outline: 2px solid var(--cc-accent);
+  /* Polish pass: the ring is the border going to full ink plus a soft 4 px
+     halo, eased in by the field's transition. The transparent outline is
+     for forced-colors mode, where shadows are dropped and it turns solid. */
+  outline: 2px solid transparent;
   outline-offset: 0;
+  border-color: var(--cc-accent);
+  background-color: rgba(242, 242, 240, 0.09); /* colour only: `select` and the search field carry a background image */
+  box-shadow: 0 0 0 4px rgba(242, 242, 240, 0.14);
 }
 
 /* Numeric entry (inputmode="decimal", SPEC §5) and feature names are mono. */
@@ -867,6 +966,7 @@ input[aria-invalid="true"],
 .help-text {
   font: var(--cc-text-footnote);
   color: var(--cc-text-2);
+  text-wrap: pretty; /* no orphaned last word in a two-line hint */
 }
 
 input:disabled,
@@ -913,7 +1013,14 @@ textarea:disabled {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform var(--cc-motion-press) linear; /* A16 press scale */
+  /* A16 press scale; polish pass: slow sprung release, fast press below,
+     and the on/off fill eases instead of cutting. */
+  transition:
+    background-color var(--cc-motion) var(--cc-ease-out),
+    border-color var(--cc-motion) var(--cc-ease-out),
+    color var(--cc-motion) var(--cc-ease-out),
+    opacity var(--cc-motion-release) var(--cc-ease-out),
+    transform var(--cc-motion-release) var(--cc-ease-spring);
 }
 
 .chip-lg {
@@ -924,7 +1031,9 @@ textarea:disabled {
 
 .chip:active {
   opacity: 0.6;
-  transform: scale(0.97); /* SPEC §8a A16 press feedback */
+  transform: scale(0.95); /* SPEC §8a A16 press feedback (0.97 before the polish pass: too small to feel on a 36 px chip) */
+  transition-duration: var(--cc-motion-press);
+  transition-timing-function: var(--cc-ease-out);
 }
 
 /* On = the ivory fill at chip size (A14 table): solid against the hairline
@@ -951,9 +1060,10 @@ textarea:disabled {
   min-height: var(--cc-tap-min);
   gap: 4px;
   padding: 2px;
-  background: var(--cc-field);
-  border: 1px solid var(--glass-stroke); /* A14: the track keeps `field`, stroke only */
+  background: var(--glass-fill-field); /* polish pass: the filled track, like a field */
+  border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius-capsule);
+  overflow: hidden; /* the thumb overshoots its stop by ~3 px (`--cc-ease-glide`): it squashes into the track's end instead of poking out */
 }
 
 .segmented-inline {
@@ -976,12 +1086,19 @@ textarea:disabled {
   border: 0;
   border-radius: var(--cc-radius-capsule);
   background: transparent;
+  /* Polish pass: the bare `button` rule's top highlight drew a ghost
+     capsule around every unselected option — the track is one surface. */
+  box-shadow: none;
   color: var(--cc-text-2);
   font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* The label's ink follows the thumb as it glides. */
+  transition:
+    color var(--cc-motion-glide) var(--cc-ease-out),
+    opacity var(--cc-motion-release) var(--cc-ease-out);
 }
 
 /* A14 G4: the selected segment is a LIGHTER GLASS — 16 % ink over the
@@ -1012,8 +1129,12 @@ textarea:disabled {
   bottom: 2px;
   left: 2px;
   border-radius: inherit;
-  background: var(--cc-live-fill);
-  transition: transform var(--cc-motion) var(--cc-ease-standard);
+  /* Polish pass 2026-09-18: a lit, raised thumb (UISegmentedControl's) that
+     glides on `--cc-ease-glide` — 300 ms, ~2 % past its stop and back. */
+  background-color: var(--cc-live-fill);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px -2px rgba(0, 0, 0, 0.4);
+  transition: transform var(--cc-motion-glide) var(--cc-ease-glide);
 }
 
 .segmented[data-count="2"] .segmented-indicator {
@@ -1114,22 +1235,34 @@ textarea:disabled {
   height: 28px;
   border-radius: 50%;
   background: var(--cc-text);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.35);
+  /* Polish pass 2026-09-18: the knob glides on `--cc-ease-glide` and, like
+     UISwitch's, stretches 6 px toward the other side while held. */
   transition:
-    transform var(--cc-motion) var(--cc-ease),
-    background-color var(--cc-motion) var(--cc-ease);
+    transform var(--cc-motion-glide) var(--cc-ease-glide),
+    width var(--cc-motion) var(--cc-ease-out);
 }
 
-/* On (A14 table, review B3a): track `text`, knob `ground` — with `accent`
-   = `text` the old `accent` track + `text` knob is one flat ivory capsule
-   and the knob vanishes. Off stays `surface-2` track + `text` knob. */
+.toggle:active input:not(:disabled) + .toggle-track .toggle-knob {
+  width: 34px;
+}
+
+/* On — polish pass 2026-09-18: the S2 rule ("on" is the live fill: the Snap
+   pill, the selected segment, a pressed chip) reaches the switch too — a
+   live-blue track under the same ivory knob, replacing A14's ivory track +
+   ground knob (review B3a), which read as a second primary button. The knob
+   on blue-500 is 3.4:1 as a shape and the position carries the state. */
 .toggle input:checked + .toggle-track {
-  background: var(--cc-text);
+  background: var(--cc-live-fill);
 }
 
 .toggle input:checked + .toggle-track .toggle-knob {
   transform: translateX(20px);
-  background: var(--cc-ground);
+}
+
+/* Held while on: the knob grows leftward, so its travel shortens by the 6. */
+.toggle:active input:checked:not(:disabled) + .toggle-track .toggle-knob {
+  transform: translateX(14px);
 }
 
 .toggle input:focus-visible + .toggle-track {
@@ -1223,8 +1356,10 @@ button.warning-row {
   overflow: hidden;
 }
 
+/* Polish pass: a soft filled well, not a dashed drop-zone. */
 .slot-empty {
-  border: 2px dashed var(--cc-border);
+  background: var(--glass-fill-field);
+  box-shadow: inset 0 0 0 1px var(--glass-stroke);
 }
 
 .slot img {
@@ -1270,8 +1405,10 @@ button.warning-row {
   background: var(--glass-fill);
   border: 1px solid var(--glass-stroke);
   border-bottom-width: 0;
-  border-radius: var(--cc-radius-card) var(--cc-radius-card) 0 0;
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  /* Polish pass: a sheet — rounder than a card, lifted off the stage above
+     it by an upward ambient shadow. */
+  border-radius: var(--cc-radius-sheet) var(--cc-radius-sheet) 0 0;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 -12px 32px -12px rgba(0, 0, 0, 0.5);
 }
 
 .stack {
@@ -1410,12 +1547,24 @@ button.warning-row {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform var(--cc-motion-press) linear; /* A16 press scale */
+  box-shadow: var(--cc-shadow-card); /* polish pass: a photo card floats */
+  /* A16 press scale; polish pass: fast in (`:active`), slow sprung release. */
+  transition:
+    background-color var(--cc-motion-release) var(--cc-ease-out),
+    box-shadow var(--cc-motion-release) var(--cc-ease-out),
+    opacity var(--cc-motion-release) var(--cc-ease-out),
+    transform var(--cc-motion-release) var(--cc-ease-spring);
 }
 
+/* Polish pass: a tile is big enough that 0.985 was invisible — 0.96, the
+   shadow collapsing under it, and a lighter dim (0.85: a photo at 0.6 goes
+   muddy over the dark ground). */
 .face-card:active {
-  opacity: 0.6;
-  transform: scale(0.985); /* SPEC §8a A16 press feedback */
+  opacity: 0.85;
+  transform: scale(0.96); /* SPEC §8a A16 press feedback */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition-duration: var(--cc-motion-press);
+  transition-timing-function: var(--cc-ease-out);
 }
 
 .face-card:focus-visible {
@@ -1444,8 +1593,12 @@ button.warning-row {
   border-radius: inherit;
 }
 
+/* Polish pass 2026-09-18: captured is the check badge (shape) plus the photo
+   itself — no live ring. On the Part page every card is captured, so the
+   ring outlined the whole gallery in blue and said nothing; it is now the
+   neutral inset photo edge, and the live ring means one thing: selected. */
 .face-card-captured::after {
-  border: 2px solid var(--cc-live);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .face-card-selected::after {
@@ -1468,8 +1621,19 @@ button.warning-row {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 36px var(--cc-space-3) 10px;
-  background: linear-gradient(to top, rgba(14, 15, 17, 0.94) 0 44px, rgba(14, 15, 17, 0));
+  padding: 44px 14px var(--cc-space-3);
+  /* Polish pass: an eased fade instead of a solid 44 px band with a ramp on
+     top — the band read as a black box pasted on the photo. Still ≥ 85 %
+     under the caption and ≥ 65 % under the label's cap line (label on a
+     white photo: 5.2:1). */
+  background: linear-gradient(
+    to top,
+    rgba(14, 15, 17, 0.92) 0,
+    rgba(14, 15, 17, 0.84) 30px,
+    rgba(14, 15, 17, 0.62) 54px,
+    rgba(14, 15, 17, 0.28) 76px,
+    rgba(14, 15, 17, 0)
+  );
 }
 
 .face-card-label {
@@ -1513,16 +1677,51 @@ button.warning-row {
   stroke-width: 3;
 }
 
+/* Polish pass 2026-09-18: the badge pops in on mount — a one-shot, staged
+   entrance (so keyframes, not a transition), 180 ms late so it lands after
+   the card has arrived with the page push. Zeroed, delay included, under
+   reduced motion (§12). */
+.face-card-check {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  animation: cc-pop var(--cc-motion-glide) var(--cc-ease-spring) 180ms backwards;
+}
+
+@keyframes cc-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
 .face-card-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--cc-space-2);
-  background: transparent;
-  border: 2px dashed var(--cc-border);
+  /* Polish pass 2026-09-18: the dashed drop-zone is gone — an empty tile is
+     the hairline material like every other surface (fill, stroke, top
+     highlight), quieter than a photo card (no float shadow), and its glyph
+     sits in a filled 48 px disc so the tile has a focal point. "Empty" is
+     still never colour alone: no photo, no check badge, the camera glyph. */
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   color: var(--cc-text-2);
   font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+}
+
+.face-card-empty > svg {
+  box-sizing: content-box;
+  padding: var(--cc-space-3);
+  border-radius: 50%;
+  background: var(--glass-fill-field);
+  color: var(--cc-text);
+}
+
+.face-card-empty:active {
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  background: var(--glass-fill-pressed);
 }
 
 /* Selected-but-uncaptured (Capture's kind picker, `Ui.FaceCard`'s
@@ -1534,6 +1733,15 @@ button.warning-row {
    the dashed one instead of doubling up with it. */
 .face-card-empty.face-card-selected {
   border: none;
+  /* Polish pass: the chosen kind also takes a live wash and a lit glyph
+     disc, so the pick reads at a glance, not only by its ring. */
+  background: rgba(6, 150, 215, 0.14);
+  color: var(--cc-text);
+}
+
+.face-card-empty.face-card-selected > svg {
+  background: var(--cc-live-fill);
+  color: var(--cc-accent-ink);
 }
 
 /* ── 15. Motion (SPEC §8a A16; DESIGN.md §6) ──────────────────────────── */
@@ -1779,8 +1987,9 @@ html[data-nav="fade"]::view-transition-new(root) {
 
   /* `button.list-row:active` (§4, 0-2-1) would lose to the hover selector
      above (0-3-1): the press stays the opaque surface-2. */
-  button.list-row:hover:active {
-    background: var(--cc-surface-2);
+  button.list-row:hover:active,
+  .list-row:has(> .list-row-link:active):hover {
+    background: var(--glass-fill-pressed);
   }
 
   .face-card,

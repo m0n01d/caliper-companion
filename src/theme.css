@@ -120,11 +120,16 @@
   --cc-column-wide: 1120px; /* the Part page at expanded (`Wide`; 720 at medium) */
   --cc-panel: 420px; /* Annotate's side panel at expanded (A17-ii) */
 
-  --cc-radius-sm: 10px; /* thumbnails, small buttons */
-  --cc-radius: 12px; /* inputs, inner elements of a 16 px container (concentric: 16 − 4) */
-  --cc-radius-lg: 14px;
-  --cc-radius-card: 16px; /* inset grouped list containers, cards, the panel */
-  --cc-radius-photo: 16px;
+  /* Polish pass 2026-09-18 (LOGBOOK "UX polish"): rounder, iOS 26-scale
+     shapes. A 72 px thumbnail (12) sits 12 px inside a row of a 24 px group:
+     12 + 12 = 24, concentric. Fields (14) sit 16 px inside a card — far
+     enough to read as their own surface, so they are not forced to 8. */
+  --cc-radius-sm: 12px; /* thumbnails, small buttons */
+  --cc-radius: 14px; /* inputs, inner elements of a card */
+  --cc-radius-lg: 16px;
+  --cc-radius-card: 24px; /* inset grouped list containers, cards */
+  --cc-radius-photo: 24px;
+  --cc-radius-sheet: 30px; /* the Annotate panel's top corners — a sheet, one step rounder than a card */
   --cc-radius-capsule: 999px;
 
   --cc-tap-min: 44px; /* every interactive element */
@@ -146,8 +151,20 @@
   --glass-fill: rgba(28, 29, 32, 0.55); /* the hairline material: cc-surface at 55%, never blurred */
   --glass-fill-strong: rgba(14, 15, 17, 0.7); /* cc-ground at 70%, the two blurred sticky surfaces */
   --glass-fill-hover: rgba(38, 39, 43, 0.55); /* cc-surface-2 at the hairline alpha: the pointer hover fill (A17, review S1) — one step UP from `--glass-fill`, and press continues to opaque surface-2 */
-  --glass-stroke: rgba(242, 242, 240, 0.18); /* cc-text at 18%, hairline edge (G7) */
-  --glass-highlight: rgba(242, 242, 240, 0.28); /* top inset highlight */
+  /* Polish pass 2026-09-18: the edge steps back (18 → 9 %) and depth takes
+     over — every surface drawn with the same bright outline read as a
+     wireframe. `prefers-contrast: more` still lifts the stroke to 28 %
+     (global.css §2). The top highlight softens with it (28 → 16 %). */
+  --glass-stroke: rgba(242, 242, 240, 0.09); /* hairline edge (G7) */
+  --glass-highlight: rgba(242, 242, 240, 0.16); /* top inset highlight */
+  --glass-fill-field: rgba(242, 242, 240, 0.06); /* a filled field / track: one ink step up from whatever it sits on */
+  --glass-fill-pressed: rgba(242, 242, 240, 0.1); /* the pressed row / tile highlight */
+  /* Layered, transparent shadows (they work over the wash and over photos):
+     a tight contact shadow plus a wide ambient one. `card` for in-flow
+     surfaces, `raised` for the things that float (primary capsule, shutter,
+     the segmented thumb, the sheet). */
+  --cc-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  --cc-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px -4px rgba(0, 0, 0, 0.5);
   --glass-blur: 24px;
   --glass-saturate: 1.2; /* a no-op on mono chrome; only matters where the bar crosses a photo */
   --glass-radius-sm: 14px; /* matches cc-radius-lg neighborhood, rounder than opaque cards */
@@ -168,6 +185,18 @@
   --cc-ease-out: var(--cc-ease);
   --cc-ease-in: cubic-bezier(0.4, 0, 1, 1);
   --cc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  /* Polish pass 2026-09-18 (owner: "smooth and buttery"): press goes in
+     fast (`--cc-motion-press`) and lets go slowly — the release is what a
+     finger feels. Two curves go past 1, on small things only — never a page
+     or a sheet (this amends §6's "no spring, no overshoot"):
+     `--cc-ease-spring` for a released press — it peaks at 1.18 of the
+     DELTA, so a 0.96 capsule lands at 1.007 and settles; `--cc-ease-glide`
+     for things that travel (the segmented thumb, the toggle knob) — 2 %
+     past the stop, ≈ 3 px on a 160 px run. */
+  --cc-motion-release: 320ms;
+  --cc-motion-glide: 300ms;
+  --cc-ease-spring: cubic-bezier(0.34, 1.8, 0.5, 1);
+  --cc-ease-glide: cubic-bezier(0.3, 1.25, 0.5, 1);
 }
 
 /* liquid-glass-web.md §3 also carries a `prefers-color-scheme: light` remap of
