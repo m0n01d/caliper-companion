@@ -2425,3 +2425,24 @@ Main + Part; the page; e2e + docs + screenshots); not pushed.
 - **Not verified on device.** The scroll-to-top on a folder change (`Canvas.setScrollTop` on
   `.shell`) — headless Chromium at 844 px never scrolls the seeded lists; and the Headline +
   subtitle bar in a folder against a real notch.
+
+## 2026-09-18 — Snapkin: rename and the napkin + lens icon
+
+- **Name.** Product renamed Snapkin (snap a photo · napkin sketch · a small companion). Changed:
+  manifest `name`/`short_name`, `<title>`, `apple-mobile-web-app-title`, the A2HS hint, console
+  prefixes, README / CLAUDE.md / SPEC.md headers. **Kept as contracts:** the PouchDB database name
+  (`caliper-companion` — renaming it would orphan every phone's data), the `features.json` schema
+  id and generator name (the import skill and the golden check them), `.ccpart.zip`. Repo name and
+  Pages URL are the owner's call.
+- **Branding.** `docs/design/branding-snapkin.md` + `mockups/brand-*`: three directions (Napkin,
+  Snap, Kin) → owner chose A → five lens riffs (§2a) → four ⌀-line treatments (§2b) → **variant 5,
+  treatment (b)**: orange napkin tilted −6° with crease and lifted flap, a live-blue lens cut into
+  its face, a horizontal ⌀ dimension in ground with filled arrowheads on the rim and witness ticks.
+  The hole is what breaks the "file icon" read; the horizontal drafting dimension is what stops the
+  "expand" read; the blue keeps the tile unlike Fusion's.
+- **Icons.** `scripts/make-icons.mjs` rewritten from §2b's 1024-space geometry (favicon rounded
+  `rx=224`, PNGs full-bleed, mark inside the 80 % safe area); regenerated `public/favicon.svg`,
+  `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`. Checked at 512, 180, and the favicon at
+  16 / 32 / 64 / 128 (Chromium render). Remove and re-add the home-screen app to pick it up.
+- **Open, owner's call:** `generator.name` in `features.json` ("Caliper Companion" → "Snapkin"
+  would touch the golden and the skill's check); repo rename.
