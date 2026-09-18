@@ -386,3 +386,20 @@ describe("Viewport tween math (SPEC §8a A6)", () => {
     )
   })
 })
+
+describe("Viewport.settleScale (SPEC §8a A16b)", () => {
+  test("starts at 1.04, lands on exactly 1, and eases out on the §11.1 curve", () => {
+    expect(Viewport.settleScale(0.0))->toBeCloseTo(1.04, 9)
+    expect(Viewport.settleScale(1.0))->toBeCloseTo(1.0, 9)
+    // `--cc-ease` (0.2, 0.8, 0.2, 1) is past 0.9 by t = 0.5: most of the
+    // 4 % is gone in the first half, the landing is the slow part.
+    expect(Viewport.settleScale(0.5) < 1.01)->toBe(true)
+    expect(Viewport.settleScale(0.25) > Viewport.settleScale(0.5))->toBe(true)
+    expect(Viewport.settleScale(0.5) > Viewport.settleScale(0.75))->toBe(true)
+  })
+
+  test("clamps a progress outside 0..1", () => {
+    expect(Viewport.settleScale(-0.5))->toBeCloseTo(1.04, 9)
+    expect(Viewport.settleScale(1.5))->toBeCloseTo(1.0, 9)
+  })
+})

@@ -108,6 +108,26 @@ module ChipRow = {
 // blob otherwise inside any flex row — see the report); pass `~inline` to
 // size it to its content instead.
 module Segmented = {
+  // SPEC §8a A16b (review B3): the group carries `data-index` (the selected
+  // option's position) and `data-count`, which global.css §8 reads for the
+  // indicator's offset and width. `JsxDOM.domProps` can't express a data
+  // attribute, so the element goes through the jsx-runtime call with
+  // exactly the attributes it needs — the `PathDiv` route in PartsList.res.
+  module Group = {
+    type props = {
+      className: string,
+      role: string,
+      @as("aria-label") ariaLabel?: string,
+      @as("data-index") dataIndex: string,
+      @as("data-count") dataCount: string,
+      children: React.element,
+    }
+
+    @module("react/jsx-runtime") external jsx: (string, props) => React.element = "jsx"
+
+    let make = (props: props): React.element => jsx("div", props)
+  }
+
   @react.component
   let make = (
     ~options: array<(string, string)>,
@@ -117,22 +137,32 @@ module Segmented = {
     ~testIdPrefix: option<string>=?,
     ~ariaLabel: option<string>=?,
   ) =>
-    <div
-      className={inline ? "segmented segmented-inline" : "segmented"} role="group" ariaLabel=?ariaLabel>
-      {options
-      ->Array.map(((key, label)) =>
-        <button
-          key
-          type_="button"
-          className="segmented-option"
-          ariaPressed={key == selected ? #"true" : #"false"}
-          dataTestId=?{testIdPrefix->Option.map(prefix => prefix ++ key)}
-          onClick={_ => onSelect(key)}>
-          {React.string(label)}
-        </button>
-      )
-      ->React.array}
-    </div>
+    Group.make({
+      className: inline ? "segmented segmented-inline" : "segmented",
+      role: "group",
+      ariaLabel: ?ariaLabel,
+      dataIndex: Int.toString(options->Array.findIndex(((key, _)) => key == selected)),
+      dataCount: Int.toString(Array.length(options)),
+      // The selected capsule is this one element, gliding between options
+      // on a CSS transform (A16b); the options themselves stay flat. It is
+      // decoration — `aria-pressed` on the buttons is the state.
+      children: <>
+        <span className="segmented-indicator" ariaHidden=true />
+        {options
+        ->Array.map(((key, label)) =>
+          <button
+            key
+            type_="button"
+            className="segmented-option"
+            ariaPressed={key == selected ? #"true" : #"false"}
+            dataTestId=?{testIdPrefix->Option.map(prefix => prefix ++ key)}
+            onClick={_ => onSelect(key)}>
+            {React.string(label)}
+          </button>
+        )
+        ->React.array}
+      </>,
+    })
 }
 
 // Inset grouped list container (§11.1 "Layout"), with the optional iOS-style

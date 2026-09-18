@@ -194,6 +194,55 @@
   appearance: none;
 }
 
+/* SPEC §8a A16b: the circles enter with a fade and an 8 px slide from the
+   left over `--cc-motion`, 20 ms later per row down to the eighth — rows
+   past it share the last delay, so no later row ever leads an earlier one.
+   Pure CSS by `:nth-child` (the rows are the `.list-group`'s direct
+   children); JSX `style` cannot carry a custom property without an unsafe
+   helper. `backwards` keeps a waiting circle invisible until its turn.
+   Under `prefers-reduced-motion` global.css §12 zeroes the duration AND the
+   delay, so every circle is simply there. This is the one transform inside
+   a `.list-group` (A16a: "only take-overs rise"): 8 px on a 24 px circle
+   centred in its own 44 px box never leaves the row. */
+.part-select {
+  animation: cc-select-in var(--cc-motion) var(--cc-ease-out) backwards;
+}
+
+@keyframes cc-select-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+.part-row-selectable:nth-child(2) .part-select {
+  animation-delay: 20ms;
+}
+
+.part-row-selectable:nth-child(3) .part-select {
+  animation-delay: 40ms;
+}
+
+.part-row-selectable:nth-child(4) .part-select {
+  animation-delay: 60ms;
+}
+
+.part-row-selectable:nth-child(5) .part-select {
+  animation-delay: 80ms;
+}
+
+.part-row-selectable:nth-child(6) .part-select {
+  animation-delay: 100ms;
+}
+
+.part-row-selectable:nth-child(7) .part-select {
+  animation-delay: 120ms;
+}
+
+.part-row-selectable:nth-child(n + 8) .part-select {
+  animation-delay: 140ms;
+}
+
 /* Both pseudo-elements share the one grid cell and are centred by
    `place-items` — no `position: absolute`, which anchored the check to
    whatever ancestor happened to be positioned (seen on the phone after

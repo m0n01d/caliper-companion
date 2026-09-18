@@ -91,6 +91,8 @@ module Ctx = {
   @send external fill: t => unit = "fill"
   @send external save: t => unit = "save"
   @send external restore: t => unit = "restore"
+  @send external translate: (t, float, float) => unit = "translate"
+  @send external scale: (t, float, float) => unit = "scale"
 
   @set external setStrokeStyle: (t, string) => unit = "strokeStyle"
   @set external setFillStyle: (t, string) => unit = "fillStyle"

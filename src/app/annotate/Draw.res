@@ -140,12 +140,14 @@ let handle = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~style as _: style): unit => {
 // second circle growing from the handle's edge to `ringGrowth` × its radius
 // while it fades out. `progress` is 0..1; Annotate.res drives it from the
 // same frame machinery as the A6 viewport tween (and skips it under reduced
-// motion). `Overlay.live` over the halo — the one place `live` still paints
-// (SPEC §8a A14b overlay table).
+// motion). A16b: the linear progress goes through `Viewport.ease` (the
+// §11.1 curve the tween and the CSS share), so the ring lands instead of
+// stopping. `Overlay.live` over the halo — the one place `live` still
+// paints (SPEC §8a A14b overlay table).
 let ringGrowth = 1.6
 
 let snapRing = (ctx: Canvas.Ctx.t, p: Viewport.pt, ~progress: float): unit => {
-  let k = Math.min(Math.max(progress, 0.0), 1.0)
+  let k = Viewport.ease(Math.min(Math.max(progress, 0.0), 1.0))
   let r = handleRadius *. (1.0 +. (ringGrowth -. 1.0) *. k)
   ctx->Canvas.Ctx.save
   ctx->Canvas.Ctx.setGlobalAlpha(1.0 -. k)
@@ -198,13 +200,21 @@ let pillSize = (ctx: Canvas.Ctx.t, text: string, ~style: style): (float, float) 
 // Selected/Dimmed: `Overlay.scrim` fill, `Overlay.ink` label, mono 12 — a
 // Dimmed pill is only ever passed to this function after `dimension`'s
 // alpha group has been restored (see `dimension` below), so its label is
-// never scaled by `Overlay.savedAlpha`.
-let pill = (ctx: Canvas.Ctx.t, text: string, ~at: Viewport.pt, ~style: style): unit => {
+// never scaled by `Overlay.savedAlpha`. `scale` (A16b, default 1) draws the
+// whole pill — box and label — scaled about its centre: a just-saved pill
+// settles 1.04 → 1 (`Viewport.settleScale`).
+let pill = (ctx: Canvas.Ctx.t, text: string, ~at: Viewport.pt, ~style: style, ~scale: float=1.0): unit => {
   let (fill, ink) = switch style {
   | Pending => (Overlay.ink, Overlay.inkOn)
   | Selected | Dimmed => (Overlay.scrim, Overlay.ink)
   }
   let (w, h) = pillSize(ctx, text, ~style)
+  ctx->Canvas.Ctx.save
+  if scale != 1.0 {
+    ctx->Canvas.Ctx.translate(at.x, at.y)
+    ctx->Canvas.Ctx.scale(scale, scale)
+    ctx->Canvas.Ctx.translate(-.at.x, -.at.y)
+  }
   ctx->Canvas.Ctx.setTextAlign("center")
   ctx->Canvas.Ctx.setTextBaseline("middle")
   roundedRect(ctx, ~x=at.x -. w /. 2.0, ~y=at.y -. h /. 2.0, ~w, ~h, ~r=h /. 2.0)
@@ -218,17 +228,21 @@ let pill = (ctx: Canvas.Ctx.t, text: string, ~at: Viewport.pt, ~style: style): u
   }
   ctx->Canvas.Ctx.setFillStyle(ink)
   ctx->Canvas.Ctx.fillText(text, at.x, at.y)
+  ctx->Canvas.Ctx.restore
 }
 
 // The full dimension glyph: haloed line with arrowheads, dashed extension
 // lines at both ends, the value pill on the line's upper (or right) side,
 // and — unless dimmed — the endpoint handles. `a`/`b` are screen points.
+// `pillScale` (A16b, default 1) is the settle of a just-saved pill; it
+// reaches `pill` alone, never the line or the handles.
 let dimension = (
   ctx: Canvas.Ctx.t,
   ~a: Viewport.pt,
   ~b: Viewport.pt,
   ~text: option<string>,
   ~style: style,
+  ~pillScale: float=1.0,
 ): unit => {
   let colour = colourFor(style)
   ctx->Canvas.Ctx.save
@@ -275,7 +289,7 @@ let dimension = (
       let at: Viewport.pt = {x: mid.x +. nx *. off, y: mid.y +. ny *. off}
       switch style {
       | Dimmed => dimmedPill := Some((t, at))
-      | Selected | Pending => pill(ctx, t, ~at, ~style)
+      | Selected | Pending => pill(ctx, t, ~at, ~style, ~scale=pillScale)
       }
     | None => ()
     }
@@ -283,7 +297,7 @@ let dimension = (
   ctx->Canvas.Ctx.restore
 
   switch dimmedPill.contents {
-  | Some((t, at)) => pill(ctx, t, ~at, ~style)
+  | Some((t, at)) => pill(ctx, t, ~at, ~style, ~scale=pillScale)
   | None => ()
   }
 

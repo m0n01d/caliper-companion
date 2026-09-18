@@ -115,6 +115,20 @@ test.describe('motion — SPEC §8a A16a', () => {
       expect(seen).toContain('fitting')
       expect(seen[seen.length - 1]).toBe('fitted')
     })
+
+    // SPEC §8a A16b: the selection circles enter 20 ms later per row
+    // (`cc-select-in`, PartsList.css). Read under `no-preference`: §12
+    // zeroes `animation-delay` with the durations under `reduce`.
+    test('Edit mode staggers the selection circles: increasing animation-delay down the list', async ({page}) => {
+      for (const name of ['Hinge pin', 'Bushing', 'Washer']) await createPart(page, name)
+      await page.goto('/')
+      await page.getByTestId('parts-edit').click()
+      const circles = page.getByTestId('part-select')
+      await expect(circles).toHaveCount(3)
+      const delays = await circles.evaluateAll(els => els.map(el => parseFloat(getComputedStyle(el).animationDelay)))
+      expect(delays).toEqual([0, 0.02, 0.04])
+      expect(await circles.first().evaluate(el => getComputedStyle(el).animationName)).toBe('cc-select-in')
+    })
   })
 
   test.describe('under reduced motion (the suite default)', () => {
@@ -146,6 +160,63 @@ test.describe('motion — SPEC §8a A16a', () => {
       const picker = page.getByTestId('folder-picker')
       await expect(picker).toBeVisible()
       expect(await picker.evaluate(el => getComputedStyle(el).animationName)).not.toBe('none')
+    })
+
+    // SPEC §8a A16b: one `.segmented-indicator` glides between options on a
+    // transform; `data-index` / `data-count` on the group drive its offset
+    // and width (global.css §8). Under `reduce` the transition is 0 ms, so
+    // the computed transform is the landed one.
+    test('the segmented indicator moves with data-index: its transform differs between two pressed states', async ({page}) => {
+      await page.goto('/')
+      await page.getByTestId('new-part').click()
+      const group = page.getByRole('group', {name: 'Units'})
+      const indicator = group.locator('.segmented-indicator')
+      await expect(group).toHaveAttribute('data-count', '2')
+      await expect(group).toHaveAttribute('data-index', '0')
+      const before = await indicator.evaluate(el => getComputedStyle(el).transform)
+      await group.getByRole('button', {name: 'in', exact: true}).click()
+      await expect(group).toHaveAttribute('data-index', '1')
+      await expect(group.getByRole('button', {name: 'in', exact: true})).toHaveAttribute('aria-pressed', 'true')
+      const after = await indicator.evaluate(el => getComputedStyle(el).transform)
+      expect(after).not.toBe(before)
+      // One option plus the 4 px gap: the indicator's own width + 4.
+      await expect
+        .poll(async () => {
+          const [width, tx] = await indicator.evaluate(el => [
+            el.getBoundingClientRect().width,
+            new DOMMatrixReadOnly(getComputedStyle(el).transform).e,
+          ])
+          return Math.abs(tx - (width + 4)) < 1
+        })
+        .toBe(true)
+      // The pressed option is flat now: the fill is the indicator's.
+      expect(
+        await group.getByRole('button', {name: 'in', exact: true}).evaluate(el => getComputedStyle(el).backgroundColor),
+      ).toBe('rgba(0, 0, 0, 0)')
+    })
+
+    // SPEC §8a A16b: the reading field takes focus after p2 with the
+    // one-shot `cc-ring-fade` (Annotate.css). The name is on the computed
+    // style whatever the duration.
+    test('the reading field takes focus after p2 with the ring fade', async ({page}) => {
+      const partId = await createPart(page)
+      await page.goto(`/#/parts/${partId}/capture`)
+      await page.setInputFiles('[data-testid=capture-file-end]', endJpg)
+      await page.waitForURL(/#\/parts\/[^/]+\/faces\/[^/]+$/)
+      await expect(page.locator('html')).not.toHaveAttribute('data-nav')
+      const canvas = page.getByTestId('annotate-canvas')
+      await expect(canvas).toHaveAttribute('data-image-size', '1200x1600')
+      await expect(canvas).toHaveAttribute('data-autofit', 'none')
+      const [s, tx, ty] = (await canvas.getAttribute('data-transform')).split(',').map(Number)
+      const [w, h] = (await canvas.getAttribute('data-image-size')).split('x').map(Number)
+      const box = await canvas.boundingBox()
+      const half = 30 / (w * s)
+      for (const n of [{x: 0.5 - half, y: 0.45}, {x: 0.5 + half, y: 0.45}]) {
+        await page.mouse.click(box.x + n.x * w * s + tx, box.y + n.y * h * s + ty)
+      }
+      const reading = page.getByTestId('reading')
+      await expect(reading).toBeFocused()
+      expect(await reading.evaluate(el => getComputedStyle(el).animationName)).toBe('cc-ring-fade')
     })
   })
 })

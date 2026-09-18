@@ -99,6 +99,11 @@ type snapMarks = {p1Mark: snapMark, p2Mark: snapMark}
 // `gen` ties frames to the ring that started them, as `tween.gen` does.
 type ring = {gen: int, at: array<Types.point>, progress: float}
 
+// SPEC §8a A16b: the pill of the dimension a Save just landed settles
+// 1.04 → 1 over 160 ms (`Viewport.settleScale`). `id` picks that one
+// dimension out of the face's; `gen` ties frames to it, as `ring.gen` does.
+type settle = {gen: int, id: string, progress: float}
+
 // The entry a Save or Delete clears the moment it starts, kept until the
 // write lands so a failed write can put it back (see `trySave`).
 type entry = {
@@ -149,6 +154,8 @@ type model = {
   tweenGen: int, // last tween generation minted
   ring: option<ring>, // the snap ring in flight, if any (A5)
   ringGen: int,
+  settle: option<settle>, // the saved pill settling, if any (A16b)
+  settleGen: int,
   inFlight: option<entry>, // the entry a Save/Delete cleared, until its write lands
   announcement: string, // the `aria-live` line after a save (DESIGN.md §9)
   reading: string,
@@ -170,6 +177,7 @@ type msg =
   | CanvasClicked
   | ViewportTick(int, float) // (tween generation, progress 0..1)
   | RingTick(int, float) // (ring generation, progress 0..1) — SPEC §8a A5
+  | SettleTick(int, float) // (settle generation, progress 0..1) — SPEC §8a A16b
   | SnapToggled
   | SnapSaved(result<unit, string>)
   | ZoomIn
@@ -196,6 +204,7 @@ let zoomStep = 1.5
 let maxZoomOverFit = 8.0
 let tweenMs = 160.0 // DESIGN.md §11.1 "Interaction feel": 150–200 ms
 let ringMs = 150.0 // SPEC §8a A5: the snap ring
+let settleMs = 160.0 // SPEC §8a A16b: the saved pill's settle (`--cc-motion`)
 // A5: the search window on screen — about a fingertip — searched in two
 // steps, near then full, so a nearer edge beats a stronger one further out
 // (see `snapRadii`).
@@ -273,6 +282,11 @@ let frames = (~ms: float, gen: int, tick: (int, float) => msg): Tea.cmd<msg> =>
 // The viewport tween (A6) and the snap ring (A5) share the frame loop.
 let tweenCmd = (gen: int): Tea.cmd<msg> => frames(~ms=tweenMs, gen, (g, p) => ViewportTick(g, p))
 let ringCmd = (gen: int): Tea.cmd<msg> => frames(~ms=ringMs, gen, (g, p) => RingTick(g, p))
+// A16b: the saved pill's settle rides the same loop — the `now`-based ease
+// with no permanent frame loop: it stops scheduling at progress 1, and
+// under reduced motion it single-ticks to 1 inside `dispatch`, before React
+// commits, so the first paint after a Save is already the resting pill.
+let settleCmd = (gen: int): Tea.cmd<msg> => frames(~ms=settleMs, gen, (g, p) => SettleTick(g, p))
 
 let faceKindLabel = (k: Types.faceKind): string =>
   switch k {
@@ -424,6 +438,8 @@ let init = (~partId: string, ~faceId: string): (model, Tea.cmd<msg>) => (
     tweenGen: 0,
     ring: None,
     ringGen: 0,
+    settle: None,
+    settleGen: 0,
     inFlight: None,
     announcement: "",
     reading: "",
@@ -1120,6 +1136,15 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
     | Some(r) if r.gen == gen => ({...m, ring: progress >= 1.0 ? None : Some({...r, progress})}, Tea.none)
     | _ => (m, Tea.none)
     }
+  // One frame of the saved pill's settle (A16b); done at 1, the same way.
+  | (SettleTick(gen, progress), _) =>
+    switch m.settle {
+    | Some(st) if st.gen == gen => (
+        {...m, settle: progress >= 1.0 ? None : Some({...st, progress})},
+        Tea.none,
+      )
+    | _ => (m, Tea.none)
+    }
 
   // The Snap pill (A5): flips at once, persists, and flips back with the
   // error if the write fails.
@@ -1149,7 +1174,9 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
   // canvas when the save started (`begin`, M4 bullet 7); the write landing
   // only reloads the face's dimensions and announces. Whatever the user
   // placed meanwhile stays. `snap` is kept from the live settings: the
-  // pill may have been flipped while the write was in flight.
+  // pill may have been flipped while the write was in flight. A16b: the
+  // landed dimension's pill settles 1.04 → 1 from here (a newer save
+  // supersedes an earlier settle by generation).
   | (Saved(Ok((dims, settings, dim))), Ready(l)) =>
     let announcement =
       "Dimension saved: " ++
@@ -1158,6 +1185,7 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
       NumberParse.format(dim.value, l.part.units) ++
       " " ++
       NumberParse.unitsLabel(l.part.units)
+    let gen = m.settleGen + 1
     (
       {
         ...m,
@@ -1165,8 +1193,10 @@ let update = (m: model, msg: msg): (model, Tea.cmd<msg>) =>
         busy: false,
         inFlight: None,
         announcement,
+        settle: Some({gen, id: dim.id, progress: 0.0}),
+        settleGen: gen,
       },
-      Tea.none,
+      settleCmd(gen),
     )
   | (Saved(Error(why)), Ready(l)) => failed(m, l, why)
 
@@ -1263,6 +1293,7 @@ type scene = {
   pending: pending,
   pendingLabel: option<string>,
   ring: option<ring>, // the snap ring in flight (A5)
+  settle: option<settle>, // the saved pill settling (A16b)
   view: size,
   dpr: float,
   reported: Viewport.t, // `data-transform`: the settled view (a tween's target while it runs)
@@ -1315,12 +1346,18 @@ let drawScene = (el: Dom.element, scene: scene): unit => {
     // below, in the selected style.
     scene.dims->Array.forEach(d =>
       if scene.selected != Some(d.id) {
+        // A16b: the just-saved pill settles; every other pill is at rest.
+        let pillScale = switch scene.settle {
+        | Some(st) if st.id == d.id => Viewport.settleScale(st.progress)
+        | _ => 1.0
+        }
         Draw.dimension(
           ctx,
           ~a=toS(d.p1),
           ~b=toS(d.p2),
           ~text=formatLabel(~name=d.name, ~value=Float.toString(d.value), ~kind=d.kind),
           ~style=Dimmed,
+          ~pillScale,
         )
       }
     )
@@ -1408,6 +1445,7 @@ module CanvasView = {
       scene.pending,
       scene.pendingLabel,
       scene.ring,
+      scene.settle,
       scene.view,
       scene.dpr,
       scene.reported,
@@ -1504,6 +1542,7 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     pending: m.pending,
     pendingLabel: formatLabel(~name=m.name, ~value=m.reading, ~kind=m.kind),
     ring: m.ring,
+    settle: m.settle,
     view: m.view,
     dpr: m.dpr,
     reported: switch m.tween {
