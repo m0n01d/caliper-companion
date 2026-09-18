@@ -269,3 +269,27 @@ list groups, annotate panel — and hairline-outlined opaque `cc-surface` for ch
 segmented: the same material at arm's length, at no cost. Mono canvas overlay (it tests
 better than orange), red for errors, m2 as the icon. The mock is the ceiling; the shipped app is that minus
 blur on small repeated controls. If "tap me" loudness is missed, one accent on the primary capsule and canvas handles is the smallest way back.
+
+## 8. Adopted (SPEC §8a A14, 2026-09-18)
+
+**The Glass column shipped, not Graphite.** §7's own recommendation above ("Graphite tokens with the
+Glass language") was the pre-build read; `docs/design/a14-glass-review.md` S3 amends it: under G1's
+ambient wash the frame's hottest corner is `ground` + 14 % ink, and Glass's `text-3 #8C8F94` holds
+4.73:1 there against Graphite's `#83868B` at 4.20:1 — Graphite's lighter ground also leaves the wash
+less headroom generally. DESIGN.md §2 carries the resulting rule: `text-3` never sits on bare
+`ground`, only on `surface`, `field` or a glass fill.
+
+**Shipped, per §7's own list above, with the review's corrections (`a14-glass-review.md` §4):**
+mono tokens (Glass column); the icon, m2; mono canvas/export overlay (`Overlay.res`); real blur, but
+on the two *sticky* surfaces (bar, footer-while-editing) rather than the "four surfaces a screen"
+this section estimated — B1 found nothing else has content passing under it but `.app-frame`'s own
+ambient gradient, so the hairline material (translucent fill, no filter) is pixel-identical there at
+no GPU cost; Folders/Parts/Features headers hidden, not removed (G5, `Ui.ListGroup ~headerHidden`);
+1.5 px icons; red for errors, the one chroma. "Accent = text" needed the fill/outline table in the
+reviewed SPEC text (B3) — applied verbatim it silenced the toggle knob, the shutter ring and the
+canvas handle's ring/dot.
+
+**Stayed a mock, not shipped:** Paper; a light appearance or a theme toggle; blur on `.list-group` /
+`.panel` / chips / fields (the "at most four surfaces" estimate above); an in-app "Reduce glass"
+toggle (SPEC §13, A15) — `prefers-contrast: more` (which *does* reach iOS, unlike
+`prefers-reduced-transparency`) is A14's only shipped fallback; m1/m3/m4 as icon candidates.

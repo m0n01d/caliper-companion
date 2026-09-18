@@ -252,6 +252,7 @@ ESP32 reading Digimatic SPC (52-bit, 13 nibbles) or the 24-bit cheap-caliper pro
 - **Blocking (Dwight):** mm-only in v0, inch as display toggle? Recommendation: yes.
 - **Non-blocking (engineering):** does `createImageBitmap` at 12 MP hold on an iPhone 13 while the annotate canvas is live? If not, decode a 2048-wide working copy for the canvas and keep the original attachment for export.
 - **Non-blocking (Dwight):** `fflate` zip vs. multi-file share — pick after seeing what iOS Files does with a `.ccpart.zip`.
+- **Non-blocking (engineering):** an in-app "Reduce glass" toggle — the only *working* fallback for the platform, since iOS never reports `prefers-reduced-transparency` (§8a A14 G8 ships `prefers-contrast: more` instead, which does reach iOS "Increase Contrast"). Not built in A14; tracked as **A15**.
 
 ## 14. Instructions for Claude Code (paste into `CLAUDE.md`)
 
