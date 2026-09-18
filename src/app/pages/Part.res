@@ -424,8 +424,11 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
     {if Array.length(features) == 0 && Array.length(conflicts) == 0 {
       <p className="t-footnote muted"> {React.string("No dimensions captured yet.")} </p>
     } else {
+      // A14 G5: "Features · n" is hidden on screen (the rows are the
+      // information; the empty state is the branch above, so nothing reads
+      // oddly) and kept for VoiceOver as the list's name.
       let header = featuresHeader(~featureCount=Array.length(features))
-      <Ui.ListGroup header asList=true testId="features-list">
+      <Ui.ListGroup header headerHidden=true asList=true testId="features-list">
         {features
         ->Array.map(feature => {
             let facesLabel =

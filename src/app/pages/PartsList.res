@@ -1713,14 +1713,20 @@ let renderFolderEditRow = (
   )
 
 // The two groups of the folder view. Each carries its header only when the
-// other renders too — alone, the group needs no label.
+// other renders too — alone, the group needs no label. The header is
+// `headerHidden` (A14 G5, "fewer words"): the rows say what they are (folder
+// glyph vs thumbnail), so the label is for the accessibility tree only — it
+// keeps the two adjacent lists named for VoiceOver and every e2e heading
+// count as it was.
 let renderFoldersGroup = (~header: bool, rows: array<React.element>): React.element =>
-  <Ui.ListGroup asList=true header=?{header ? Some("Folders") : None} testId="folders-list">
+  <Ui.ListGroup
+    asList=true header=?{header ? Some("Folders") : None} headerHidden=true testId="folders-list">
     {React.array(rows)}
   </Ui.ListGroup>
 
 let renderPartsGroup = (~header: bool, rows: array<React.element>): React.element =>
-  <Ui.ListGroup asList=true header=?{header ? Some("Parts") : None} testId="parts-list">
+  <Ui.ListGroup
+    asList=true header=?{header ? Some("Parts") : None} headerHidden=true testId="parts-list">
     {React.array(rows)}
   </Ui.ListGroup>
 

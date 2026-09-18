@@ -3,37 +3,43 @@
 
    Source of truth: DESIGN.md §2 (the `cc-` colours, spacing, radii) as amended
    by DESIGN.md §11 (system type stack, HIG type scale, capsule shapes, 16 px
-   page margin, dark only) and docs/design/liquid-glass-web.md §3 (the
-   `--glass-*` tokens, verbatim). Ternpike's palette is gone; nothing here is
-   inherited from it. */
+   page margin, dark only), SPEC §8a A14 (the monochrome palette and the
+   two-material glass tokens) and docs/design/liquid-glass-web.md §3 (the
+   `--glass-*` names). Ternpike's palette is gone; nothing here is inherited
+   from it. */
 
 :root {
   /* Dark only (DESIGN.md §11.1 "Colour"): form controls, scrollbars and the
      UA stylesheet render in their dark variants. */
   color-scheme: dark;
 
-  /* ── Colour (DESIGN.md §2, Dark Sky palette per
-     docs/design/palettes-2026-09-17.md §2/§5, applied 2026-09-17) ────── */
-  --cc-ground: #15181d;
-  --cc-surface: #20242a;
-  --cc-surface-2: #2a2f36;
-  --cc-field: #1b1f25;
-  --cc-border: #343a43;
-  --cc-text: #eef1f5;
-  --cc-text-2: #afb7c1;
-  --cc-text-3: #87909b;
-  --cc-accent: #ff7f2a; /* Dark Sky: Fusion-icon orange family (icon is #ff6b00) */
-  --cc-accent-pressed: #ff6b00; /* §6: pressed = the Fusion icon orange itself, −8 L */
-  --cc-accent-ink: #2a1200;
-  --cc-live: #5ac1f2; /* Dark Sky: Autodesk-blue 300/400 family, Fusion sketch blue */
-  --cc-live-wash: #0e2d42;
-  --cc-live-ink: #cdeaf7; /* = Autodesk autodeskBlue-100 */
-  --cc-live-border: #174a6b;
-  --cc-error: #f47070;
+  /* ── Colour (DESIGN.md §2, monochrome per SPEC §8a A14 — the "Glass"
+     column of docs/design/branding-snapkin.md §7, reviewed in
+     docs/design/a14-glass-review.md S3; applied 2026-09-18). One ink, one
+     chroma: `error` is the only hue in the app. `accent` = `text` — the
+     rule changed from hue to fill (see the A14 fill/outline table), so the
+     semantic names stay. `text-3` never sits on bare ground (4.14:1 under
+     the G1 wash's peak) — only on `surface`, `field` or a glass fill. ───── */
+  --cc-ground: #0e0f11;
+  --cc-surface: #1b1c1f;
+  --cc-surface-2: #26272b;
+  --cc-field: #151618;
+  --cc-border: #34363a;
+  --cc-text: #f2f2f0;
+  --cc-text-2: #a9abaf;
+  --cc-text-3: #8c8f94;
+  --cc-accent: #f2f2f0; /* = text: the primary is an ivory fill, not a hue */
+  --cc-accent-pressed: #d9dadb; /* §6: pressed = the ivory fill, −8 L */
+  --cc-accent-ink: #0e0f11; /* = ground: the label on an ivory fill (17:1) */
+  --cc-live: #c9cbce; /* captured ring, check badge, snap ring, mono readouts */
+  --cc-live-wash: #26272b;
+  --cc-live-ink: #f2f2f0;
+  --cc-live-border: #45484d;
+  --cc-error: #f0605a;
   --cc-error-ink: #2b0a0a;
-  --cc-error-wash: rgb(244 112 112 / 0.2); /* §4 warning row (error): cc-error at 20% */
-  --cc-photo-mat: #242930;
-  --cc-scrim: #171a1ecc;
+  --cc-error-wash: rgb(240 96 90 / 0.2); /* §4 warning row (error): cc-error at 20% */
+  --cc-photo-mat: #1e1f22;
+  --cc-scrim: #0e0f11cc;
 
   /* ── Type (DESIGN.md §11.1: system stack, HIG "Large" Dynamic Type step) ─ */
   --cc-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
@@ -94,13 +100,20 @@
   --cc-btn-height: 50px; /* capsule primary/secondary buttons (§11.1 "Shape") */
   --cc-shutter: 76px;
 
-  /* ── Glass (docs/design/liquid-glass-web.md §3, verbatim) ─────────────── */
-  --glass-fill: rgba(32, 36, 42, 0.72); /* cc-surface at ~72% */
-  --glass-fill-strong: rgba(21, 24, 29, 0.82); /* cc-ground at ~82%, for over-photo chrome */
-  --glass-stroke: rgba(238, 241, 245, 0.1); /* cc-text at 10%, hairline edge */
-  --glass-highlight: rgba(238, 241, 245, 0.16); /* top inset highlight */
-  --glass-blur: 20px;
-  --glass-saturate: 1.6;
+  /* ── Glass (docs/design/liquid-glass-web.md §3, re-tuned by SPEC §8a A14
+     G2/G7 and docs/design/a14-glass-review.md B2) ─────────────────────────
+     Two materials. `--glass-fill-strong` (70 %) is the blurred one, on the
+     two sticky surfaces only (the nav bar and the Shell footer), where
+     content really passes underneath: over a white photo it composites to
+     (86,87,88), `text` 6.5:1. `--glass-fill` (55 %, no filter) is the
+     hairline material on every in-flow surface — capsules, chips, cards,
+     groups, the panel — whose only backdrop is the frame's ambient wash. */
+  --glass-fill: rgba(28, 29, 32, 0.55); /* the hairline material: cc-surface at 55%, never blurred */
+  --glass-fill-strong: rgba(14, 15, 17, 0.7); /* cc-ground at 70%, the two blurred sticky surfaces */
+  --glass-stroke: rgba(242, 242, 240, 0.18); /* cc-text at 18%, hairline edge (G7) */
+  --glass-highlight: rgba(242, 242, 240, 0.28); /* top inset highlight */
+  --glass-blur: 24px;
+  --glass-saturate: 1.2; /* a no-op on mono chrome; only matters where the bar crosses a photo */
   --glass-radius-sm: 14px; /* matches cc-radius-lg neighborhood, rounder than opaque cards */
   --glass-radius-pill: 999px;
 

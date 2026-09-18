@@ -127,7 +127,7 @@
   min-height: var(--cc-tap-min);
   padding: var(--cc-space-2) 14px;
   background: var(--cc-field);
-  border: 1px solid var(--cc-border);
+  border: 1px solid var(--glass-stroke); /* A14: drawn like the field above it — `field` + the stroke */
   border-radius: var(--cc-radius);
   color: var(--cc-text);
   font: var(--cc-text-body);
@@ -246,8 +246,11 @@
 
 /* The selection toolbar's contents (the Shell's `.shell-footer` supplies
    the sticky glass, hairline and safe-area padding): Move and Delete as
-   two accent text actions, edge to edge, Delete in `cc-error`; the confirm
-   strip stacks its Footnote over the Delete/Cancel pair. */
+   two `text` actions, edge to edge, Delete in `cc-error` (A14 table: the
+   app's one chroma); the confirm strip stacks its Footnote over the
+   Delete/Cancel pair. The compound selector is load-bearing: the button
+   also carries `.bar-action` (Part.css, linked after this file), which
+   used to win the specificity tie and paint Delete in the accent. */
 .edit-toolbar-actions {
   display: flex;
   align-items: center;
@@ -255,7 +258,7 @@
   gap: var(--cc-space-2);
 }
 
-.edit-toolbar-danger {
+.bar-action.edit-toolbar-danger {
   color: var(--cc-error);
 }
 

@@ -82,20 +82,30 @@
   gap: var(--cc-space-4);
 }
 
-/* 76 px accent shutter, 4 px cc-text ring (DESIGN.md §4). A real `<label>`
-   for the selected kind's camera input (referenced by `htmlFor`, see
-   Capture.res's module-end notes) — not a button, so the native
-   label→input file-picker gesture stays intact on iOS Safari. */
+/* The iOS shutter (DESIGN.md §4 as rewritten by A14, review B3b): a `text`
+   disc inside a `text` ring with a `ground` gap between them — the gap is
+   what keeps it from reading as one flat ivory disc now that `accent` =
+   `text` (the old 4 px `text` border on an `accent` fill). The disc is
+   `--cc-shutter` − 12 px with a 6 px margin, so the two box-shadow rings
+   (3 px gap + 3 px ring) land exactly on the 76 px footprint the row was
+   laid out for. A real `<label>` for the selected kind's camera input
+   (referenced by `htmlFor`, see Capture.res's module-end notes) — not a
+   button, so the native label→input file-picker gesture stays intact on
+   iOS Safari. */
 .shutter {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: var(--cc-shutter);
-  height: var(--cc-shutter);
+  width: calc(var(--cc-shutter) - 12px);
+  height: calc(var(--cc-shutter) - 12px);
+  margin: 6px;
   border-radius: 50%;
-  border: 4px solid var(--cc-text);
-  background: var(--cc-accent);
+  border: 0;
+  background: var(--cc-text);
+  box-shadow:
+    0 0 0 3px var(--cc-ground),
+    0 0 0 6px var(--cc-text);
   color: var(--cc-accent-ink);
   cursor: pointer;
   touch-action: manipulation;
@@ -116,7 +126,7 @@
 }
 
 .shutter-disabled:active {
-  background: var(--cc-accent);
+  background: var(--cc-text);
 }
 
 .shutter-caption {
@@ -144,7 +154,7 @@
    the focused input to the sibling label that represents it. */
 .capture-page:has(.input-selected-camera:focus-visible) .shutter {
   outline: 2px solid var(--cc-accent);
-  outline-offset: 3px;
+  outline-offset: 8px; /* 2 px clear of the 6 px shadow ring */
 }
 
 .capture-page:has(.input-selected-library:focus-visible) .shutter-block > .btn-secondary {
@@ -167,7 +177,7 @@
   font-weight: 600;
 }
 
-/* -- recapture card (inline, opaque, non-modal) ------------------------ */
+/* -- recapture card (inline, non-modal; the `.list-group` hairline material) -- */
 .recapture-card {
   display: flex;
   flex-direction: column;
@@ -181,7 +191,7 @@
   gap: var(--cc-space-2);
 }
 
-/* -- custom-face card (SPEC §8a A7; inline, opaque, non-modal) --------- */
+/* -- custom-face card (SPEC §8a A7; inline, non-modal; `.list-group` material) -- */
 .custom-card {
   display: flex;
   flex-direction: column;

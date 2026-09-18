@@ -2446,3 +2446,119 @@ Main + Part; the page; e2e + docs + screenshots); not pushed.
   16 / 32 / 64 / 128 (Chromium render). Remove and re-add the home-screen app to pick it up.
 - **Open, owner's call:** `generator.name` in `features.json` ("Caliper Companion" → "Snapkin"
   would touch the golden and the skill's check); repo rename.
+
+## 2026-09-18 — A14a hybrid glass: mono tokens, two materials, per-selector fixes (agent/a14-glass)
+
+SPEC §8a A14, the A14a half (tokens, materials, headers, icons, fallbacks); A14b (overlays, icon,
+export test, docs) is a sibling branch on disjoint files. Every number below is the reviewed one
+(`docs/design/a14-glass-review.md`); where the code and the text disagreed, the code won and it is
+listed under "Deviations".
+
+- **Tokens** (`src/theme.css`): the §7 "Glass" column verbatim — ground `#0E0F11`, surface
+  `#1B1C1F`, surface-2 `#26272B`, field `#151618`, border `#34363A`, text `#F2F2F0`, text-2
+  `#A9ABAF`, text-3 `#8C8F94`, accent = text, accent-pressed `#D9DADB`, accent-ink `#0E0F11`,
+  live `#C9CBCE` / live-border `#45484D` / live-wash `#26272B` / live-ink `#F2F2F0`, error
+  `#F0605A` / error-ink `#2B0A0A` / error-wash 20 %, photo-mat `#1E1F22`, scrim `#0E0F11cc`.
+  Glass: fill `rgba(28,29,32,.55)`, fill-strong `rgba(14,15,17,.70)`, stroke 18 % ink, highlight
+  28 % ink, blur 24 px, saturate 1.2. `theme-color` (`index.html`) and the manifest's
+  `theme_color` / `background_color` are `#0E0F11`. The semantic names stay: `.btn-primary`,
+  focus rings, the bar's icon buttons, `a`, the selected face ring, the picker's check and the
+  selection circles all still say `--cc-accent` and now resolve to ivory.
+- **Materials** (`src/global.css`). Real `backdrop-filter` on `.shell-topbar::before` and
+  `.shell-footer::before` only, at `--glass-fill-strong`. Everything else is the hairline
+  material — `--glass-fill` with no filter, 1 px `--glass-stroke`, `inset 0 1px 0
+  --glass-highlight`: the base `.btn` capsule and `.btn-secondary`, `.btn-icon`, `.chip`,
+  `.list-group` (every one — Parts groups, search sections, the picker's listbox, the create
+  form's grouped fields, Capture's custom / recapture cards, Settings, Debug), `.panel` (stroke on
+  three edges; `.annotate-tools` went transparent inside it), `.a2hs-hint`. Stroke only, own
+  fill: text inputs / select / textarea (`field`), the segmented track (`field`), the toggle
+  track (`surface-2`). `.face-card`: `surface-2` mat + a real 1 px stroke. G1 wash on
+  `.app-frame` (14 % top-left, 8 % bottom-right radial gradients over ground). Blur count per
+  screen, verified by reading the CSS, not the compositor:
+
+  | Screen | Blurred surfaces |
+  |---|---|
+  | Parts root, folder view, search results, picker, create form | bar (1); + footer toolbar while editing (2) |
+  | Part, Capture, Annotate, Settings, Debug | bar (1) |
+
+- **Per-selector fixes**: `.btn-primary` ivory fill / `accent-ink` label, highlight dropped
+  (`.btn-danger` and `.btn-plain` drop it too); `.chip[aria-pressed="true"]` ivory fill;
+  `.segmented-option[aria-pressed="true"]` = `rgba(242,242,240,.16)` over `field` with a `text`
+  label (the one 16 % surface — a lighter glass, not ivory, so the primary stays the one ivory
+  capsule on Annotate); `.toggle` on = `text` track + `ground` knob (off = `surface-2` + `text`);
+  `.shutter` = `text` disc, `0 0 0 3px ground, 0 0 0 6px text` gap ring, no border;
+  `.annotate-tools .annotate-snap[aria-pressed="true"]` = `text` fill + `accent-ink` label (a
+  new rule — the on state was a text colour); `.face-card-selected::after` = `text` ring;
+  `<select>` chevron `#A9ABAF` at 1.5; `.face-card-scrim` gradient on (14,15,17).
+- **Headers / icons / fallbacks**: `Ui.ListGroup ~headerHidden` (→ `Header ~hidden`) puts
+  `visually-hidden` on the `<h2>`; PartsList's "Folders" / "Parts" and Part's "Features · n"
+  pass it. The headings stay in the accessibility tree, so `parts.spec.js`'s three heading
+  counts and the two adjacent `role="list"` names are unchanged. Kept visible: search-section
+  paths, Settings, Debug, "Choose Folder". `Icon.res` `strokeWidth="1.5"` (the check badge's CSS
+  `stroke-width: 3` still wins). `@supports not` and `prefers-reduced-transparency` blocks
+  untouched (they already cover exactly the two blurred surfaces); new `@media
+  (prefers-contrast: more)`: those two go opaque `surface` with no filter and `--glass-stroke`
+  steps to 28 % ink — the fallback that actually fires on iOS ("Increase Contrast").
+- **Contrast**, measured on the built `src/theme.css` with a throwaway node script (WCAG 2.x,
+  sRGB; composites computed for the translucent fills). Every pair the spec names clears 4.5:1;
+  the two below the line are discussed under "Deviations".
+
+  | Pair | Ratio |
+  |---|---|
+  | text / text-2 / text-3 on ground | 17.11 / 8.34 / 5.91 |
+  | text / text-2 / text-3 on surface | 15.20 / 7.41 / 5.25 |
+  | text / text-2 / text-3 on surface-2 | 13.31 / 6.49 / 4.60 |
+  | text / text-2 / text-3 on field | 16.15 / 7.87 / 5.58 |
+  | text / text-2 / text-3 on glass-fill over the wash peak (36,37,39) | 13.69 / 6.67 / 4.73 |
+  | text / text-2 / text-3 on glass-fill over ground | 16.00 / 7.80 / 5.53 |
+  | text / text-2 on bare ground at the wash peak (46,47,48) | 11.97 / 5.83 |
+  | **text-3 on bare ground at the wash peak** | **4.13** — the "never on bare ground" rule; nothing puts it there (see below) |
+  | accent-ink on accent (primary label) / on accent-pressed | 17.11 / 13.70 |
+  | live on ground / on surface; live-ink on live-wash | 11.80 / 10.48; 13.31 |
+  | error on ground / on surface; error-ink on error (danger label) | 5.96 / 5.29; 5.67 |
+  | text on error-wash over surface | 11.52 |
+  | text on the bar (fill-strong) over white / pale fixture / ground | 6.46 / 7.20 / 17.11 |
+  | **text-2 on the bar over white** | **3.15** — see Deviations |
+  | text on the selected segment (16 % ink over field); text-2 on field | 10.31; 7.87 |
+  | text on the scrim pill over white | 9.40 |
+  | ground check on live badge; ground knob on text track; text knob on surface-2 track | 11.80; 17.11; 13.31 |
+  | text on photo-mat | 14.70 |
+
+  `text-3` as text only ever sits on `field` (placeholders), inside a `.list-group` (chevrons)
+  or as a ring (the selection circle, the canvas focus ring); the `.slot { color: text-3 }`
+  rule is dead CSS (no markup uses `.slot*` any more).
+- **Verification**: `npx rescript build` clean, `vitest` 275 / 275 (unchanged), Chromium e2e
+  (`E2E_PORT=4360`) **58 / 58 green twice**. Tour into `/tmp/tour-a14a` (all 17), looked at
+  `02 03 04 05 07 08 09 10 12 13 14 15 16 17` against `mockups/mono-glass.png`: the primary is
+  the one ivory capsule per screen, captured (live ring + badge) vs selected (`text` ring) vs
+  empty (dashed) read apart without hue, the Snap pill's on state is a fill, the toggle knob
+  survives both states, hidden headers are gone from Parts / Part and kept on Settings / Debug /
+  search sections. `docs/screenshots` untouched (A14b regenerates them).
+- **Deviations and judgment calls.**
+  1. **"Delete n" was never red.** `.edit-toolbar-danger { color: error }` (PartsList.css) tied
+     on specificity with `.bar-action { color: accent }` (Part.css, linked later) and lost —
+     the pre-A14 screenshot shows it orange. Under mono it came out ivory, so the table's
+     "Delete n `error`" row needed `.bar-action.edit-toolbar-danger`. That, and
+     `.part-folder-field`'s border (`--cc-border` → `--glass-stroke`, to match the Name input it
+     is drawn like), are the two lines in `PartsList.css`, a file in neither agent's list.
+  2. **Bar subtitle over a photo.** At the spec's 70 % bar fill, `text-2` over a pure-white
+     backdrop is 3.15:1 (`text` is 6.5:1, the pair the spec measured). Only Part's folder-path
+     subtitle can scroll over a photo, and only while a white face card is under the bar. Kept
+     70 %: an 85 % fill gives 5.4:1 at the cost of most of the glass; the subtitle in `text`
+     loses the HIG secondary. Owner's call — flagged, not changed.
+  3. `.face-card` takes the stroke as a real border (an inset shadow sits under the photo) and no
+     highlight (the photo covers it; the dashed empty card has no edge to highlight). The
+     captured / selected rings sit 1 px inside it.
+  4. `.toggle-track` takes its stroke as `inset 0 0 0 1px`, not a border — a border would shift
+     the 28 px knob's 2 px geometry inside the 52×32 track.
+  5. `.shutter` is `--cc-shutter` − 12 px with a 6 px margin, so the 3 + 3 px shadow rings land on
+     the 76 px footprint the row was laid out for; the camera-input focus outline offset went
+     3 → 8 px to clear the ring.
+  6. `.annotate-dimensions .list-group` keeps its opaque `surface-2` (review S9) and inherits the
+     base stroke + highlight — one raised card inside the translucent panel.
+  7. `prefers-contrast: more` stroke is 28 % per the spec text (the review's S8 said 40 %).
+- **Unverified.** Anything device-side: the 24 px blur and `saturate(1.2)` on iOS Safari, that
+  "Increase Contrast" really trips `prefers-contrast: more` in a standalone PWA, the
+  `.a2hs-hint` material (it only renders on iOS, not in the tour), and the bar over a real
+  photo scrolling under it (the tour never scrolls). `prefers-reduced-transparency` is
+  untestable on the target.
