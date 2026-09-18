@@ -7,37 +7,42 @@
 // icon-512.png, apple-touch-icon.png (180). Rendered with the bundled Chromium
 // so there's no image dependency.
 //
-// The mark is Snapkin's napkin: an orange napkin tilted −6° with a crease and
-// a lifted flap, a live-blue lens cut into its face, and a ⌀ dimension drawn
-// across the lens in ground — filled arrowheads on the rim, witness ticks —
-// the drafting idiom, not the UI "expand" glyph. Geometry and the reasoning
-// behind every number: docs/design/branding-snapkin.md §2 / §2a / §2b
-// (direction A, variant 5, treatment b). Colours are DESIGN.md §2 tokens
-// (Dark Sky); the two accents carry the app's own rule — accent = tappable
-// (the napkin), live = verified (the lens).
+// The mark is m2, "the lens alone" (SPEC §8a A14b; docs/design/
+// branding-snapkin.md §7 "Icons" — m2 over m1's busy napkin+lens+⌀, m3's
+// bare-dimension "expand" reading and m4's napkin silhouette): a closed
+// ring with a horizontal ⌀ dimension drawn across it in the same ink,
+// filled arrowheads at the rim, no ticks — the drafting idiom, not a UI
+// "expand" glyph, and one colour at one weight so it reads at a 16 px
+// clear tile. Numbers are `docs/design/a14-glass-review.md` S1 (the
+// board's `brand-mono.html:108-110` re-weighted for a system-glyph
+// stroke, not the earlier draft's, which drew a θ at favicon size). One
+// ink `#F2F2F0` on `#0E0F11` (DESIGN.md §2).
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
-const GROUND = '#15181D', ACCENT = '#FF7F2A', LIVE = '#5AC1F2'
-const CREASE = '#FF8E45', FLAP = '#FFC59A'
+const GROUND = '#0E0F11', INK = '#F2F2F0'
 
-// `rounded` only for the SVG favicon; PNGs stay square so platform masks apply.
-// Everything sits inside 250–774 of the 1024 box: the 80 % safe area iOS's
-// squircle mask and Android's maskable icons both leave alone.
+// Ring: r 300 centred (512, 512), stroke 64 (outer r 332, 180–844; inner r
+// 268, 244–780). ⌀ line: x 316–708 at y 512, stroke 64 (the same weight as
+// the ring — "one ink, one weight"), round caps — the caps alone reach
+// 284–740, 40 px clear of the inner ring (268 − 40 = 228 from centre).
+// Arrowheads: filled, 112 (tip-to-base) × 96 (base width), tips at x 252 /
+// 772 (8 px inside the inner ring), bases at x 364 / 660, overlapping the
+// line's own round-capped end so the two paths read as one continuous
+// shape, not two abutting ones.
+//
+// `rounded` only for the SVG favicon; PNGs stay square so platform masks
+// apply. Safe zone: the ring's outer edge (r 332) sits 78 px inside
+// Android's maskable circle, ⌀ 80 % (r 410; 102–922 on the axes) — the
+// real constraint; iOS only clips corners. (An earlier draft's "205–819,
+// 80 %" was the 60 % box, and this file's own comment once said
+// "250–774 … 80 %", which is 51 % — both wrong; fixed here.)
 const svg = (rounded) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <rect width="1024" height="1024" ${rounded ? 'rx="224"' : ''} fill="${GROUND}"/>
-  <g transform="rotate(-6 512 512)">
-    <path d="M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z" fill="${ACCENT}"/>
-    <path d="M250 306Q250 250 306 250L626 250L250 626Z" fill="${CREASE}"/>
-    <path d="M626 250L626 398L774 398Z" fill="${FLAP}"/>
-    <circle cx="512" cy="530" r="178" fill="${LIVE}"/>
-    <g transform="translate(512 530)" fill="${GROUND}" stroke="${GROUND}" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M-122 0L122 0" fill="none" stroke-width="34"/>
-      <path d="M-174 0L-110 -28L-110 28Z" stroke-width="10"/>
-      <path d="M174 0L110 -28L110 28Z" stroke-width="10"/>
-      <path d="M-178 -46V46M178 -46V46" fill="none" stroke-width="30"/>
-    </g>
-  </g>
+  <circle cx="512" cy="512" r="300" fill="none" stroke="${INK}" stroke-width="64"/>
+  <path d="M316 512L708 512" fill="none" stroke="${INK}" stroke-width="64" stroke-linecap="round"/>
+  <path d="M252 512L364 464L364 560Z" fill="${INK}"/>
+  <path d="M772 512L660 464L660 560Z" fill="${INK}"/>
 </svg>
 `
 
