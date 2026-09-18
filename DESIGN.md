@@ -35,10 +35,11 @@ leaves the wash less headroom (`docs/design/a14-glass-review.md` S3).
 | `cc-accent` | = `cc-text` `#F2F2F0` | the *rule* changed from hue to fill, not a value swap — see §4's fill/outline table for what each control does with it |
 | `cc-accent-pressed` | `#D9DADB` | primary button pressed state (§6) |
 | `cc-accent-ink` | `#0E0F11` | text on an ivory accent fill |
-| `cc-live` | `#C9CBCE` | the snap ring, `Ui.WarningRow` Live, `.annotate-dim-row` selected — the only `live-*` surfaces |
-| `cc-live-wash` | `#26272B` | live badge/banner background |
-| `cc-live-ink` | `#F2F2F0` | text on live wash |
-| `cc-live-border` | `#45484D` | border for live wash cards |
+| `cc-live` | `#38ABDF` | Fusion's sketch blue (autodeskBlue-400): the canvas and export overlays, the snap ring, captured and selected rings, the check badge, `Ui.WarningRow` Live, `.annotate-dim-row` selected (S2 splash, `docs/design/branding-snapkin.md` §9) |
+| `cc-live-wash` | `#0A324D` | live badge/banner background (autodeskBlue-900) |
+| `cc-live-ink` | `#CDEAF7` | text on live wash (autodeskBlue-100, 10.6:1) |
+| `cc-live-border` | `#0696D7` | border for live wash cards (autodeskBlue-500) |
+| `cc-live-fill` | `#0696D7` | the "on" fill — Snap pill, selected segment, pressed chips — with a `cc-ground` label (5.80:1); tappable stays the ivory `cc-accent` fill |
 | `cc-error` | `#F0605A` | invalid input border and inline message; text on it `#2B0A0A` — the one chroma in the app |
 | `cc-error-wash` | `rgb(240 96 90 / 0.2)` | error banner/badge background |
 | `cc-photo-mat` | `#1E1F22` | canvas background behind letterboxed photos |

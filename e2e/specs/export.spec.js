@@ -434,7 +434,7 @@ const pixelAt = (png, x, y) => {
 //
 // Thresholds: the ink line is exactly `Overlay.ink` #F2F2F0 = (242,242,240)
 // even after PNG's lossless re-encode, so `isInk` uses a tight window
-// (every channel in [225, 250], max−min <= 12) rather than an unbounded
+// around the blue ink (see the predicate) rather than an unbounded
 // "channel >= 200", which would pass the white photo itself
 // (255,255,255) with no line drawn at all. The halo (`Overlay.halo`,
 // cc-ground at 85 %) composited over a pure-white background works out to
@@ -446,8 +446,10 @@ function sampleLegibility(png, {xFrac, yFrac, spanPx}) {
   const cx = Math.round(png.width * xFrac)
   const cy = Math.round(png.height * yFrac)
   const isHalo = ({r, g, b}) => r < 70 && g < 70 && b < 70
-  const isInk = ({r, g, b}) =>
-    [r, g, b].every(c => c >= 225 && c <= 250) && Math.max(r, g, b) - Math.min(r, g, b) <= 12
+  // S2: the line is Overlay.ink = autodeskBlue-400 (56, 171, 223); a ±18 window
+  // per channel survives the PNG round trip and still rejects the white photo
+  // (255, 255, 255), the pale fixture and the dark halo.
+  const isInk = ({r, g, b}) => r >= 38 && r <= 74 && g >= 153 && g <= 189 && b >= 205 && b <= 241
 
   const column = []
   for (let y = Math.max(0, cy - spanPx); y <= Math.min(png.height - 1, cy + spanPx); y++) {

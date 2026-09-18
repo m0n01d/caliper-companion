@@ -909,8 +909,9 @@ textarea:disabled {
    chips around it, and `aria-pressed` carries the state for everyone else. */
 .chip-selected,
 .chip[aria-pressed="true"] {
-  background: var(--cc-text);
-  border-color: var(--cc-text);
+  /* S2: "on" is the live fill (Fusion blue-500), tappable stays ivory. */
+  background: var(--cc-live-fill);
+  border-color: var(--cc-live-fill);
   box-shadow: none;
   color: var(--cc-accent-ink);
 }
@@ -963,8 +964,9 @@ textarea:disabled {
    stays the one ivory capsule on Annotate (review S2). A literal, not a
    token: it is the only 16 % surface in the app. */
 .segmented-option[aria-pressed="true"] {
-  background: rgba(242, 242, 240, 0.16);
-  color: var(--cc-text);
+  /* S2: the selected segment is "on" — live fill, ground label (5.80:1). */
+  background: var(--cc-live-fill);
+  color: var(--cc-accent-ink);
 }
 
 .segmented-option:focus-visible {
@@ -1363,7 +1365,7 @@ button.warning-row {
 }
 
 .face-card-selected::after {
-  border: 2px solid var(--cc-text); /* A14: selected = the `text` ring; captured = `live` */
+  border: 2px solid var(--cc-live); /* S2: selected and captured both ring in the live blue */
 }
 
 /* Bottom scrim: cc-ground/cc-scrim's rgb (A14 mono: 14,15,17) at a

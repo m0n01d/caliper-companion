@@ -31,10 +31,16 @@
   --cc-accent: #f2f2f0; /* = text: the primary is an ivory fill, not a hue */
   --cc-accent-pressed: #d9dadb; /* §6: pressed = the ivory fill, −8 L */
   --cc-accent-ink: #0e0f11; /* = ground: the label on an ivory fill (17:1) */
-  --cc-live: #c9cbce; /* captured ring, check badge, snap ring, mono readouts */
-  --cc-live-wash: #26272b;
-  --cc-live-ink: #f2f2f0;
-  --cc-live-border: #45484d;
+  /* S2 splash (branding-snapkin.md §9): "live / verified" is Fusion's sketch
+     blue. 400 for rings, badges, text and the canvas (7.36:1 on ground);
+     500 as a fill with a ground label (5.80:1) for the "on" states — Snap
+     pill, selected segment, pressed chips. Tappable stays the ivory fill. */
+  --cc-live: #38abdf; /* autodeskBlue-400: captured ring, selected ring, check badge, snap ring, live readouts */
+  --cc-live-wash: #0a324d; /* autodeskBlue-900 */
+  --cc-live-ink: #cdeaf7; /* autodeskBlue-100: text on live wash (10.6:1) */
+  --cc-live-border: #0696d7; /* autodeskBlue-500 */
+  --cc-live-fill: #0696d7; /* autodeskBlue-500: the "on" fill */
+  --cc-live-fill-pressed: #0684be; /* −8 L, 4.61:1 with a ground label */
   --cc-error: #f0605a;
   --cc-error-ink: #2b0a0a;
   --cc-error-wash: rgb(240 96 90 / 0.2); /* §4 warning row (error): cc-error at 20% */

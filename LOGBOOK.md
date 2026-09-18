@@ -2692,3 +2692,20 @@ here). Per SPEC §8a A14's "Build split" and `docs/design/a14-glass-review.md` �
   parts' common folder when they share one, else the folder being viewed (search results can mix
   folders). The root-level A12b test passed before and after because its parts *are* at root; the
   A13 drill-down test now asserts `Miata/Interior` is preselected when moving from inside it.
+
+## 2026-09-18 — S2 splash: Fusion blue on the mono glass (adopted)
+
+- Owner picked **S2 Live** from `branding-snapkin.md` §9 (icon unchanged). Blue means one thing —
+  measured or verified geometry — and the mono "ivory fill = tappable" rule stays.
+- **Changed.** `Overlay.res` `ink` and `live` → autodeskBlue-400 `#38ABDF` (lines, handles, pill
+  text, snap ring; 7.36:1 on ground, 5.32 / 7.11 vs the halo on the pale / dark fixture; the 500
+  step is 4.19 on the pale halo, too thin for a line). `theme.css` live family → the Autodesk
+  steps (400 / 900 / 100 / 500) plus `--cc-live-fill #0696D7` and `--cc-live-fill-pressed
+  #0684BE` (ground label 5.80 / 4.61). `global.css`: chip on, selected segment → live fill with a
+  ground label; selected face ring → `live` (captured and selected now both ring blue, selected
+  keeps its stronger ring). `Annotate.css`: Snap on → live fill. `export.spec.js`: `isInk` now
+  matches the blue ±18 per channel instead of near-white; the halo-above-and-below rule stays, and
+  both fixtures pass. `DESIGN.md` §2 rows and the branding doc's adopted line.
+- **Unchanged.** Blur budget, the ivory primary, the icon, `features.json`, the export geometry.
+- **Verified.** rescript build clean; vitest 276/276 (the `RenderTest` contrast case now measures
+  ink #38ABDF vs inkOn #0E0F11 = 7.36); Chromium e2e 58/58; tour regenerated.

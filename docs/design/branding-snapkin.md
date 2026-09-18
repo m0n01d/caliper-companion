@@ -331,3 +331,7 @@ canvas, in the export, and once in the icon — which is what "the blue from the
 costs two constants in one file, keeps the mono fill rule and the ivory primary intact, and keeps the
 blur budget. S2 is the honest next step if the owner wants blue in the UI (it stays coherent: snapped =
 geometry); S3 and S4 trade A14's hierarchy for colour and are not recommended.
+
+**Adopted 2026-09-18: S2 Live.** `Overlay.res` ink + live → `#38ABDF`; `theme.css` live family → the
+Autodesk steps plus `--cc-live-fill` `#0696D7` (pressed `#0684BE`); chip on, selected segment, Snap on and
+the selected face ring take the live fill / ring. The icon stays ivory for now (owner's call).

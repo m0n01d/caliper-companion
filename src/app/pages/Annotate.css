@@ -137,7 +137,8 @@
 }
 
 .annotate-tools .annotate-snap[aria-pressed="true"] {
-  background: var(--cc-text);
+  /* S2: Snap on = the live fill; snapped taps are geometry, and geometry is blue. */
+  background: var(--cc-live-fill);
   color: var(--cc-accent-ink);
 }
 
