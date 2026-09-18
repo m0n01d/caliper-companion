@@ -70,14 +70,16 @@ let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
       ({route, page: PartsList(nextPage)}, Tea.map(cmd, m => PartsListMsg(m)))
     | _ =>
       let (page, cmd) = pageForRoute(route)
-      ({route, page}, cmd)
+      ({route, page}, Tea.batch([cmd, Shell.scrollToTop]))
     }
   | RouteChanged(route) =>
     // Cross-page navigation is always a route change, never a direct call
     // into another page (CLAUDE.md "Architecture") — re-init discards the
-    // outgoing page's model and runs the incoming page's own init cmd.
+    // outgoing page's model and runs the incoming page's own init cmd. A16
+    // (review S3): `.shell` persists across pages, so the new screen starts
+    // at the top — pushes and pops alike (the returning list re-inits).
     let (page, cmd) = pageForRoute(route)
-    ({route, page}, cmd)
+    ({route, page}, Tea.batch([cmd, Shell.scrollToTop]))
   | PartsListMsg(pageMsg) =>
     switch model.page {
     | PartsList(pageModel) =>

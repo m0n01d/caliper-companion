@@ -124,9 +124,20 @@
   --glass-radius-pill: 999px;
 
   /* ── Motion (DESIGN.md §11.1 "Interaction feel") ──────────────────────── */
-  --cc-motion: 160ms;
-  --cc-motion-press: 80ms; /* §6: pressed-state fill change */
+  --cc-motion: 160ms; /* enter / settle */
+  --cc-motion-press: 80ms; /* §6: pressed-state fill change, and the A16 press scale */
   --cc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* SPEC §8a A16: the two stated exceptions to §6's 120–160 ms range — a
+     page push / pop moves a whole screen (the HIG's ~350 ms) and a take-over
+     (create form, folder picker, Edit toolbar) rises over 280 ms. */
+  --cc-motion-nav: 350ms;
+  --cc-motion-sheet: 280ms;
+  /* `--cc-ease-out` is an alias of `--cc-ease` (one curve, two names would
+     drift); `--cc-ease-in` is the exit curve; `--cc-ease-standard` is §6's
+     move curve. No spring, no overshoot. */
+  --cc-ease-out: var(--cc-ease);
+  --cc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --cc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* liquid-glass-web.md §3 also carries a `prefers-color-scheme: light` remap of

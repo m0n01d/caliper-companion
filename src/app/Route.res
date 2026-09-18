@@ -87,10 +87,62 @@ let current = (): t => WebApi.Location.location->WebApi.Location.hash->parse
 let push = (route: t): Tea.cmd<'msg> =>
   Tea.effect(_dispatch => WebApi.Location.location->WebApi.Location.setHash(toHash(route)))
 
+// SPEC §8a A16: how far into the app a route sits, so a route change knows
+// which way it moves. `Parts(folder)` is 1 + the folder's depth; Settings
+// is only reachable from the root's leading slot and Debug only from
+// Settings; a part is deeper than any folder; capture sits over the part;
+// Annotate is 12, not 11 — capture → annotate is the most-travelled forward
+// step (`Capture.res` pushes it after every capture) and at equal depth it
+// would fade.
+let depth = (route: t): int =>
+  switch route {
+  | Parts(folder) => 1 + Folder.depth(folder)
+  | Settings => 2
+  | Debug => 3
+  | Part(_) => 10
+  | Capture(_) => 11
+  | Annotate(_, _) => 12
+  }
+
+// Deeper → push (the new screen slides in from the right), shallower → pop
+// (the old screen slides out to the right), equal → fade (same-depth
+// sibling folders reached from search, both ways).
+type direction = Push | Pop | Fade
+
+let direction = (from: t, to: t): direction => {
+  let (a, b) = (depth(from), depth(to))
+  if b > a {
+    Push
+  } else if b < a {
+    Pop
+  } else {
+    Fade
+  }
+}
+
+// The `html[data-nav]` value the CSS is keyed on.
+let directionAttr = (d: direction): string =>
+  switch d {
+  | Push => "push"
+  | Pop => "pop"
+  | Fade => "fade"
+  }
+
 // Registers a single `hashchange` listener (the effect runs once, at
 // `Main.init`) that dispatches on every change thereafter — `Tea.effect`'s
 // callback may call `dispatch` many times over the component's lifetime.
+// A16: the listener keeps the previous route so it can tell push from pop,
+// and dispatches through `Motion.transition`, which animates the swap where
+// the View Transitions API exists and is the plain dispatch elsewhere. The
+// Back chevron, folder rows, `Route.push` and the browser's own
+// back/forward all arrive here, so they all animate.
 let subscribe = (toMsg: t => 'msg): Tea.cmd<'msg> =>
   Tea.effect(dispatch => {
-    WebApi.Window.window->WebApi.Window.addEventListener("hashchange", () => dispatch(toMsg(current())))
+    let prev = ref(current())
+    WebApi.Window.window->WebApi.Window.addEventListener("hashchange", () => {
+      let next = current()
+      let nav = direction(prev.contents, next)
+      prev := next
+      Motion.transition(~nav=directionAttr(nav), dispatch, toMsg(next))
+    })
   })
