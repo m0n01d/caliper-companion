@@ -91,6 +91,27 @@ Adopting it changes the same files as §6 lists for C, with the §2a variant-5 g
 the §2 napkin, disc r 178 at (512, 530), ⌀ line ±152 at −30°, 40 px strokes) halved for
 `make-icons.mjs`'s 512 viewBox.
 
+### 2b. Final (`brand-napkin-final.html/.png`, 2026-09-18)
+
+Four ⌀-line treatments of variant 5 at 360 / 180 / 60 / 16, each with a home-screen row. (a) as is:
+the −30° chevron line is the expand/fullscreen glyph at 60 and 16 and fights the 45° crease.
+(b) horizontal, filled arrowheads on the rim, witness ticks: a drawing dimension, `|◀──▶|` still
+reads at 60, a dark bar across a blue dot at 16. (c) −12°, ticks, lens +8 %: the bigger lens helps
+at 16 but the lean drifts back toward "expand". (d) horizontal with an r 48 centre dot: an eye at
+16. **Pick: (b)** — the line sits on the napkin's own axis, so it reads as drawn on it, and
+ticks + filled heads are the drafting idiom, not the UI one.
+
+**Exact geometry, 1024 × 1024 viewBox** (make-icons.mjs uses 512: halve every number, or set its
+viewBox to 1024). Full-bleed `<rect>` in `cc-ground`; favicon.svg adds `rx="224"`. Everything
+below inside `<g transform="rotate(-6 512 512)">`, extents 250–774 (inside the 80 % safe area):
+- Napkin `M250 306Q250 250 306 250L626 250L774 398L774 718Q774 774 718 774L386 774Q250 774 250 638Z`
+  fill `#FF7F2A`; crease `M250 306Q250 250 306 250L626 250L250 626Z` `#FF8E45`; flap
+  `M626 250L626 398L774 398Z` `#FFC59A`; lens `<circle cx="512" cy="530" r="178">` `#5AC1F2`.
+- Dimension, all `#15181D`, in `<g transform="translate(512 530)">` at 0°: line `M-122 0L122 0`
+  stroke 34 round caps; arrowheads `M-174 0L-110 -28L-110 28Z` / `M174 0L110 -28L110 28Z` filled,
+  stroke 10 round join (64 × 56, tips 4 px inside the rim); ticks `M-178 -46V46M178 -46V46`
+  stroke 30 round caps.
+
 ## 3. Direction B — Snap (`brand-snap.*`, Space Grotesk)
 
 **Concept.** The app's own snap feedback, frozen: the ring a snapped tap draws, landing on an edge.
