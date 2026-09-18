@@ -216,7 +216,11 @@ a:focus-visible {
 .shell-subtitle {
   max-width: 100%;
   font: var(--cc-text-footnote);
-  color: var(--cc-text-2);
+  /* A14: `text`, not `text-2` — the Part page's folder path is the one
+     subtitle that can scroll over a white photo, where text-2 on the 70 %
+     bar fill measures 3.15:1 (text: 6.46:1). Hierarchy comes from the
+     Footnote size, not the shade. */
+  color: var(--cc-text);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;

@@ -2562,3 +2562,12 @@ listed under "Deviations".
   `.a2hs-hint` material (it only renders on iOS, not in the tour), and the bar over a real
   photo scrolling under it (the tour never scrolls). `prefers-reduced-transparency` is
   untestable on the target.
+
+## 2026-09-18 — A14a merge note (integration)
+
+- Merged `agent/a14-glass` at `7b81ee5`. One change on top: `.shell-subtitle` colour `text-2` →
+  `text` (global.css). The A14a builder measured `text-2` on the 70 % bar over pure white at
+  3.15:1 — reachable only by the Part page's folder-path subtitle scrolling over a photo — and
+  flagged it rather than fixing it; `text` measures 6.46:1 there and the Footnote size keeps the
+  hierarchy. `text-3` on bare ground (4.13 at the wash peak) stays as the builder verified: no
+  text-3 sits on bare ground.
