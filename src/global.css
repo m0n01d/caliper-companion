@@ -3,8 +3,23 @@
    <link rel="stylesheet"> tags in index.html (no CSS-in-JS).
 
    Contract: DESIGN.md §11 (overrides §1–§10 where they differ), §4 components,
-   §6 states, §9 accessibility; docs/design/liquid-glass-web.md §3 for the one
-   glass surface; docs/design/hig-brief.md §1/§2 for the numbers.
+   §6 states, §9 accessibility; SPEC §8a A14 (G1–G8) and
+   docs/design/a14-glass-review.md for the two materials below;
+   docs/design/liquid-glass-web.md §3 for the blur recipe;
+   docs/design/hig-brief.md §1/§2 for the numbers.
+
+   Materials (A14 G2). Real `backdrop-filter` on exactly two surfaces, the
+   sticky nav bar and the sticky Shell footer (`--glass-fill-strong`, 70 %):
+   content really passes under them. Everything else is the HAIRLINE
+   MATERIAL — `background: var(--glass-fill)` (55 %, translucent, no filter:
+   nothing is behind an in-flow surface but the frame's G1 wash, and a blur
+   of a smooth gradient is the gradient), a 1 px `--glass-stroke` edge and,
+   on capsules, chips, cards, groups, the panel and the A2HS hint, an
+   `inset 0 1px 0 --glass-highlight` top line. Fields, the segmented track
+   and the toggle track keep their `field` / `surface-2` fill and take the
+   stroke only. Inner list dividers stay `border`. Nothing blurs inside
+   anything that blurs; per screen that is the bar (1) plus, while editing
+   Parts, the footer (2).
 
    Phone portrait only, 360–430 px wide. Layout per SPEC §5: 100dvh,
    env(safe-area-inset-*), no `position: fixed` anywhere. `.app-frame` is a
@@ -113,11 +128,20 @@ a:focus-visible {
   min-height: 100dvh;
 }
 
+/* A14 G1 ambient light: two soft ivory washes on the ground (14 % at the
+   top-left, 8 % at the bottom-right) so the translucent hairline surfaces
+   have something to be translucent over. The frame is exactly 100dvh and
+   never scrolls (`.shell` does), so the wash is viewport-stable without
+   `background-attachment: fixed`. `html, body` keep plain `--cc-ground`. */
 .app-frame {
   display: flex;
   flex-direction: column;
   height: 100dvh;
   min-height: 100dvh;
+  background:
+    radial-gradient(120vmax 80vmax at 0 0, rgba(242, 242, 240, 0.14), transparent 60%),
+    radial-gradient(100vmax 70vmax at 100% 100%, rgba(242, 242, 240, 0.08), transparent 60%)
+    var(--cc-ground);
 }
 
 /* The scroll container. The sticky bar lives inside it, so blur samples the
@@ -254,14 +278,18 @@ a:focus-visible {
   z-index: -1;
 }
 
-/* The glass recipe, verbatim from liquid-glass-web.md §3. Used by the nav bar
-   and the Shell footer slot only (DESIGN.md §11.1 "Materials"); never on
+/* The blurred material (liquid-glass-web.md §3's recipe; A14 G2 / review
+   B2). The nav bar and the Shell footer slot ONLY (DESIGN.md §11.1
+   "Materials") — the two surfaces content scrolls under: the annotate stage,
+   face cards and thumbnails pass beneath the bar, so the fill is the 70 %
+   `--glass-fill-strong` (over a white photo it composites to (86,87,88),
+   `text` 6.5:1; the 55 % hairline fill would give 3.4:1 there). Never on
    content, inputs, or anything over the canvas. `-webkit-backdrop-filter`
    stays first. */
 .glass,
 .shell-topbar::before,
 .shell-footer::before {
-  background: var(--glass-fill);
+  background: var(--glass-fill-strong);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-stroke);
@@ -295,6 +323,27 @@ a:focus-visible {
    own, not rely on a fallback to become legible. This rule exists for other
    browsers that DO report the preference, and as a statement of intent. */
 @media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .shell-topbar::before,
+  .shell-footer::before {
+    background: var(--cc-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* A14 G8: `prefers-reduced-transparency` never fires on iOS (caniuse,
+   2026-09-18: Safari / iOS "not supported" through 27.x), but iOS "Increase
+   Contrast" DOES map to `prefers-contrast: more` — so this is the fallback
+   that actually reaches the target platform. The two blurred surfaces go
+   opaque `surface` with no filter, and every hairline edge steps up from
+   18 % to 28 % ink. The in-flow hairline surfaces keep their translucent
+   fill (their backdrop is the wash, so nothing gets less legible). */
+@media (prefers-contrast: more) {
+  :root {
+    --glass-stroke: rgba(242, 242, 240, 0.28);
+  }
+
   .glass,
   .shell-topbar::before,
   .shell-footer::before {
@@ -345,9 +394,10 @@ button,
   gap: var(--cc-space-2);
   min-height: var(--cc-tap-min);
   padding: var(--cc-space-2) var(--cc-space-5);
-  border: 1px solid var(--cc-border);
+  border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius-capsule);
-  background: var(--cc-surface);
+  background: var(--glass-fill);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   color: var(--cc-text);
   font: 600 var(--cc-size-body) / var(--cc-leading-body) var(--cc-font-ui);
   text-align: center;
@@ -403,9 +453,14 @@ button[aria-disabled="true"]:active,
   padding-right: var(--cc-space-6);
 }
 
+/* A14 G3: the primary is the one ivory fill on a screen (`accent` = `text`
+   now; `accent-ink` = ground, 17:1). Not glass — a 55 % primary reads as a
+   large secondary. The base capsule's highlight is dropped: 28 % ivory on
+   ivory paints nothing, and the danger/plain variants below need it gone. */
 .btn-primary {
   background: var(--cc-accent);
   border-color: var(--cc-accent);
+  box-shadow: none;
   color: var(--cc-accent-ink);
 }
 
@@ -422,15 +477,20 @@ button[aria-disabled="true"]:active,
   opacity: 0.4;
 }
 
+/* Hairline material, stated again so a page can't opt a secondary out of it
+   by restyling the base `.btn`. */
 .btn-secondary {
-  background: var(--cc-surface);
-  border-color: var(--cc-border);
+  background: var(--glass-fill);
+  border-color: var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   color: var(--cc-text);
 }
 
+/* `error` is the app's one chroma (A14): the danger capsule keeps it. */
 .btn-danger {
   background: var(--cc-error);
   border-color: var(--cc-error);
+  box-shadow: none;
   color: var(--cc-error-ink);
 }
 
@@ -440,6 +500,7 @@ button[aria-disabled="true"]:active,
 .btn-plain {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
   color: var(--cc-text);
 }
 
@@ -468,7 +529,7 @@ button[aria-disabled="true"]:active,
   min-height: var(--cc-tap-min);
   padding: 0;
   border-radius: 50%;
-  background: var(--cc-surface);
+  background: var(--glass-fill);
 }
 
 .btn-icon svg {
@@ -486,6 +547,7 @@ button[aria-disabled="true"]:active,
 .shell-topbar .btn-icon {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
   color: var(--cc-accent);
 }
 
@@ -549,11 +611,17 @@ button[aria-disabled="true"]:active,
   color: var(--cc-text-2);
 }
 
+/* Hairline material (A14 G2): every `.list-group` — Parts groups, search
+   sections, the folder picker's listbox, the create form's grouped fields,
+   Capture's custom/recapture cards, Settings, Debug — is this one material;
+   no route-scoped selector. The rows' inset dividers below stay `border`. */
 .list-group {
   display: flex;
   flex-direction: column;
-  background: var(--cc-surface);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius-card);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   overflow: hidden;
 }
 
@@ -710,7 +778,7 @@ textarea,
   min-height: var(--cc-tap-min);
   padding: var(--cc-space-2) 14px;
   background: var(--cc-field);
-  border: 1px solid var(--cc-border);
+  border: 1px solid var(--glass-stroke); /* A14: fields keep `field`, take the stroke only */
   border-radius: var(--cc-radius);
   color: var(--cc-text);
   font: var(--cc-text-body);
@@ -725,7 +793,7 @@ textarea {
 
 select {
   padding-right: 40px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b9b5ab' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A9ABAF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 20px 20px;
@@ -810,9 +878,10 @@ textarea:disabled {
   flex: 0 0 auto;
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid var(--cc-border);
+  border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius-capsule);
-  background: var(--cc-surface);
+  background: var(--glass-fill);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   color: var(--cc-text);
   font: 500 var(--cc-size-caption-1) / var(--cc-leading-caption-1) var(--cc-font-mono);
   white-space: nowrap;
@@ -832,10 +901,13 @@ textarea:disabled {
   opacity: 0.6;
 }
 
+/* On = the ivory fill at chip size (A14 table): solid against the hairline
+   chips around it, and `aria-pressed` carries the state for everyone else. */
 .chip-selected,
 .chip[aria-pressed="true"] {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
+  background: var(--cc-text);
+  border-color: var(--cc-text);
+  box-shadow: none;
   color: var(--cc-accent-ink);
 }
 
@@ -852,7 +924,7 @@ textarea:disabled {
   gap: 4px;
   padding: 2px;
   background: var(--cc-field);
-  border: 1px solid var(--cc-border);
+  border: 1px solid var(--glass-stroke); /* A14: the track keeps `field`, stroke only */
   border-radius: var(--cc-radius-capsule);
 }
 
@@ -882,9 +954,13 @@ textarea:disabled {
   text-overflow: ellipsis;
 }
 
+/* A14 G4: the selected segment is a LIGHTER GLASS — 16 % ink over the
+   `field` track, `text` label (10.3:1) — not the ivory fill, so the primary
+   stays the one ivory capsule on Annotate (review S2). A literal, not a
+   token: it is the only 16 % surface in the app. */
 .segmented-option[aria-pressed="true"] {
-  background: var(--cc-accent);
-  color: var(--cc-accent-ink);
+  background: rgba(242, 242, 240, 0.16);
+  color: var(--cc-text);
 }
 
 .segmented-option:focus-visible {
@@ -917,6 +993,10 @@ textarea:disabled {
   height: 32px;
   border-radius: var(--cc-radius-capsule);
   background: var(--cc-surface-2);
+  /* A14: the track keeps `surface-2` and takes the stroke only — as an
+     inset shadow, not a border, so the 28 px knob's 2 px inset geometry
+     inside the 52×32 track is untouched. */
+  box-shadow: inset 0 0 0 1px var(--glass-stroke);
   pointer-events: none;
   transition: background-color var(--cc-motion) var(--cc-ease);
 }
@@ -948,15 +1028,21 @@ textarea:disabled {
   border-radius: 50%;
   background: var(--cc-text);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
-  transition: transform var(--cc-motion) var(--cc-ease);
+  transition:
+    transform var(--cc-motion) var(--cc-ease),
+    background-color var(--cc-motion) var(--cc-ease);
 }
 
+/* On (A14 table, review B3a): track `text`, knob `ground` — with `accent`
+   = `text` the old `accent` track + `text` knob is one flat ivory capsule
+   and the knob vanishes. Off stays `surface-2` track + `text` knob. */
 .toggle input:checked + .toggle-track {
-  background: var(--cc-accent);
+  background: var(--cc-text);
 }
 
 .toggle input:checked + .toggle-track .toggle-knob {
   transform: translateX(20px);
+  background: var(--cc-ground);
 }
 
 .toggle input:focus-visible + .toggle-track {
@@ -1084,15 +1170,21 @@ button.warning-row {
   border: 2px solid var(--cc-ground);
 }
 
-/* The annotate control area: opaque, in-flow, non-modal (§11.1 "Sheets").
-   Never glass — it sits under a live-repainting canvas. */
+/* The annotate control area: in-flow, non-modal (§11.1 "Sheets"), the
+   hairline material (A14 G2) — translucent over the wash, never BLURRED
+   (it sits under a live-repainting canvas, and nothing is behind it but
+   the frame). Stroke on the three visible edges; the sheet runs off the
+   bottom of the screen. */
 .panel {
   display: flex;
   flex-direction: column;
   gap: var(--cc-space-3);
   padding: var(--cc-space-4);
-  background: var(--cc-surface);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  border-bottom-width: 0;
   border-radius: var(--cc-radius-card) var(--cc-radius-card) 0 0;
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
 .stack {
@@ -1146,8 +1238,8 @@ button.warning-row {
 }
 
 /* ── 13. A2HS hint (see A2hsHint.res) ──────────────────────────────────── */
-/* An opaque card docked under the shell (never `fixed`, never glass), owned
-   by A2hsHint.res. This used to live inside the wave-1→2 compatibility
+/* A card docked under the shell (never `fixed`, never BLURRED — hairline
+   material per A14 G2), owned by A2hsHint.res. This used to live inside the wave-1→2 compatibility
    block (former §13j) because that's where it was written, not because it
    was ever a rename shim — deletion wave (design wave 3a) removed the rest
    of that section (§13a-i: `--color-*` legacy token aliases and the
@@ -1165,9 +1257,10 @@ button.warning-row {
   margin: var(--cc-space-2) calc(var(--cc-page-x) + env(safe-area-inset-right))
     calc(var(--cc-space-2) + env(safe-area-inset-bottom)) calc(var(--cc-page-x) + env(safe-area-inset-left));
   padding: var(--cc-space-3) var(--cc-space-4);
-  background: var(--cc-surface);
-  border: 1px solid var(--cc-border);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
   border-radius: var(--cc-radius-card);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
 .a2hs-hint-icon {
@@ -1210,12 +1303,17 @@ button.warning-row {
   gap: var(--cc-space-3);
 }
 
+/* A14 table: a `surface-2` mat with the hairline edge (a real border — an
+   inset shadow would sit under the photo). No top highlight: the photo
+   covers it, and the empty card's dashed border has no edge to highlight.
+   The captured / selected rings below sit just inside this hairline. */
 .face-card {
   position: relative;
   display: block;
   aspect-ratio: 1;
   border-radius: var(--cc-radius-card);
   background: var(--cc-surface-2);
+  border: 1px solid var(--glass-stroke);
   overflow: hidden;
   color: inherit;
   font: inherit;
@@ -1261,10 +1359,10 @@ button.warning-row {
 }
 
 .face-card-selected::after {
-  border: 2px solid var(--cc-accent);
+  border: 2px solid var(--cc-text); /* A14: selected = the `text` ring; captured = `live` */
 }
 
-/* Bottom scrim: cc-ground/cc-scrim's rgb (Dark Sky: 21-30 range) at a
+/* Bottom scrim: cc-ground/cc-scrim's rgb (A14 mono: 14,15,17) at a
    stronger 94% (cc-scrim itself is 80%, tuned for a small pill, not a
    full-width label) fading to transparent over 44 px, so the label and
    caption sit on solid-enough ground over any photo. Literal, not the
@@ -1281,7 +1379,7 @@ button.warning-row {
   flex-direction: column;
   gap: 1px;
   padding: 36px var(--cc-space-3) 10px;
-  background: linear-gradient(to top, rgba(23, 26, 30, 0.94) 0 44px, rgba(23, 26, 30, 0));
+  background: linear-gradient(to top, rgba(14, 15, 17, 0.94) 0 44px, rgba(14, 15, 17, 0));
 }
 
 .face-card-label {

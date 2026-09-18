@@ -4,8 +4,9 @@
    this screen is here.
 
    Layout: a flex column — the photo stage on top, inset by the page margin
-   with the 16 px photo radius; the opaque control `.panel` below it in
-   normal flow (never `position: fixed`, SPEC §5), edge to edge and down to
+   with the 16 px photo radius; the hairline-material control `.panel`
+   (global.css §11; translucent, never blurred) below it in normal flow
+   (never `position: fixed`, SPEC §5), edge to edge and down to
    the bottom of the screen. The stage's height tracks `--vv-height` (kept
    live from `visualViewport` by Index.res) and is capped at 300 px (§3), so
    when the iOS keyboard shrinks the visual viewport the stage shrinks with
@@ -61,8 +62,8 @@
   outline: none;
 }
 
-/* Focus lands here after every save. A quiet ring: accent over the photo
-   reads as an error state next to the accent overlays. */
+/* Focus lands here after every save. A quiet `text-3` ring, not the full
+   `text` ring: the ivory overlays already live on this photo (A14). */
 .annotate-canvas:focus-visible {
   outline: 2px solid var(--cc-text-3);
   outline-offset: -2px;
@@ -82,8 +83,10 @@
 }
 
 /* The tools strip (design review A1): Snap, dimension count, zoom out, zoom
-   readout, zoom in, as a 44 px opaque strip at the top of `.panel` — in
-   flow, not over the photo. `align-items: center` is load-bearing: this is
+   readout, zoom in, as a 44 px strip at the top of `.panel` — in flow, not
+   over the photo. Transparent (A14 G2 / review S9): the panel is the
+   hairline material now, and an opaque `surface` band inside a translucent
+   sheet read as a second, darker card. `align-items: center` is load-bearing: this is
    a flex ROW, so its default cross-axis alignment is `stretch`, which would
    stretch the count Ui.Pill to the row's height; a near-square box at
    `border-radius: 999px` (capsule) renders as a circle at that height,
@@ -94,10 +97,10 @@
   justify-content: flex-end;
   gap: var(--cc-space-2);
   min-height: var(--cc-tap-min);
-  background: var(--cc-surface);
+  background: transparent;
 }
 
-/* The strip supplies the one opaque background; its pill children stay
+/* The panel supplies the one background; the strip's pill children stay
    transparent so nothing paints a second, overlapping capsule on top of it. */
 .annotate-tools .pill {
   background: transparent;
@@ -119,8 +122,10 @@
 
 /* SPEC §8a A5: the Snap toggle is a pill that is a real button, inside the
    strip. It keeps the 44 px tap height (DESIGN.md §2) but reads as a pill,
-   not a capsule button: on = accent text (the active-dimension colour),
-   off = cc-text-2. */
+   not a capsule button. A14 (review B3): off = `text-2` label on
+   transparent; on = the ivory `text` fill with the `accent-ink` label — in
+   mono an on/off *text* colour collapses to ivory vs grey, so the state is
+   a fill, like a pressed chip. `aria-pressed` carries it for VoiceOver. */
 .annotate-tools .annotate-snap {
   min-height: var(--cc-tap-min);
   padding: 0 var(--cc-space-2);
@@ -132,7 +137,8 @@
 }
 
 .annotate-tools .annotate-snap[aria-pressed="true"] {
-  color: var(--cc-accent);
+  background: var(--cc-text);
+  color: var(--cc-accent-ink);
 }
 
 .annotate-tools .annotate-snap svg {
@@ -247,7 +253,9 @@
    sits one step up (`cc-surface-2`) at the 12 px inner radius (§11.1
    concentric shapes: inside a 16 px-padded surface) instead of the card's
    16 px on the ground; the header keeps its 16 px inset so it lines up
-   with the row text, as on the Parts list. */
+   with the row text, as on the Parts list. A14 (review S9): it keeps this
+   OPAQUE `surface-2` as the one raised card inside the translucent panel
+   rather than stacking a second 55 % fill on the panel's. */
 .annotate-dimensions {
   margin-top: var(--cc-space-2);
 }
