@@ -61,6 +61,36 @@ hint shows the icon tile; README header = mark + wordmark on ground; export PNGs
 **Risk.** At 60 px it reads as "orange document with a resize arrow" — the generic file-icon
 silhouette — and a solid orange tile is the closest of the three to Fusion's own orange badge.
 
+### 2a. Riff — lens (`brand-napkin-lens.html/.png`, 2026-09-18)
+
+The owner picked A and asked for a camera/lens element. Five variants keep the napkin as the body
+(same square, tilt, crease, dog-ear and ground-colour dimension line as §2), each rendered at
+360 / 180 / 60 with a caption; then the home-screen row for the two that hold at 60 px, and the
+wordmark lockup for the pick. Same rules: pure geometry, 80 % safe area, full-bleed ground, tokens
+verbatim, no text pair changed.
+
+| # | Variant | What it does | 60 px verdict |
+|---|---|---|---|
+| 1 | Lens corner | The flap goes; a lens ring (fold tint `#FFC59A`, ground aperture, r 132) sits half behind the cut corner. | A luggage tag at 360; at 60 a 4 px crescent and a note with a bite out of it. Napkin yes, lens no. |
+| 2 | Through the lens | Accent ring r 384 / 52 px frames the napkin at 0.8 scale, line across inside. | Ring + orange square + line = a target or a record. Napkin survives; "lens" is just a circle, and the tile is the roundest, so it fights the squircle. |
+| 3 | Viewfinder | Four focus brackets in `cc-text`, napkin at 0.82, base line. | Brackets shrink to four white ticks; busy, and the document-icon read of §2 stays. |
+| 4 | Diameter | A lens cut into the face (ground disc r 178) with a ⌀ dimension across it in accent, tilted −30°. | Survives: orange note, dark hole, slash. Not a file icon any more — the hole breaks the "page" silhouette. Lens + measurement in one element. |
+| 5 | Two-tone | 4 with the lens in `cc-live` and the ⌀ line in ground. | Survives, strongest of the five: orange note, blue lens, dark diameter — three shapes, three colours, each still separate at 60 and at 16. |
+| 5-o | Two-tone, outline napkin | 5 with the napkin in ground and a 40 px accent outline (the file-icon test). | Survives (outline square + blue dot) and is not a file icon either — but it is a thinner, lighter tile than 5, and the base mark's crease/fold shading has to go. So it is the solid fill *plus the missing hole* that made §2 look like a document, not the fill alone. |
+
+**Survive 60 px:** 4 and 5 (rendered in the home-screen row). 1 loses the lens, 2 and 3 keep the
+napkin but add clutter rather than meaning.
+
+**Pick: 5 — Two-tone.** The lens is a *diameter* dimension, which is literally one of the app's
+dimension kinds, so the camera element is not decoration — it is the second thing the app measures.
+Live blue on the lens follows the two-accent rule (live = the verified reading) and it is the one
+change that moves the tile away from Fusion's orange badge, which was §2's risk. Colour pairs: ground
+on live 8.76:1 (the ⌀ line), accent and live on ground 7.05 / 8.76, unchanged tokens. On accent the
+lockup swaps the lens to `cc-live-ink` `#CDEAF7` with the line in accent-ink (a graphic, not text).
+Adopting it changes the same files as §6 lists for C, with the §2a variant-5 geometry (1024-space:
+the §2 napkin, disc r 178 at (512, 530), ⌀ line ±152 at −30°, 40 px strokes) halved for
+`make-icons.mjs`'s 512 viewBox.
+
 ## 3. Direction B — Snap (`brand-snap.*`, Space Grotesk)
 
 **Concept.** The app's own snap feedback, frozen: the ring a snapped tap draws, landing on an edge.
