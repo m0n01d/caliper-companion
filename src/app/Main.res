@@ -165,9 +165,15 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
   | PartsList(pageModel) => PartsList.leading(pageModel, ~dispatch=m => dispatch(PartsListMsg(m)))
   | _ => None
   }
+  // The Shell's footer slot (SPEC §8a A12b): the Parts root's Edit-mode
+  // selection toolbar, sticky at the bottom of the scroll container.
+  let footer = switch model.page {
+  | PartsList(pageModel) => PartsList.footer(pageModel, ~dispatch=m => dispatch(PartsListMsg(m)))
+  | _ => None
+  }
 
   <div className="app-frame">
-    <Shell title back ?subtitle ?actions largeTitle ?leading> {body} </Shell>
+    <Shell title back ?subtitle ?actions largeTitle ?leading ?footer> {body} </Shell>
     <A2hsHint />
   </div>
 }
