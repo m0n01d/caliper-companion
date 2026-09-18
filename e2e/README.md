@@ -1,6 +1,8 @@
 # e2e
 
-Playwright config: `e2e/playwright.config.js`. Two projects, both at the 390×844 phone viewport:
+Playwright config: `e2e/playwright.config.js`. Two projects, both at the 390×844 phone viewport
+(`specs/adaptive.spec.js` alone overrides it per `describe` — 1440×900 with a pointer and 820×1180
+with touch, SPEC §8a A17):
 
 - **`chromium`** — runs clean in this environment.
 - **`webkit`** — Safari's real engine, what iOS actually ships. **Cannot launch in this sandbox**
