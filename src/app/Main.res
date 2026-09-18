@@ -28,8 +28,8 @@ type model = {
 // Builds the page + cmd for a route, lifting the page's own msg into `msg`.
 let pageForRoute = (route: Route.t): (page, Tea.cmd<msg>) =>
   switch route {
-  | Route.Parts(_) =>
-    let (pageModel, cmd) = PartsList.init()
+  | Route.Parts(folder) =>
+    let (pageModel, cmd) = PartsList.init(~folder)
     (PartsList(pageModel), Tea.map(cmd, m => PartsListMsg(m)))
   | Route.Part(partId) =>
     let (pageModel, cmd) = Part.init(~partId)
@@ -56,6 +56,22 @@ let init = (): (model, Tea.cmd<msg>) => {
 
 let update = (model: model, msg: msg): (model, Tea.cmd<msg>) =>
   switch msg {
+  // A13 (SPEC §8a, review S5): a folder-to-folder move is the *same* page
+  // re-targeted, not a re-init — the parts and images stay loaded and the
+  // page's `FolderChanged` decides what else is kept. It is a direct call
+  // into the mounted page's `update`, never a cmd (a cmd would render one
+  // frame at the old folder first). `hashchange` is the only source of
+  // `RouteChanged`, so `Route.push`, a folder row's link and the browser's
+  // own Back/Forward all take this branch.
+  | RouteChanged(Route.Parts(folder) as route) =>
+    switch model.page {
+    | PartsList(pageModel) =>
+      let (nextPage, cmd) = PartsList.update(pageModel, PartsList.FolderChanged(folder))
+      ({route, page: PartsList(nextPage)}, Tea.map(cmd, m => PartsListMsg(m)))
+    | _ =>
+      let (page, cmd) = pageForRoute(route)
+      ({route, page}, cmd)
+    }
   | RouteChanged(route) =>
     // Cross-page navigation is always a route change, never a direct call
     // into another page (CLAUDE.md "Architecture") — re-init discards the
@@ -152,11 +168,12 @@ let view = (model: model, ~dispatch: msg => unit): React.element => {
     )
   }
 
-  // The Parts root owns both of these (SPEC §8a A12a): its static Large
-  // Title gives way to a centred bar title while the folder picker is open,
-  // and its leading slot is the Settings gear (the only way in from an
-  // installed app) or the picker's Cancel. Every other page has a Back
-  // button and a centred Headline.
+  // The Parts list owns both of these (SPEC §8a A12a, A13): its static Large
+  // Title is root-only — a folder screen and the picker use the centred bar
+  // title — and its leading slot is the Settings gear (the only way in from
+  // an installed app) or the picker's Cancel; in a folder the page has a
+  // Back button instead and Shell drops the slot. Every other page has a
+  // Back button and a centred Headline.
   let largeTitle = switch model.page {
   | PartsList(pageModel) => PartsList.largeTitle(pageModel)
   | _ => false

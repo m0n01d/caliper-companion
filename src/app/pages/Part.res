@@ -190,7 +190,14 @@ let title = (model: model): string =>
   | Found(p) => p.name
   | Pending | Missing => "Part"
   }
-let back = (_model: model): option<Route.t> => Some(Route.Parts(""))
+// A13: Back lands in the part's folder (`Parts(path)`), the screen the row
+// was tapped on; before the part has loaded (or when it is missing) it is
+// the root.
+let back = (model: model): option<Route.t> =>
+  switch model.partStatus {
+  | Found(p) => Some(Route.Parts(p.path))
+  | Pending | Missing => Some(Route.Parts(""))
+  }
 
 // Shell slots (DESIGN.md §11.1). The one subtitle slot carries the part's
 // folder path (SPEC §8a A10, review B2: "Miata / Interior / Dashboard";
