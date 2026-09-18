@@ -302,3 +302,15 @@
 .folder-row-edit .folder-rename {
   padding: 0;
 }
+
+/* ── SPEC §8a A16: take-overs rise on mount ──────────────────────────── */
+/* The create form's outermost element (`.parts-form`, PartsList.res
+   `renderForm`) and the folder picker's root (`.folder-picker`) slide up
+   24 px and fade in over `--cc-motion-sheet` — `cc-rise` in global.css §15.
+   Nothing inside them animates on its own (no picker-option stagger: double
+   motion inside a rising sheet); leaving is a cut. Zeroed under
+   `prefers-reduced-motion` by global.css §12. */
+.parts-form,
+.folder-picker {
+  animation: cc-rise var(--cc-motion-sheet) var(--cc-ease-out);
+}
