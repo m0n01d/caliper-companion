@@ -688,3 +688,95 @@ own; "Rename" in the toolbar (the per-row pencil stays).
   returns to the empty state" (`part-delete` → select + `parts-delete` + `parts-delete-confirm`);
   `a11y.spec.js` "parts list — rename autofocuses its draft input; deleting a part sends focus to
   New part" (toolbar delete; focus target per above).
+
+### A13 — Drill-down folder browsing (the Parts list navigates into folders) — **no JSON delta**
+
+Owner: "that's how folders work". Fusion's Data Panel and iOS Files both browse one folder at a
+time; A10's flat sections with full-path headers were an overview, not a browser. A13 makes the
+Parts list a folder browser and keeps the flat sections for search results only. The data model is
+unchanged (A12's folder docs and `part.path`); this is presentation and routing.
+
+**Route**
+- [ ] `Route.Parts` becomes `Parts(string)` — the folder path, `""` = root. Hash: root `#/`; a
+  folder `#/f/<seg>/<seg>` with each segment `encodeURIComponent`-ed (`#/f/Miata/Interior`; `/` is
+  not a valid segment character, so a segment never needs a `%2F`). `parse`: `["f", ...segs]` →
+  `Parts(Folder.normalize(segs->map(decodeURIComponent)->join("/")))`; `[]` → `Parts("")`. Every
+  existing `Route.Parts` call site becomes `Route.Parts("")` except `Part.back`, which returns
+  `Route.Parts(part.path)` so Back from a part lands in its folder (`Pending`/`Missing` →
+  `Parts("")`). `Settings.back` and `Debug.back` are unchanged.
+- [ ] `Main.update(RouteChanged)`: when the current page is `PartsList` and the new route is
+  `Parts(path)`, the page is **not** re-initialised — `Main` dispatches `PartsList.FolderChanged(path)`
+  (parts, folders, thumbnails and `loaded` are kept; Edit mode, selection, open editors, the picker,
+  the query and `rowError` are cleared; the scroll container scrolls to top — `.shell`
+  `scrollTop = 0` via a `Canvas` binding). Any other transition re-initialises as today.
+  `PartsList.init(~folder)` takes the folder from the route on cold load / reload.
+
+**Folder view (`#/` and `#/f/…`)**
+- [ ] Bar: root keeps the static Large Title "Parts", no subtitle, the gear leading. In a folder:
+  Large Title = `Folder.leaf(path)`, subtitle = `Folder.display(Folder.parent(path))` (none when the
+  parent is root), leading = Back chevron to the parent (`Route.Parts(Folder.parent(path))`), so the
+  gear is root-only. Trailing actions unchanged (Edit / Done, "+"); "+" opens the create form with
+  its Folder row **preset to the current folder**.
+- [ ] Body order: the search field (A10; shown whenever there is at least one part or folder
+  anywhere), then a **Folders** group (`folders-list`, `role="list"`, header "Folders" only when it
+  has a subfolder): one row per direct subfolder (`folder-row`, `data-path`), leading `Icon.Folder`,
+  title = leaf name, meta = "`n` parts · `m` folders" with a zero half omitted ("Empty" when both are
+  zero), chevron, tap → `Route.push(Parts(child))`; sorted case-insensitively. Then a **Parts** group
+  (`parts-list`, `role="list"`, header "Parts" only when the Folders group has a subfolder): the
+  parts whose `path` equals the current folder exactly, rows as today (`part-row`), `updatedAt`
+  desc. A folder with neither shows one Footnote line "Empty folder" (`folder-empty`). The root with
+  no parts and no folders shows A10's empty state (`parts-empty`) unchanged.
+- [ ] **New Folder** is the last row of the Folders group (present even when there is no subfolder
+  — then the group renders with just this row and no header): `folder-new` (leading
+  `Icon.FolderPlus`, title "New Folder"); tap → the inline field from A12's picker
+  (`folder-new-name`, `folder-new-create`, `folder-new-cancel`, `folder-new-error`, same one-segment
+  rule, `Folder.snap` against the current folder's children) creates inside the **current** folder;
+  the new row appears and takes focus. Hidden in Edit mode and while a query is active.
+- [ ] Unknown folder (`#/f/Nope`, no doc and no part in or under it): render as a folder with the
+  Footnote "This folder doesn't exist." (`folder-missing`), no New Folder row, no "+", Back to
+  root. No redirect — a typo'd hash is not a reason to move the user.
+- [ ] Reload on `#/f/Miata/Interior` shows that folder (`init(~folder)` loads everything, then
+  renders it).
+
+**Search** (A10's field, now global)
+- [ ] While the query is non-empty the body is **search results** in A10's shape: a first section
+  "Folders" of matching folders as `folder-row`s (tap navigates and clears the query), then flat
+  part sections with full-path headers (`parts-section`, `parts-section-header` "`<display> · n`",
+  root section first and headerless), matching by name or path across **all** folders regardless of
+  the current one; `parts-search-empty` when nothing matches. Clearing the query returns to the
+  current folder view. `FolderChanged` clears the query. Edit is unavailable while a query is active
+  (the Edit action hidden, the toolbar absent).
+
+**Edit mode in a folder**
+- [ ] As A12b: part rows selectable, the footer toolbar with "Move n" / "Delete n", the same picker
+  for Move. Subfolder rows in Edit mode lose the chevron and gain trailing `folder-rename` (pencil)
+  and `folder-delete` (trash, present only when the folder has no parts and no subfolders);
+  rename is A12b's inline editor on the row (`folder-rename-input` / `-save` / `-cancel` / `-error`,
+  one segment, the subtree follows); delete removes the row. A12b's section-header editors and the
+  `parts-folder` / `parts-folder-header` intermediate rows are retired. Folders are not selectable
+  (moving a folder stays v1). Moving parts out of the current folder removes them from view with
+  A12b's live text.
+
+**Other**
+- [ ] `PartCreated` navigates to the part as today; Back from it lands in its folder. Delete flows
+  unchanged.
+- [ ] `DESIGN.md` §11.2 Parts entry rewritten for the browser; `docs/testids.md` (new: `folder-row`,
+  `folders-list`, `parts-list`, `folder-empty`, `folder-missing`; retired: `parts-section-empty`,
+  `parts-folder`, `parts-folder-header`; `parts-section` / `parts-section-header` are search-only
+  now); LOGBOOK section. Screenshot tour: `12-parts-list` becomes the root with folder rows; add
+  `16-parts-folder` (inside `Miata / Interior`) and `17-parts-search` (query `clip`, flat sections).
+- [ ] Playwright (`parts.spec.js`, new describe "folders — drill-down (SPEC §8a A13)"): root shows
+  `folder-row` Miata with meta "1 folder" and no `part-row` from inside it; tap → URL `#/f/Miata`,
+  title "Miata", `folder-row` Interior with "2 parts"; tap → `#/f/Miata/Interior`, subtitle "Miata",
+  two `part-row`s, Back → `#/f/Miata`; reload on `#/f/Miata/Interior` renders the same; "+" there →
+  create → the new part's page → Back → `#/f/Miata/Interior` with three rows; New Folder creates
+  `Dashboard` inside and it appears as a row; search `clip` from root → `parts-section-header`
+  `Miata / Interior · 1`, clear → the root view; Edit in `Miata/Interior` → select two → Move to root
+  → rows gone, root shows them; rename `Interior` → `Cabin` on its row from `#/f/Miata` → the row
+  reads Cabin, that part's page subtitle reads `Miata / Cabin`; `folder-delete` absent on a
+  non-empty row, present on an empty one, removes it; `#/f/Nope` shows `folder-missing`.
+  `a11y.spec.js`: inside a folder the first Tab lands on Back. `export.spec.js`'s helper is
+  unchanged if it walks the picker.
+- [ ] **Existing specs that change** (the reviewer enumerates): every A10 / A12 assertion that
+  expects `parts-section-header` outside a search, `parts-section-empty`, `parts-folder-header`, or
+  parts from inside folders visible at root; `shell.spec.js`'s gear stays at root.
