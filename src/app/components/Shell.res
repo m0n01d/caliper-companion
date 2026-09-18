@@ -4,8 +4,13 @@
 // centred Headline title (or, on the root screen, a static Large Title in
 // the content flow), an optional Footnote subtitle, a trailing actions slot,
 // and the content area, plus a leading slot that root screens (no back
-// button) use for a navigation control. `Main.res` wraps every page's view
-// in one.
+// button) use for a navigation control, and a footer slot (SPEC §8a A12b,
+// review B1): a sibling *after* `<main>` directly inside `.shell`, so a
+// page's bottom toolbar can be `position: sticky; bottom: 0` against the
+// scroll container — `main` is `flex: 1 1 auto`, so a short page still
+// pushes it to the bottom edge. It is the second glass surface (DESIGN.md
+// §11.1 "Materials"), styled by `.shell-footer` in global.css; the page
+// supplies only the contents. `Main.res` wraps every page's view in one.
 
 @react.component
 let make = (
@@ -15,6 +20,7 @@ let make = (
   ~largeTitle: bool=false,
   ~subtitle: option<string>=?,
   ~leading: option<React.element>=?,
+  ~footer: option<React.element>=?,
   ~children: React.element,
 ) => {
   let subtitleEl = switch subtitle {
@@ -61,5 +67,9 @@ let make = (
         </div>
       : React.null}
     <main className="shell-content"> children </main>
+    {switch footer {
+    | Some(el) => <div className="shell-footer"> el </div>
+    | None => React.null
+    }}
   </div>
 }

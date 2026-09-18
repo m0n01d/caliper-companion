@@ -149,12 +149,37 @@ module Segmented = {
 // `parts-section-header`); it does nothing without a `~header`. `~role`
 // (SPEC §8a A12a) is for a container whose rows are something other than
 // list items — the folder picker's `role="listbox"` of `role="option"`
-// buttons; `~asList` wins when both are given.
+// buttons; `~asList` wins when both are given. `~headerTrailing` (SPEC §8a
+// A12b, review S1) puts controls beside the `<h2>` — PartsList's folder
+// Rename/Delete while editing — as *siblings* in a `.list-group-header-row`,
+// never inside the heading, which would leak the buttons' names into the
+// heading's accessible name; `~headerEl` replaces the `<h2>` outright (the
+// inline folder-rename form) and wins over `~header`.
 module ListGroup = {
+  // The header line on its own, exposed so a page can render a header-only
+  // row without a `.list-group` container (A12b: a folder with subfolders
+  // but no direct parts, while editing).
+  module Header = {
+    @react.component
+    let make = (~text: string, ~testId: option<string>=?, ~trailing: option<React.element>=?) => {
+      let heading = <h2 className="list-group-header" dataTestId=?testId> {React.string(text)} </h2>
+      switch trailing {
+      | Some(el) =>
+        <div className="list-group-header-row">
+          heading
+          <span className="list-group-header-actions"> el </span>
+        </div>
+      | None => heading
+      }
+    }
+  }
+
   @react.component
   let make = (
     ~header: option<string>=?,
     ~headerTestId: option<string>=?,
+    ~headerTrailing: option<React.element>=?,
+    ~headerEl: option<React.element>=?,
     ~footer: option<string>=?,
     ~asList: bool=false,
     ~role: option<string>=?,
@@ -162,10 +187,10 @@ module ListGroup = {
     ~children: React.element,
   ) =>
     <section className="list-group-section">
-      {switch header {
-      | Some(text) =>
-        <h2 className="list-group-header" dataTestId=?headerTestId> {React.string(text)} </h2>
-      | None => React.null
+      {switch (headerEl, header) {
+      | (Some(el), _) => el
+      | (None, Some(text)) => <Header text testId=?headerTestId trailing=?headerTrailing />
+      | (None, None) => React.null
       }}
       <div className="list-group" role=?{asList ? Some("list") : role} dataTestId=?testId>
         children
