@@ -237,3 +237,7 @@ let focusMovedElsewhere = (~since: option<Dom.element>, ~target: option<Dom.elem
 @get external offsetHeight: Dom.element => float = "offsetHeight"
 @get external scrollHeight: Dom.element => float = "scrollHeight"
 @get external clientHeight: Dom.element => float = "clientHeight"
+
+// A13: the parts list resets its scroll container (`.shell`, the one
+// `overflow-y: auto` element) to the top when it moves to another folder.
+@set external setScrollTop: (Dom.element, int) => unit = "scrollTop"

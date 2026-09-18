@@ -995,7 +995,7 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
   | NotFound =>
     <div className="stack">
       <p className="t-body"> {React.string("Part not found.")} </p>
-      <a className="btn btn-secondary" href={Route.href(Route.Parts)}> {React.string("Back to parts")} </a>
+      <a className="btn btn-secondary" href={Route.href(Route.Parts(""))}> {React.string("Back to parts")} </a>
     </div>
   | Found =>
     // The selected label always resolves (defaults are always present);

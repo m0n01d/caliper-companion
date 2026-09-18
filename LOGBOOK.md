@@ -2350,3 +2350,78 @@ commits on `agent/a12-folders` (store; Shell + Ui; page; e2e + docs + screenshot
   `--coverage` (known). `features.json`, `parameters.csv`, `export.spec.js`, `shell.spec.js`
   untouched. Tour regenerated (`14-parts-edit-toolbar.png`, `15-folder-rename.png` added; the
   `.ccpart.zip` deleted).
+
+## 2026-09-18 — A13 drill-down folder browsing (agent/a13-drilldown)
+
+SPEC §8a A13 built on `dd52e52` to the pre-build review (`docs/design/a13-drilldown-review.md`,
+BUILD WITH EDITS — B1–B5, S1–S10 all applied in the spec text this was built from). One agent,
+one wave, as the spec asked; four commits on `agent/a13-drilldown` (route + bindings + tests;
+Main + Part; the page; e2e + docs + screenshots); not pushed.
+
+- **Route.** `Parts(string)`, `#/f/<seg>/<seg>` per-segment encoded through the new
+  `WebApi.Uri` bindings; `parse` decodes inside a `try` and normalises, never validates.
+  `Array.sliceToEnd` (named by the spec) is **deprecated in 12.3.1** and `+a` makes that an
+  error — `Array.slice(~start=1)` does the same. `src/app/tests/RouteTest.res` is the first test
+  outside `core/` and `annotate/`; vitest's `src/**/*Test.res.mjs` glob already picks it up and
+  `Route.res.mjs` imports cleanly in node (`Tea` pulls React, nothing touches the DOM at load).
+- **Main.** `RouteChanged(Parts(p))` with the page mounted calls `PartsList.update(m,
+  FolderChanged(p))` directly and maps the cmd; anything else re-inits. `Part.back` is
+  `Parts(part.path)` once loaded, `Parts("")` before.
+- **Page.** `folder` / `foldersLoaded` / `newFolder` on the model; `FolderChanged` keeps and
+  clears exactly the spec's table and scrolls `.shell` to the top through `Canvas.setScrollTop`.
+  The view is one of: "Loading parts…" (until `loaded && foldersLoaded`), `folder-missing`, or
+  the search field over either the results (`resultsOf`: folders by leaf in `Folder.compareTree`
+  order, then A10's flat sections) or the folder (`folderViewOf`: direct subfolders by
+  lower-cased leaf, direct parts `updatedAt` desc). A folder row's outer `<div>` carries
+  `data-path`, so it goes through a jsx-runtime `PathDiv` (the `PathButton` / `OptionButton`
+  pattern) rather than `Ui.ListRow`; its markup mirrors `Ui.ListRow ~href` exactly (glyph, `<a
+  class="list-row-link">` body + chevron, trailing). The glyph slot is 72 px wide so folder and
+  part titles align when both groups render. `Ui.ListGroup`'s `~headerTrailing` / `~headerEl`
+  and `Ui.ListGroup.Header` (A12b) have no caller now; left in place — Ui.res is shared and they
+  are harmless.
+- **Judgement calls and deviations.**
+  1. **`LoadFailed` also sets `foldersLoaded`.** The spec sets it from `FoldersLoaded` and
+     `FoldersFailed` only, but the migration only ever runs off `PartsLoaded` — after a
+     `listParts` failure nothing would flip it, and the error line would sit under "Loading
+     parts…" for good.
+  2. **The New Folder capsule shows at the empty root too** (`01-parts-empty.png` gains the
+     secondary capsule under "New part"). The spec's "the root with no parts and no folders shows
+     A10's empty state unchanged" reads as *copy + primary capsule unchanged*, and the New Folder
+     rule ("present in the folder view whenever the query is blank … absent in an unknown
+     folder") names no other exception; the review's §2.6 rationale (a folder should be creatable
+     before its first part without hunting) points the same way. One line to drop if the owner
+     wants the pre-A13 empty screen back.
+  3. **Body order.** At the root: copy (no part anywhere), `new-part` capsule, Folders, Parts,
+     New Folder. In a folder: Folders, Parts (or "Empty folder"), `new-part` capsule (no part
+     anywhere), New Folder — the spec gives the two orders separately and they differ; both are
+     followed as written.
+  4. **Edit's "view has rows" predicate reads the folder view, not the results**, so Edit and
+     the toolbar stay put while a query is typed (B4's sticky-toolbar concern) and Edit can't
+     appear or vanish with each keystroke. The one edge: a folder with nothing in it offers no
+     Edit even though a query could surface rows — moving those needs their own folder.
+  5. **`EditToggled` closes the New Folder field** (P1's no-leftover-state rule, "any open
+     editor"); `QueryChanged` leaves the draft alone (hidden with the capsule while searching,
+     back when cleared), as the spec's "nothing else" asks.
+  6. **`FolderRenamed` leaves `model.folder` alone.** The renamed row is always a child of the
+     folder on screen, so the screen's own path can't change; rebasing it defensively would
+     leave the hash stale.
+  7. **Search results with a whitespace-only query are the folder view** (`String.trim`), the
+     same reading `matchesQuery` already applies.
+- **e2e.** Exactly the spec's "Existing specs that change" list: the A10 test, A12a's first, the
+  three A12b management tests, `a11y`'s Edit-mode locator (`parts-section` → `parts-list`); the
+  A12a picker tests 2–3, `pickFolder` / `createPartIn` / `createEmptyFolder`, `shell.spec.js`
+  and `export.spec.js` are byte-identical. New describe "folders — drill-down (SPEC §8a A13)"
+  (3 tests) and `a11y` "inside a folder: Tab reaches Back first" (+1). One assertion I wrote
+  matched the root's `<h1>Parts</h1>` as well as the group's `<h2>` — pinned to `level: 2`;
+  the app was right. Tour reordered per the spec (12 after the seeding, 16/14/15/17 added or
+  moved).
+- **Verified.** `rescript build` clean under `+a`; `npm test` **270 → 275**; Chromium e2e
+  `E2E_PORT=4330` **54 → 58**, green twice. Under full-suite `--coverage` the `EdgeSnapTest`
+  wall-clock test (annotate, untouched here) tripped both times — with the e2e run sharing the
+  CPU and on a quiet re-run (known, A10 entry); plain `npm test` is clean, and the
+  `src/core`-scoped coverage run (A12a's precedent; the coverage `include` is `src/core/**`
+  either way) reads `core/` **100 % lines** (156 tests, `Folder.res` untouched). `features.json`,
+  `parameters.csv`, `export.spec.js`, `shell.spec.js`, `fixtures/` untouched.
+- **Not verified on device.** The scroll-to-top on a folder change (`Canvas.setScrollTop` on
+  `.shell`) — headless Chromium at 844 px never scrolls the seeded lists; and the Headline +
+  subtitle bar in a folder against a real notch.
