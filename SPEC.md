@@ -910,3 +910,87 @@ mode offering part selection / Move / Delete only and the three A12b management 
     `createEmptyFolder`; `a11y.spec.js` "#/ …", "parts list — folder picker …", "parts list —
     rename autofocuses …"; `shell.spec.js` (gear at root, `Settings.back` → `#/`);
     `export.spec.js` (`createPart` walks the picker; asserts the Part page only).
+
+### A14 — Hybrid glass: monochrome tokens, glass language with a blur budget, the lens icon — **no JSON delta**
+
+Owner: "as glass-like as possible. Simple. Minimal. Monochrome." Explored in
+`docs/design/branding-snapkin.md` §7 (real screens re-rendered in Graphite, Paper and Glass;
+`mockups/mono-*.png`, `brand-mono.png`). The full-glass mock blurs 10–20 surfaces a screen — the
+scroll-jank case `docs/design/liquid-glass-web.md` documents — so A14 is the hybrid it recommends:
+monochrome tokens, the glass *language* everywhere, real blur on at most four surfaces per screen.
+Dark only stays. No data or export-contract change.
+
+**Tokens (`src/theme.css`, the §7 "Glass" column; every text pair ≥ 4.5:1, numbers in §7):**
+- [ ] `ground #0E0F11 · surface #1B1C1F · surface-2 #26272B · field #151618 · border #34363A ·
+  text #F2F2F0 · text-2 #A9ABAF · text-3 #8C8F94 · accent = text #F2F2F0 · accent-pressed #D9DADB ·
+  accent-ink #0E0F11 · live #C9CBCE · live-border #45484D · live-wash #26272B · live-ink #F2F2F0 ·
+  error #F0605A · error-ink #2B0A0A · error-wash rgb(240 96 90 / 0.2) · photo-mat #1E1F22 ·
+  scrim #0E0F11cc`. Glass: `--glass-fill rgba(28,29,32,.55) · --glass-fill-strong rgba(14,15,17,.70)
+  · --glass-stroke rgba(242,242,240,.18) · --glass-highlight rgba(242,242,240,.28) · --glass-blur 24px
+  · --glass-saturate 1.2`. `error` is the one chroma in the app. `theme-color` in `index.html` and
+  `theme_color` / `background_color` in `public/manifest.json` = `#0E0F11`.
+- [ ] Semantic names stay (`accent`, `live`): the *rule* changes from hue to fill. Tappable = ink
+  text on a hairline surface; **primary = ivory fill (`text`) with `accent-ink` label**, pressed
+  `accent-pressed`, disabled 40 % opacity (a filled primary stays the one loud element per screen,
+  17:1). Verified = solid `live` fill (face-card check badge, selected ring 2 px `live`) versus a
+  hairline outline. Snap pill on = filled ivory chip (`aria-pressed`), off = outline; the same for
+  the segmented control's selected segment (ivory fill, dark label). Flagged / conflict rows keep
+  `error`.
+
+**Glass language (`src/global.css`; the §7 rule list G1–G8, with the budget):**
+- [ ] **G1 ambient light**: two soft radial ink gradients painted on `.app-frame` (top-left ~14 %
+  ink, bottom-right ~8 %, large radii), `.shell` transparent, so glass has something to refract on
+  an empty screen. No `background-attachment: fixed`.
+- [ ] **G2 the blur budget**: real `backdrop-filter` on at most **four surfaces per screen** —
+  the nav bar (`.shell-topbar::before`, as today), the Edit toolbar (`.shell-footer`, as today),
+  `.list-group` **only on the Parts root / folder view and the Part page's features group** (content
+  scrolls beneath them), and the annotate `.panel`. Everything else is the **hairline material**:
+  opaque `surface` (or `field`) + 1 px `--glass-stroke` + `inset 0 1px 0 --glass-highlight`, no
+  blur — capsules, chips, fields, the segmented control, the toggle track, face cards and the
+  empty face card, the A2HS hint, the picker's option list, Settings and Debug groups. State the
+  count per screen in the LOGBOOK (Parts root: bar + 2 groups + toolbar-while-editing = 4).
+- [ ] **G3 primary** as above (fill, not glass). **G4** selected segment = ivory fill.
+- [ ] **G5 fewer words**: the "Folders", "Parts" and "Features · n" group headers are removed
+  (the grouping is self-evident: folder rows carry a glyph and a chevron, feature rows are mono).
+  Kept: search-result path headers (`parts-section-header`, they *are* the information), Settings'
+  "Default tolerances" / "Diagnostics", Debug's "Timers" / "Viewport" (the shell spec asserts
+  them), the picker's "Choose Folder" title. The Features count moves nowhere — the rows are the
+  count.
+- [ ] **G6** Lucide icons at `stroke-width 1.5` (`Icon.res` default), size unchanged. **G7** bar
+  hairlines at 18 % ink (`--glass-stroke`). Capsule and group radii unchanged.
+- [ ] **G8 fallbacks**: `@supports not (backdrop-filter)` and
+  `@media (prefers-reduced-transparency: reduce)` → the four blurred surfaces become opaque
+  `surface` with the same hairline. `prefers-reduced-motion` handling unchanged.
+
+**Canvas and export overlays (A3 in monochrome):**
+- [ ] Every hard-coded overlay colour in the annotate canvas and the export renderer
+  (`grep -rn "#[0-9a-fA-F]\{6\}\|rgba\?(" src/app/annotate src/app/export`) moves into one
+  `Overlay` palette module (constants, one place; the canvas cannot read CSS variables cheaply):
+  active line, handles, pill fill and text = `text #F2F2F0` on the ground@85 % halo; **saved**
+  dimensions = `text` at 70 % for line and handles, pill text at 100 % (§7: 60 % pill text drops to
+  3.4:1 on a pale photo); the snap ring = `live`; flagged / conflict = `error`. Measured in §7:
+  active 11.9 / 16.2 on the pale / dark fixture (was 4.95 / 6.84 in orange).
+- [ ] `export.spec.js` "render legibility (A3)": the amber window `r > 200 && g ∈ [100,190] &&
+  b < 90` becomes an **ink** window — a pixel with `min(r,g,b) ≥ 200` and `max−min ≤ 20` — and the
+  halo check stays (all channels `< 60`); test names say "ink line + halo", not "amber". The
+  white-photo case must still find both (the halo is what makes ink visible on white).
+
+**Icon (`scripts/make-icons.mjs`):**
+- [ ] The **m2** mark from `brand-mono`: one ink, one weight — a circle r 300 centred (512, 512)
+  with a 72 px stroke, and a ⌀ dimension across it: line from x 300 to 724 at y 512, 72 px round
+  caps, filled arrowheads 120 × 104 with tips 8 px inside the ring, no ticks; ink `#F2F2F0` on
+  `#0E0F11`, inside the 80 % safe area; favicon `rx 224`; PNGs full-bleed. The napkin mark stays
+  in the doc as the expressive variant, not shipped. Remove-and-re-add on the phone to see it.
+
+**Docs and gates:**
+- [ ] `DESIGN.md` §2 token table replaced (mono), §11.1 "Materials" rewritten around the blur
+  budget and the hairline material, §11.2 per-screen notes where headers vanish;
+  `docs/design/palettes-2026-09-17.md` gets a one-line pointer to §7 ("superseded by A14");
+  `branding-snapkin.md` gains "§8 Adopted" (what shipped, what stayed a mock); LOGBOOK section with
+  the per-screen blur count and every contrast pair actually measured on the built CSS (a small
+  node script over the tokens is fine).
+- [ ] Screenshot tour regenerated (all of `01`–`17`) and looked at; icon PNGs regenerated.
+- [ ] Playwright: the full suite green twice; only the A3 legibility test changes as above; `a11y`
+  and `shell` unchanged (Debug/Settings headers kept). Unit suite unchanged.
+- [ ] **Not in A14**: a light appearance; a theme toggle; Paper; blur on more than four surfaces;
+  any change to `features.json`, `parameters.csv`, the export PNG's geometry, or the skill.
