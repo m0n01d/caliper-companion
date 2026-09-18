@@ -2274,3 +2274,79 @@ its `~headerTrailing`/`~headerEl` still slot in beside it.
   `moveParts`/`deleteParts`/`renameFolder`/`deleteFolder`; `Shell ~footer`; per-row delete stays.
   The `EdgeSnapTest` wall-clock flake under `--coverage` (A10 entry) fired once here too, on the
   full-suite coverage run only; the `src/core` coverage run and plain `npm test` were clean.
+
+## 2026-09-18 — A12b selection toolbar, folder rename / delete (agent/a12-folders)
+
+SPEC §8a A12b built on the merged A12a (`0a790bf`), to the pre-build review
+(`docs/design/a12-folders-review.md`: B1/B2/B5, S1/S2/S5/S6/S8/S9/S10 are this half's). Four
+commits on `agent/a12-folders` (store; Shell + Ui; page; e2e + docs + screenshots); not pushed.
+
+- **Store.** `folderError`, `moveParts`, `deleteParts`, `deleteFolder`, `renameFolder` as
+  specified, one `bulkDocs` per multi-doc write. A per-doc rejection in a bulk result *throws*
+  (`JsError.throwWithMessage`) so the page shows its generic storage line — the alternative,
+  dropping the rejected doc from the returned list, is a half-move nobody sees. Part docs need
+  their `_rev` and `listParts` drops it, so `partDocsOf` does one `part:` range read for the ids
+  in play (`moveParts` and `renameFolder` both use it). The recreated folder docs keep
+  `createdAt` and bump `updatedAt`; a `from` with no doc (only a hand-edited store) still gets
+  its `to` doc; `from == to` is a no-op. Five StoreTests, 265 → 270.
+- **Shell footer.** `Shell ~footer` renders a `.shell-footer` wrapper after `<main>` directly in
+  `.shell`; the sticky, the glass pseudo-child and the safe-area padding live on that wrapper
+  (global.css, added to the three `.shell-topbar::before` selector groups), so the second glass
+  surface is Shell-owned like the first and the page supplies only its contents —
+  `edit-toolbar` is the content div inside. `Ui.ListGroup` gained `~headerTrailing` /
+  `~headerEl` (S1) and exposes `Ui.ListGroup.Header` for the header-only row.
+- **Page.** Model gains `selected`, `confirmingDelete`, `folderEdit`; `pickerTarget` gains
+  `ForMove(ids)`; `rowState.ConfirmingDelete` and the per-row delete msgs are gone. Sections
+  carry a `kind` (`Parts | EmptyLeaf | Intermediate`) derived from every known path
+  (`Folder.tree(folders ∪ parts' paths)`): a folder whose parts all fail the query is hidden as
+  in A10; an empty one shows when the query is blank or matches its path; Delete only on an
+  `EmptyLeaf`, no confirm. The header buttons and picker options share the jsx-runtime record
+  pattern (`PathButton`) because `data-path` is what tells one folder's pencil from another's.
+- **Judgement calls and deviations.**
+  1. **The intermediate header-only row's ids are `parts-folder` / `parts-folder-header`, not
+     `parts-section-header`.** The spec lists the A10 "sections with counts … rename moves and
+     re-sorts" test as unchanged in A12b, and that test stays in Edit mode after the rename-move
+     and asserts one `parts-section-header` with `toHaveText` (strict mode) — `Miata`'s
+     header-only row can't share the id without changing that test. Its text is the display path
+     with no count: `· 0` on a folder that has content under it would mislead, and counts never
+     include descendants.
+  2. **Empty state with folders.** With zero parts the empty leaf sections still render under
+     `parts-empty` and the capsule — a folder just emptied by the last delete must not vanish
+     (S5). Edit is tied to parts > 0 per the spec, so such a folder is renamable/deletable again
+     only once a part exists. A v1 gap, not hidden.
+  3. **`renameFolder` returns `unit`** as specified, so the page rebases `parts`/`folders`
+     locally: the store bumped `updatedAt` on the subtree's parts but the page's copies keep the
+     loaded value until reload — only the meta line could show it, and within a section the
+     relative order is unchanged (every part in the subtree gets the same stamp). Returning the
+     rewritten parts would fix it in six lines if it ever bites.
+  4. `NotEmpty` / `Nested` (unreachable from the UI) land in `rowError` as one neutral line
+     ("Couldn't rename that folder." / "Couldn't delete that folder.") — no inline copy per N6,
+     but not the "talking to storage" line either, since storage did its job.
+  5. **Delete strip focus** goes to `parts-delete-cancel` on open — the tapped Delete is replaced
+     by the strip, so focus would otherwise fall to `<body>`; Cancel refocuses `parts-delete`.
+     The spec left this open.
+  6. **Move Done** closes the picker at once and dispatches `moveParts`; `PartsMoved` applies
+     the result. Done with the root selected and the parts already there moves nothing and
+     announces nothing, but the selection still clears (the spec clears it on Done, not on the
+     count); the store call is made either way (no write when nothing moves).
+  7. **`focusWhenReady` since-guard.** Enter in the folder-rename field submits from *inside* an
+     editable; `Canvas.userIsTypingElsewhere` saw that field — still focused while React
+     unmounted it — as "the user moved on" and gave up, so the renamed header's pencil never got
+     focus. Found by the e2e (run 1), not guessed. The loop now treats `since` (whatever had
+     focus when the cmd started) as never "elsewhere"; A12a's Enter-created New Folder option
+     gets the same fix for free. The A10 `fill`-on-another-field case and the A12a third-control
+     case still stop it (`since` is a button in both).
+  8. **Formatter.** `rescript format` reflows 169 untouched A12a lines in `PartsList.res` (and
+     hundreds in `StoreTest.res`) — the files were never format-clean. That noise was reverted
+     rather than committed; only hand-written lines changed.
+  9. **Screenshot tour.** `08`/`10`/`11` differed by timer/date bytes only (screens A12b doesn't
+     touch) and were reverted; `12-parts-list.png` came back byte-identical.
+- **Not verified on device.** The keyboard vs. the sticky toolbar (review N5) — no device here;
+  Chromium headless draws the glass fill but the blur isn't visible in a screenshot.
+- **Verified.** `rescript build` clean under `+a`; `npm test` **265 → 270**; core 100 % lines
+  (`Folder.res` untouched — A12a's `rebase`/`isUnder`/`join`/`parent`/`leaf`/`validateSegment`
+  were everything A12b needed); Chromium e2e `E2E_PORT=4322` **50 → 54, green twice** (53.0 s,
+  51.8 s), no SIGSEGV this time; the `EdgeSnapTest` wall-clock flake fired once under full-suite
+  `--coverage` (known). `features.json`, `parameters.csv`, `export.spec.js`, `shell.spec.js`
+  untouched. Tour regenerated (`14-parts-edit-toolbar.png`, `15-folder-rename.png` added; the
+  `.ccpart.zip` deleted).

@@ -235,7 +235,7 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await expect(optionFor(page, 'Miata')).toBeFocused()
   })
 
-  test('parts list — rename autofocuses its draft input; deleting a part sends focus to New part', async ({
+  test('parts list — rename autofocuses its draft input; deleting the last part through the toolbar sends focus to New part', async ({
     page,
   }) => {
     await createPart(page, 'A11y rename part')
@@ -250,9 +250,54 @@ test.describe('accessibility sweep (design wave 3b)', () => {
     await expect(page.getByTestId('part-rename-input')).toBeFocused()
     await page.getByTestId('part-rename-cancel').click()
 
-    await page.getByTestId('part-delete').click()
-    await page.getByTestId('part-delete-confirm').click()
+    // SPEC §8a A12b (review S8): delete is the Edit-mode toolbar's; with no
+    // parts left, Edit leaves the bar and focus goes to the empty state's
+    // own `new-part` capsule.
+    await page.getByTestId('part-select').check()
+    await page.getByTestId('parts-delete').click()
+    await page.getByTestId('parts-delete-confirm').click()
     await expect(page.getByTestId('part-row')).toHaveCount(0)
     await expect(page.getByTestId('new-part')).toBeFocused()
+  })
+
+  // SPEC §8a A12b (review B2): while editing, no row is a link; Tab walks
+  // the bar (gear, Edit/Done, "+"), the search field, then the first row's
+  // checkbox, which Space checks — and every toolbar/header button is named.
+  test('parts list — Edit mode: Tab reaches the gear, Edit, +, search, then the first part-select; Space checks it', async ({
+    page,
+  }) => {
+    await createPart(page, 'A11y select part')
+    await page.goto('/')
+    await page.getByTestId('new-part').click()
+    await page.getByTestId('part-name').fill('A11y other part')
+    await page.getByTestId('part-create').click()
+    await expect(page).toHaveURL(/#\/parts\/[^/]+\/?$/)
+    await page.goto('/')
+    await expect(page.getByTestId('part-row')).toHaveCount(2)
+    await page.getByTestId('parts-edit').click()
+    await expect(page.getByTestId('parts-section').getByRole('link')).toHaveCount(0)
+    await expect(page.getByTestId('edit-toolbar')).toBeVisible()
+    await expectEveryButtonNamed(page)
+
+    await page.getByTestId('settings-link').focus()
+    await expect(page.getByTestId('settings-link')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('parts-edit')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('new-part')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('parts-search')).toBeFocused()
+    await page.keyboard.press('Tab')
+    const first = page.getByTestId('part-select').first()
+    await expect(first).toBeFocused()
+    expect(await first.evaluate(el => `${el.tagName}:${el.type}`)).toBe('INPUT:checkbox')
+    await expect(first).not.toBeChecked()
+    await page.keyboard.press('Space')
+    await expect(first).toBeChecked()
+    await expect(page.getByTestId('parts-move')).toHaveText('Move 1')
+    // Rows are listitems still; the checkbox's name is the part's.
+    await expect(page.getByTestId('part-row').first()).toHaveAttribute('role', 'listitem')
+    const label = await first.getAttribute('aria-label')
+    expect(label).toMatch(/^Select /)
   })
 })
