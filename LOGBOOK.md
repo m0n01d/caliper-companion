@@ -3133,3 +3133,27 @@ The phone loop is `npm run dev` + `tailscale serve --bg 3000` → https://mac-mi
 before, 200 after, still 403 for any other host. Dev server only; `build` / `preview` untouched.
 Serve had to be enabled once for the tailnet in the admin console. The tailnet origin has its own
 PouchDB.
+
+## 2026-09-18 — Demo video (`scripts/demo-tour.mjs`)
+
+A 66 s phone-portrait walkthrough of the golden path with a cursor overlay, subtitle pills and
+human pacing: new part (with the units segment flipped so the thumb glides) → capture → two edge
+taps → reading → name chip → save → back → export. Motion is deliberately NOT reduced; the A16
+pushes, the A6 fit tween and the polish-pass press/release are the point of the video.
+
+- `--rehearse` walks the **same** route with the dressing off (no cursor travel, dwell or
+  subtitles) and verifies every selector. First attempt only verified visibility without clicking,
+  so it could not reach past the create form — rehearsal has to perform the navigation.
+- The overlays carry a `view-transition-name`, which lifts them out of the root snapshot during a
+  page push; without it the leaving screen's snapshot slides away carrying a ghost cursor.
+- **The first canvas tap was being swallowed.** `data-autofit` is not a readiness signal (it reads
+  `none` all through the load) — `data-image-size` is, and even after it the stage is still sizing
+  for a beat, so a tap computed against the old box misses the image. `tapNormalized` now waits for
+  `pending-points` to reach an expected count and retries with fresh geometry, failing loudly after
+  four attempts. Recording needs no retries (its pauses cover it); rehearsal retries once.
+- The shutter is driven through a real `filechooser` event, not `setInputFiles`, so the click in
+  the video is the click a user makes. The export step waits for the actual download
+  (`norcold_freezer_hinge_pin.ccpart.zip`) and warns if none arrives.
+- Playwright writes WebM; `docs/demo/snapkin-demo.mp4` is that file through ffmpeg (H.264, CRF 24,
+  faststart, 618 KB) because WebM does not play everywhere a demo gets pasted. The `.webm` is not
+  committed.
