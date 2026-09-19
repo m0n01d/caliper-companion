@@ -3124,3 +3124,12 @@ DESIGN.md §13; the calls worth remembering:
   `@rescript/darwin-arm64`.
 - **To eyeball on the phone:** the scroll-edge bar in Safari 26, the knob stretch and shutter press
   under a real finger, and whether 9 % strokes hold up outdoors.
+
+## 2026-09-18 — Phone testing over Tailscale (owner call)
+
+The phone loop is `npm run dev` + `tailscale serve --bg 3000` → https://mac-mini.tail128d00.ts.net
+(tailnet only), not a push and a wait on the GitHub deploy — CLAUDE.md "Testing on the phone".
+`vite.config.js` gained `server.allowedHosts: ['.ts.net']`: measured 403 for the tailnet Host header
+before, 200 after, still 403 for any other host. Dev server only; `build` / `preview` untouched.
+Serve had to be enabled once for the tailnet in the admin console. The tailnet origin has its own
+PouchDB.

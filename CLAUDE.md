@@ -123,6 +123,23 @@ here breaks — edit the `.res` files directly.
 - Numeric entry: `<input type="text" inputmode="decimal" enterkeyhint="next">`, never `type="number"`.
 - Export via `navigator.share({files})`, with a download-anchor fallback.
 
+## Testing on the phone: Tailscale, not a deploy
+
+**The phone test loop is the local dev server over Tailscale — do not push and wait for the GitHub
+deploy to look at a change on the iPhone** (owner, 2026-09-18).
+
+```sh
+ASDF_NODEJS_VERSION=22.16.0 npm run dev   # ReScript watch + Vite on :3000 (asdf's default Node 20.3 is below ReScript 12's 20.11 floor)
+tailscale serve --bg 3000                 # once; the config persists — `tailscale serve status` to check
+```
+
+Then open **https://mac-mini.tail128d00.ts.net** on the phone (tailnet only, nothing public). It is
+real HTTPS — the secure context the service worker, Add to Home Screen and `navigator.share` need,
+which `http://<lan-ip>:3000` is not — with HMR. `vite.config.js` allows `.ts.net` hosts for this
+(`server.allowedHosts`; Vite answers 403 to an unknown Host otherwise). The tailnet origin has its
+own PouchDB — parts created on `localhost:3000` are not there. `tailscale serve reset` turns it
+off. Pushes to `main` still deploy; that is for shipping, not for looking.
+
 ## Logbook
 
 `LOGBOOK.md` holds decisions, judgment calls, and hand-off state. Append an entry when you make a
