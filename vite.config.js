@@ -26,6 +26,10 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: true,
+    // `tailscale serve 3000` proxies with the tailnet Host header
+    // (mac-mini.<tailnet>.ts.net); Vite answers 403 to unknown hosts.
+    // Dev server only — tailnet names, nothing public.
+    allowedHosts: ['.ts.net'],
   },
   plugins: [
     {
