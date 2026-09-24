@@ -89,15 +89,20 @@
   font: var(--cc-text-footnote);
 }
 
-/* ── SPEC §8a A17: medium and expanded ────────────────────────────────── */
-/* The Hands-on timer sits under Export: at compact both span the column
-   (left-aligned); from medium the capsule is capped at 400 and centred
-   (global.css §16), so the timer centres with it — the `adaptive-after-*`
-   boards' look. */
-@media (min-width: 600px) {
-  .part-timer {
-    text-align: center;
-  }
+/* Layout polish 2026-09-24 (audit #2, #3): the export status line and the
+   Hands-on timer are one centred Footnote stack under Export at every
+   width — 12 px under the capsule (the `.stack` gap), 4 px between the two
+   lines. The timer is the system UI face (`text-2`), with tabular figures
+   so the running seconds hold still. */
+.part-export-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-1);
+  text-align: center;
+}
+
+.part-timer {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── SPEC §8a A17: the expanded two-column Part page ──────────────────── */

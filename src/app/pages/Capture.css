@@ -182,10 +182,13 @@
   outline-offset: 2px;
 }
 
+/* Layout polish (audit #12): centred under the centred shutter block, on
+   the page margin (the 4 px side padding is gone). The prominent (camera
+   denied) box keeps its own padding and left-aligned text. */
 .camera-note {
   font: var(--cc-text-footnote);
   color: var(--cc-text-2);
-  padding: 0 var(--cc-space-1);
+  text-align: center;
 }
 
 .camera-note-prominent {
@@ -195,6 +198,7 @@
   border-radius: var(--cc-radius);
   padding: var(--cc-space-2) var(--cc-space-3);
   font-weight: 600;
+  text-align: left;
 }
 
 /* -- recapture card (inline, non-modal; the `.list-group` hairline material) -- */

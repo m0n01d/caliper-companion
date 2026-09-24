@@ -1899,31 +1899,38 @@ let renderNewFolder = (~selected: string, ~draft: option<string>, ~dispatch: msg
     | Error(e) if String.trim(draft) != "" => Some(Folder.errorMessage(e))
     | Error(_) | Ok(_) => None
     }
+    // Layout polish (audit #10): the field sits in the same inset grouped
+    // card as the create form's fields and the folder rename strip — the
+    // label inside the card, not bare on the page.
     <div className="stack folder-picker-new">
-      <Ui.Field
-        label="New folder" htmlFor="folder-new-name-input" error=?error errorTestId="folder-new-error">
-        {Canvas.Input.make({
-          dataTestId: "folder-new-name",
-          id: "folder-new-name-input",
-          type_: "text",
-          autoCapitalize: "words",
-          autoCorrect: "off",
-          autoComplete: "off",
-          spellCheck: false,
-          enterKeyHint: "done",
-          placeholder: "Folder name",
-          ariaInvalid: error->Option.isSome,
-          value: draft,
-          onChange: e => dispatch(NewFolderChanged(inputValue(e))),
-          onKeyDown: e =>
-            if JsxEvent.Keyboard.key(e) == "Enter" {
-              e->JsxEvent.Keyboard.preventDefault
-              if !invalid {
-                dispatch(NewFolderCreate)
-              }
-            },
-        })}
-      </Ui.Field>
+      <Ui.ListGroup>
+        <div className="list-row parts-form-row">
+          <Ui.Field
+            label="New folder" htmlFor="folder-new-name-input" error=?error errorTestId="folder-new-error">
+            {Canvas.Input.make({
+              dataTestId: "folder-new-name",
+              id: "folder-new-name-input",
+              type_: "text",
+              autoCapitalize: "words",
+              autoCorrect: "off",
+              autoComplete: "off",
+              spellCheck: false,
+              enterKeyHint: "done",
+              placeholder: "Folder name",
+              ariaInvalid: error->Option.isSome,
+              value: draft,
+              onChange: e => dispatch(NewFolderChanged(inputValue(e))),
+              onKeyDown: e =>
+                if JsxEvent.Keyboard.key(e) == "Enter" {
+                  e->JsxEvent.Keyboard.preventDefault
+                  if !invalid {
+                    dispatch(NewFolderCreate)
+                  }
+                },
+            })}
+          </Ui.Field>
+        </div>
+      </Ui.ListGroup>
       <div className="btn-row">
         <Ui.Button
           variant=Ui.Button.Primary

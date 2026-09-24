@@ -1573,8 +1573,9 @@ let stage = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
 }
 
 // The tools strip (DESIGN.md §11.2 "Annotate", design review A1): Snap,
-// dimension count, zoom out, zoom readout, zoom in — a 44 px opaque strip
-// at the top of `.panel`, in flow, right-aligned. It used to float over the
+// dimension count, zoom out, zoom readout, zoom in — a 44 px strip at the
+// top of `.panel`, in flow, Snap on the left and the rest on the right
+// (layout polish 2026-09-24). It used to float over the
 // photo in a scrim capsule; moved here so nothing but the hint pill sits on
 // the photo. It lands before the Reading field in DOM order, so its
 // buttons fall between the canvas and `reading` in tab order — a known,
@@ -1595,16 +1596,29 @@ let toolsStrip = (m: model, l: loaded, ~dispatch: msg => unit): React.element =>
       <Icon name=Ruler size=16 />
       {React.string("Snap")}
     </button>
-    <Ui.Pill testId="dimension-count"> {React.string(Int.toString(count))} </Ui.Pill>
-    <Ui.Button
-      variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
-      <Icon name=ZoomOut />
-    </Ui.Button>
-    <Ui.Pill mono=true testId="zoom"> {React.string(Float.toFixed(zoom, ~digits=2))} </Ui.Pill>
-    <Ui.Button
-      variant=Ui.Button.Icon testId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
-      <Icon name=ZoomIn />
-    </Ui.Button>
+    // Layout polish (audit #4): Snap leads on the left, the count and the
+    // zoom controls sit together on the right (`space-between`). The count
+    // and the zoom readout carry their units — "2 dims", "1.00×" — OUTSIDE
+    // their test-id elements, whose text stays the bare number (the e2e
+    // specs read it with `Number()` / exact text).
+    <div className="annotate-tools-end">
+      <span className="annotate-count">
+        <span dataTestId="dimension-count"> {React.string(Int.toString(count))} </span>
+        {React.string(count == 1 ? " dim" : " dims")}
+      </span>
+      <Ui.Button
+        variant=Ui.Button.Icon testId="zoom-out" ariaLabel="Zoom out" onClick={_ => dispatch(ZoomOut)}>
+        <Icon name=ZoomOut />
+      </Ui.Button>
+      <span className="annotate-zoom">
+        <Ui.Pill mono=true testId="zoom"> {React.string(Float.toFixed(zoom, ~digits=2))} </Ui.Pill>
+        <span className="annotate-zoom-unit"> {React.string("×")} </span>
+      </span>
+      <Ui.Button
+        variant=Ui.Button.Icon testId="zoom-in" ariaLabel="Zoom in" onClick={_ => dispatch(ZoomIn)}>
+        <Icon name=ZoomIn />
+      </Ui.Button>
+    </div>
   </div>
 }
 
@@ -1803,18 +1817,23 @@ let panel = (m: model, l: loaded, ~dispatch: msg => unit): React.element => {
     // narrow for a sentence.
     {errorLine("tolerance-error", toleranceError)}
     {errorLine("annotate-error", m.error)}
+    // Layout polish (audit #6): Save | Clear is one row of equal 50 px
+    // halves, primary left — the Create | Cancel pair — instead of a full
+    // Save over a small left-aligned Clear. Editing a saved dimension keeps
+    // the one 50 px row and splits it in thirds: Update (the primary,
+    // relabelled in place) | Clear | Delete, Delete at the far edge where it
+    // always sat, away from the primary. No control is lost, and the row's
+    // height never changes with the selection — the list under it holds
+    // still, so `scrollRowIntoView` (which runs before the re-render) keeps
+    // the selected row where it put it.
     <div className="annotate-actions">
-      <Ui.Button
-        variant=Ui.Button.Primary
-        block=true
-        testId="save"
-        disabled={!canSave(m, l)}
-        onClick={_ => dispatch(SaveClicked)}>
-        {React.string(editing ? "Update" : "Save dimension")}
-      </Ui.Button>
-      <div className="annotate-actions-row">
+      <div className="btn-row">
         <Ui.Button
-          variant=Ui.Button.Small
+          variant=Ui.Button.Primary testId="save" disabled={!canSave(m, l)} onClick={_ => dispatch(SaveClicked)}>
+          {React.string(editing ? "Update" : "Save dimension")}
+        </Ui.Button>
+        <Ui.Button
+          variant=Ui.Button.Secondary
           testId="cancel"
           disabled=nothingToClear
           onClick={_ => dispatch(CancelClicked)}>
