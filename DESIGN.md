@@ -386,3 +386,22 @@ Two stay on purpose:
 
 - The Annotate panel keeps 16 px between its sections. It must fit above the keyboard.
 - The Annotate photo keeps 12 px to the panel below it, for the same reason.
+
+### 14.4 Layout rules from the polish pass
+
+Where these rules and §11 differ, these rules win.
+
+- The nav title centres on the bar. The two side columns share the free space equally.
+- A title too long to centre moves off centre to fit between the side controls.
+- A title longer than that space ends in an ellipsis.
+- Save and Clear share one row of two equal 50 px capsules, primary on the left.
+- In Annotate's edit mode, Update, Clear and Delete share that row in thirds. The row height stays the same.
+- The tool strip puts Snap on the left. The count and the zoom sit on the right.
+- The count and the zoom show units: "2 dims" and "1.00×". The units sit outside the test-id elements.
+- Under Export, the status line and the timer are one centred Footnote stack, at every width.
+- The timer uses the system face with tabular figures, not mono.
+- Secondary block capsules fill the column at compact: New Folder, From library, Export CSV, Re-measure.
+- A field label sits 8 px above its control.
+- Annotate's name chips are 40 px tall with 13 px mono text (§11.2).
+- The Parts screen puts 24 px between its two groups and before New Folder. Search keeps 12 px to the list.
+- The folder picker's New folder field sits in an inset grouped card, like the create and rename fields.

@@ -3198,3 +3198,28 @@ board, landing at 1440 and 390, social card, thumbnail draft, polish before/afte
   it moves the installed app's URL, and on-device parts do not follow a domain change (IndexedDB is
   per origin; GitHub is widely reported to redirect a project's github.io URL to its custom domain,
   but its docs did not confirm that on 2026-09-24) — export first.
+- **Layout polish** (`docs/design/layout-audit-2026-09-24.md`, DESIGN.md §14.4). A measured audit
+  of all 17 phone screens and the wide ones found 22 differences from §11 (5 high). 16 are fixed
+  (CSS and markup only, no `features.json` or Store change). Before → after at 390 × 844:
+  - Nav title offset from centre: folder −29.9 → 0, folder Edit −35.7 → 0, picker +7 → 0,
+    Part −5.9 → 0. One case stays off: Part + Edit with "Norcold freezer hinge pin" is 13 px too
+    wide to centre beside "Done", so it sits 6.6 px off rather than being cut (UIKit's fallback).
+  - Timer and export status: one centred Footnote stack under Export (12 / 4 px), system face
+    with tabular figures. The timer was left-aligned mono at compact.
+  - Annotate tool strip: Snap on the left, and "2 dims" and "1.00×" on the right. The units sit
+    outside the `dimension-count` and `zoom` test ids, which e2e reads as bare numbers.
+  - Save | Clear: one row of 175 × 50 halves. Clear was a 78 × 40 button below the 844 fold.
+    Edit mode is Update | Clear | Delete in thirds on the same row. Delete on its own row failed
+    `annotate.spec.js:752`: the list moved after `scrollRowIntoView` had placed the selected row.
+  - From library, Export CSV and Re-measure: full-width block capsules, like New Folder.
+  - Also: label → control 8 px, name chips 40 px / 13 px, the picker's New folder field in a
+    card, the centred camera note, toolbar insets 17 px like the bar, Debug's user agent as its
+    group's footer, panel edges on the photo's 16 / 374, and panel and photo tops aligned at 1440.
+  - Settings copy: "Readings come from a connected caliper", because the owner's Bluetooth
+    calipers type readings like the wedge dongle did. The `wedge` tag and the schema are unchanged.
+  - Kept on purpose: the Annotate panel's 16 px rhythm and the 12 px gap under the photo, because
+    the panel must fit above the keyboard (§14.3). Open: the create form's take-over chrome (#11),
+    the four empty-state treatments (#17) and the group headers (#18).
+  - Tests: vitest 283 / 283. Chromium e2e 73 / 73, run twice (the implementing agent, then again
+    here). WebKit still cannot launch in this sandbox. `docs/screenshots/` regenerated (17 phone,
+    8 wide). Before / after pairs: `docs/shots/layout-polish/`.
