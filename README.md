@@ -52,6 +52,11 @@ node scripts/pages-smoke.mjs https://m0n01d.github.io/caliper-companion/ # same,
 GitHub then 301-redirects `m0n01d.github.io/caliper-companion/…` to the new host. The new host is a
 new origin with its own PouchDB, so parts made on the github.io URL stay behind. Export them first.
 
+The apex is independent of the app. Point `snapkin.tools` (and `www`) at whatever hosts the
+marketing site: a second Pages repo with the custom domain `snapkin.tools` (four `A` records to
+185.199.108–111.153, four `AAAA` to 2606:50c0:8000–8003::153, and `www` CNAME `m0n01d.github.io`),
+or Squarespace, where it points today. Moving the marketing site later never moves the app's origin.
+
 ## Import into Fusion without Claude
 
 Every export bundle carries `parameters.csv` next to `features.json` (SPEC §8a A11), so you can get
