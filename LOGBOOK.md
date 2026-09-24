@@ -3157,3 +3157,44 @@ pushes, the A6 fit tween and the polish-pass press/release are the point of the 
 - Playwright writes WebM; `docs/demo/snapkin-demo.mp4` is that file through ffmpeg (H.264, CRF 24,
   faststart, 618 KB) because WebM does not play everywhere a demo gets pasted. The `.webm` is not
   committed.
+
+## 2026-09-24 — Brand v1, landing page, layout polish (claude/keen-cray-m75xyi)
+
+Owner: "branding now … the layout consistent … a simple product landing page" for a beta found
+through a YouTube demo. Design canvas: https://claude.ai/artifact/1MBHhjBNG21vWLwSpQmjz1 (brand
+board, landing at 1440 and 390, social card, thumbnail draft, polish before/after).
+
+- **Brand kept, not reinvented.** The m2 icon stays as shipped. New: the `snapkin` wordmark
+  (Space Grotesk 600, picked from 12 faces rendered side by side; outlined to paths so no file
+  needs the font), lockups, a `snapkin.tools` URL lockup, the brand guide `docs/brand/README.md`,
+  DESIGN.md §14. Space Grotesk is brand-only; the app keeps the system stack.
+- **Landing page at `public/beta/`**, static and zero-JS so Vite copies it and it deploys with the
+  app (`/caliper-companion/beta/`), outside the service worker's precache. The phone is a static
+  mock of Annotate; the part is the golden hinge pin drawn to scale in the `Overlay.res` styles.
+  The demo poster is a mock of the Part screen: the sandbox's ffmpeg has only a VP8 decoder, so no
+  frame of the H.264 demo could be pulled. `docs/demo/snapkin-demo.mp4` moved to `public/beta/`.
+- **Sign-up is off until the owner picks a service** (the form's button is `disabled`, with a
+  "Sign-ups open soon" note). Field names follow Kit. Checked 2026-09-24: Formspree free = 50
+  submissions a month (formspree.io, read directly); Kit free = 10,000 subscribers (third-party
+  2026 sources only — kit.com answered 403 to every fetch). Setup steps: `docs/brand/README.md`.
+- **Name check, 2026-09-24** (the owner asked mid-session; nothing renamed):
+  - Live apps named Snapkin: App Store "Snapkin: Photo Sticker Journal" (id6808989671) and
+    Google Play "Snapkin" photo calorie counter (`app.getsnapkin`). Both unrelated to CAD, both
+    "photo" apps.
+  - RDAP: snapkin.com, snapkin.app, snapkin.io, getsnapkin.app registered; snapkin.dev,
+    getsnapkin.com, trysnapkin.com, usesnapkin.com not found (likely free). snapkin.co could not
+    be checked (proxy refused). The owner already holds **snapkin.tools**.
+  - "snpkn" (owner's idea): snpkn.com/.app/.dev/.net not found, but @snpkn is taken on YouTube
+    and X, a "$NPKN / sNPKN" crypto token exists, and it is said like "Snapkin" anyway. Advised
+    against.
+  - "Snapkin Tools" as a store name (owner's idea) → advised against: **Snap-on sells digital
+    calipers** (CAL6EA, Blue-Point MCAL12A) to the same mechanics. snapkin.tools as an address
+    is fine. No Snap-on case against a "Snap-" name was found in a quick search: caution, not a
+    known conflict.
+  - Not done: a USPTO search (tmsearch.uspto.gov renders only in a browser). The owner should run
+    one, or buy a short trademark consult, before the YouTube video names the product.
+- **Open decision: the domain layout.** Proposed: `snapkin.tools` = landing, `snapkin.tools/app` =
+  the PWA (a build change: app `base` `/app/`, landing at the root). Not done without the owner:
+  it moves the installed app's URL, and on-device parts do not follow a domain change (IndexedDB is
+  per origin; GitHub is widely reported to redirect a project's github.io URL to its custom domain,
+  but its docs did not confirm that on 2026-09-24) — export first.
