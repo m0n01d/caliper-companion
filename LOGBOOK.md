@@ -3157,3 +3157,27 @@ pushes, the A6 fit tween and the polish-pass press/release are the point of the 
 - Playwright writes WebM; `docs/demo/snapkin-demo.mp4` is that file through ffmpeg (H.264, CRF 24,
   faststart, 618 KB) because WebM does not play everywhere a demo gets pasted. The `.webm` is not
   committed.
+
+## 2026-09-24 — Custom domain readiness: the Pages build follows Settings › Pages
+
+- Dwight asked about pointing `app.`/`beta.snapkin.tools` or `snapkin.tools/app|beta` at the Pages
+  site, and whether that needs Cloudflare. Checked 2026-09-24: `snapkin.tools` DNS is Squarespace
+  (`nsc1–4.squarespacedns.com`), the apex serves Squarespace's "Coming Soon" parking page, `app` and
+  `beta` are NXDOMAIN, and there are no CAA records. A subdomain needs one `CNAME` →
+  `m0n01d.github.io` at Squarespace and no Cloudflare. A path needs a proxy on the apex (a
+  Cloudflare Worker, after a nameserver move, because partial CNAME setup is Business+). The other
+  path route is a `m0n01d.github.io` user site on the apex. That serves project sites only at
+  `/<repo-name>`, and it moves every other project site on the account under the apex too.
+- `pages.yml` should run `configure-pages` before the build and pass its `base_path` as `VITE_BASE`
+  (`/caliper-companion` today, `""` once a domain is saved; `vite.config.js` already maps `""` to
+  `/`). Without it, saving a domain leaves a blank page until someone edits the workflow. Verified:
+  both values build and pass `scripts/pages-smoke.mjs` under `vite preview` (SW scope = base,
+  controlled, offline relaunch). README has the switch runbook. **The session token still cannot
+  write `.github/workflows/`** (push refused again 2026-09-24, no `workflow` scope), so the 7-line
+  edit rides in the PR body for Dwight to apply on the branch.
+- Open for Dwight: which hostname. Each tester's parts live in that origin's PouchDB, and v0 has no
+  sync or import, so a later `beta.` → `app.` move strands them. Also, `claude/**` pushes deploy to
+  the same single Pages slot (run 83, a `claude/` push, cancelled `main`'s run 82). That is fine for
+  dev but wrong once testers use the URL.
+- Gotcha: killing `npx vite preview` by its PID leaves the `node` child on :3000. `ss` is not
+  installed in the cloud sandbox, so check with `lsof -iTCP:3000 -sTCP:LISTEN` and kill that PID.
