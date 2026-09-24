@@ -3223,3 +3223,34 @@ board, landing at 1440 and 390, social card, thumbnail draft, polish before/afte
   - Tests: vitest 283 / 283. Chromium e2e 73 / 73, run twice (the implementing agent, then again
     here). WebKit still cannot launch in this sandbox. `docs/screenshots/` regenerated (17 phone,
     8 wide). Before / after pairs: `docs/shots/layout-polish/`.
+
+## 2026-09-24 — Domain split: landing at snapkin.tools, app at app.snapkin.tools (owner call)
+
+Owner: "the landing page the root, and the app is going on a subdomain". This is layout A of the
+domain-routing session (`m0n01d/caliper-companion` PR #3, and its "Snapkin Beta Address" page),
+with the landing page taking the apex.
+
+- **Why two repos.** A GitHub Pages site takes one custom domain. This repo's site becomes the app at
+  `app.snapkin.tools`. The landing page gets its own Pages repo (proposed `m0n01d/snapkin-site`)
+  for `snapkin.tools`. The app's origin then never depends on where the landing page is hosted,
+  and PouchDB storage is per origin.
+- **Done here.** `public/beta/` moved to `site/` and is out of the app build (`dist/` has no
+  `beta/`). The site stands alone: its own favicon and touch icons, `CNAME` (`snapkin.tools`),
+  `.nojekyll`, a branded `404.html` with root paths, and `og:url` / `og:image` / `canonical` on
+  `https://snapkin.tools/`. `beta.css` became `site.css`. It was rendered from its own root at 1440
+  and 390: same heights as before, no failed requests. `site/README.md` has the preview, publish
+  (`git subtree push --prefix=site …`), Pages and DNS steps.
+- **Committed with `[skip ci]`.** A `claude/**` push still deploys to the one live Pages site. This
+  commit would take `/beta/` off the live github.io site before `snapkin.tools` is serving it, so
+  the live build stays at `9920b52` for now. Unit tests (283 / 283) and `vite build` ran locally.
+- **The redirect, settled.** PR #3 measured that GitHub 301-redirects a project's github.io URLs to
+  its custom domain and keeps the path (`jekyll.github.io/jekyll/` → jekyllrb.com,
+  `mermaid-js.github.io/mermaid/` → mermaid.js.org). So parts on `m0n01d.github.io` become
+  unreachable once `app.snapkin.tools` is saved: export them first.
+- **Owner steps, in order.** (1) Apply PR #3's `pages.yml` edit (`VITE_BASE` from configure-pages'
+  `base_path`), and change the trigger to `main` only. Agent tokens here have no `workflow` scope.
+  (2) Export parts from `m0n01d.github.io`. (3) Create the site repo. The next agent can then push
+  `site/` into it. (4) Squarespace DNS: the TXT verification record, `app` CNAME and `www` CNAME to
+  `m0n01d.github.io`, and apex A / AAAA to GitHub (`site/README.md`). (5) Pages settings: the app
+  repo gets `app.snapkin.tools` (then re-run the deploy), the site repo gets `snapkin.tools`
+  (Deploy from a branch, `main`, root). Then Enforce HTTPS on both.

@@ -1,5 +1,5 @@
-/* Snapkin landing page (public/beta/). Static, no JavaScript, no build step:
-   Vite copies public/ verbatim, so this file ships as written.
+/* Snapkin landing page (site/ -> https://snapkin.tools). Static, no JavaScript,
+   no build step: the files ship as written.
    Tokens mirror src/theme.css (A14 glass palette, S2 live blue). Brand rules:
    docs/brand/README.md — ivory = tap, blue = measured, red = wrong. */
 

@@ -2,7 +2,7 @@
 
 The launch kit: the mark, the wordmark, the colours, the type, one graphic device and the voice.
 The boards are on the design canvas (claude.ai artifact "Snapkin Launch"). The files are here.
-The landing page that uses them is `public/beta/`.
+The landing page that uses them is `site/` (https://snapkin.tools).
 
 ## Files
 
@@ -14,7 +14,7 @@ The landing page that uses them is `public/beta/`.
 | `snapkin-wordmark.svg`, `snapkin-wordmark-dark.svg` | The word alone. Use it where the icon is already on screen. |
 | `snapkin-tools-url.svg`, `snapkin-tools-url-dark.svg` | The address as a logo: `snapkin` plus `.tools` in pencil grey. Use it on video end cards and thumbnails. |
 | `youtube-thumbnail-draft.png` | A 1280 × 720 thumbnail draft. Put your own photo or face on it before you use it. |
-| `../../public/beta/og.png` | The 1200 × 630 link-preview image of the landing page. |
+| `../../site/og.png` | The 1200 × 630 link-preview image of the landing page. |
 
 All text is outlined to paths. No file needs a font to render.
 
@@ -33,7 +33,7 @@ shipped app icon (A14 "m2"), unchanged.
 - `snapkin`, lowercase, Space Grotesk 600, tracking −3 %, outlined to paths.
 - Lockup: the ring is 0.82 em across. It is centred on the x-height. The gap to the `s` is 0.26 em.
   In the 100-unit drawing: x-height 48.6, ring 82, gap 26, ring centre 24.3 above the baseline.
-- Space Grotesk is licensed under the SIL Open Font License 1.1 (`public/beta/fonts/OFL.txt`).
+- Space Grotesk is licensed under the SIL Open Font License 1.1 (`site/fonts/OFL.txt`).
 
 ## Colour
 
@@ -76,20 +76,20 @@ exactly as the app does (`src/app/Overlay.res`), with the dark halo under every 
 
 ## Landing page
 
-`public/beta/` is a static page: HTML, one CSS file, SVG art, no JavaScript and no build step.
-Vite copies `public/` into `dist/` unchanged, so the page deploys with the app. It is at
-`https://m0n01d.github.io/caliper-companion/beta/` today.
+`site/` is a static page: HTML, one CSS file, SVG art, no JavaScript and no build step. It is the
+root of `https://snapkin.tools`. The app is a separate site at `https://app.snapkin.tools`.
+`site/README.md` has the preview, publish and DNS steps.
 
 - The phone on the page is a static mock of the Annotate screen in `index.html`. The part is the
   golden fixture's hinge pin, drawn to scale (6.2 units per mm) with the app's overlay styles.
 - `img/demo-poster.jpg` is a mock of the Part screen. The sandbox cannot decode H.264, so it is not
   a frame of the video.
 - `snapkin-demo.mp4` is the demo from `scripts/demo-tour.mjs` (see `docs/demo/README.md`).
-- If the page moves to its own domain, change the two absolute URLs in the `og:` tags.
+- `og:url`, `og:image` and `canonical` name `https://snapkin.tools/`. Change them if the domain changes.
 
 ## Beta sign-up
 
-The form in `public/beta/index.html` is off until a sign-up service is connected. The submit
+The form in `site/index.html` is off until a sign-up service is connected. The submit
 button is `disabled` and a note says "Sign-ups open soon".
 
 To connect it:
