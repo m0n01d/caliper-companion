@@ -12,7 +12,7 @@ feature. Snapkin keeps every number on a dimensioned photo and exports a `featur
 </p>
 
 - **Landing page:** [`m0n01d/napkin-site`](https://github.com/m0n01d/napkin-site) → https://snapkin.tools
-- **App:** this repo's Pages site → https://app.snapkin.tools (until the domain is set up: https://m0n01d.github.io/caliper-companion/)
+- **App:** this repo's Pages site → https://app.snapkin.tools (https://m0n01d.github.io/caliper-companion/ redirects there)
 - **Brand kit:** `docs/brand/` (lockups, icon, colours, voice)
 
 ## About the name
@@ -38,18 +38,27 @@ npm run e2e          # build + Playwright (Chromium; WebKit where its libs exist
 ## Test on a phone (GitHub Pages)
 
 `.github/workflows/pages.yml` builds and publishes `dist/` to GitHub Pages on every push to `main`
-or a `claude/**` branch, at `https://m0n01d.github.io/caliper-companion/`. iOS needs HTTPS for the
-service worker, `navigator.share`, and the DeviceOrientation permission prompt, so this is the route
-for real-device testing. Repo settings it depends on (already set): Pages › Source = GitHub Actions,
+or a `claude/**` branch. Pages serves it at the root of `https://app.snapkin.tools/`, and
+`https://m0n01d.github.io/caliper-companion/` redirects there. iOS needs HTTPS for the service
+worker, `navigator.share`, and the DeviceOrientation permission prompt, so this is the route for
+real-device testing. Repo settings it depends on (already set): Pages › Source = GitHub Actions,
 and the `github-pages` environment allows `claude/*` branches to deploy.
 
-The site lives under a subpath, so the build is parameterized by `VITE_BASE` (default `/`):
+The build is path-independent. `vite.config.js` uses Vite's relative base (`./`) and routing is
+hash-based, so one `dist/` works at `/` and under a subfolder such as `/caliper-companion/`. The
+service worker reads its base from its own URL at run time. The workflow still sets `VITE_BASE`,
+and the build ignores it on purpose (LOGBOOK 2026-10-01).
 
 ```sh
-VITE_BASE=/caliper-companion/ npm run build
-VITE_BASE=/caliper-companion/ npx vite preview --port 3000 --strictPort
-node scripts/pages-smoke.mjs http://localhost:3000/caliper-companion/   # SW scope + offline relaunch
-node scripts/pages-smoke.mjs https://m0n01d.github.io/caliper-companion/ # same, against the live site
+npm run build
+npx vite preview --port 3000 --strictPort
+node scripts/pages-smoke.mjs http://localhost:3000/       # SW scope + offline relaunch
+node scripts/pages-smoke.mjs https://app.snapkin.tools/   # same, against the live site
+
+# The same dist/ under a subfolder, served as static files:
+rm -rf /tmp/sub && mkdir -p /tmp/sub && cp -R dist /tmp/sub/caliper-companion
+python3 -m http.server 8000 -d /tmp/sub
+node scripts/pages-smoke.mjs http://localhost:8000/caliper-companion/
 ```
 
 ## Import into Fusion without Claude

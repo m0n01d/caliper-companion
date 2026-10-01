@@ -12,13 +12,22 @@ const commitSha =
   'dev'
 const sha = commitSha.slice(0, 8)
 
-// Where the app is served from. '/' for local/dev and any root deploy; a
-// GitHub Pages project site lives under '/<repo>/' (set VITE_BASE in CI).
-// Everything that hard-codes a root path reads this: Vite's own asset URLs,
-// the service worker's app shell + precache list (stamped below), and the
-// SW registration in Index.res (via the __CC_BASE__ define).
-const rawBase = process.env.VITE_BASE || '/'
-const base = `/${rawBase.replace(/^\/+|\/+$/g, '')}/`.replace('//', '/')
+// One build serves any path. `base: './'` is Vite's relative base: every URL
+// it writes into dist/index.html (entry JS and CSS, manifest, icons) is
+// relative to the document. Routing is hash-based (src/app/Route.res), so the
+// document is always the app root, and those URLs resolve inside whatever
+// folder dist/ is served from: `/` at app.snapkin.tools, `/caliper-companion/`
+// on a GitHub project-site path. The rest of the build is relative too: the
+// manifest's start_url and scope (`./`), the SW registration in Index.res
+// (`./sw.js`), and sw.js itself, which takes its base from its own URL.
+//
+// VITE_BASE is ignored on purpose. .github/workflows/pages.yml still sets
+// VITE_BASE=/<repo>/ on every deploy, and agent tokens cannot edit workflow
+// files. When Pages moved the app to the root of app.snapkin.tools, that value
+// pointed index.html at /caliper-companion/assets/, which is a 404, and the app
+// was a blank page (LOGBOOK 2026-10-01). A relative base cannot go stale that
+// way, so this file never reads VITE_BASE.
+const base = './'
 console.log(`[caliper-companion] base=${base} sha=${sha}`)
 
 export default defineConfig({
@@ -41,12 +50,13 @@ export default defineConfig({
         const swPath = path.resolve('dist/sw.js')
         const assetsDir = path.resolve('dist/assets')
         const assetFiles = await fs.readdir(assetsDir).catch(() => [])
-        const precacheUrls = assetFiles.map(f => `${base}assets/${f}`)
+        // Relative, like every other URL in dist/. sw.js resolves each entry
+        // against the folder it is served from (its runtime BASE).
+        const precacheUrls = assetFiles.map(f => `assets/${f}`)
         const src = await fs.readFile(swPath, 'utf8')
         const stamped = src
           .replace("'__CACHE_VERSION__'", JSON.stringify(`caliper-companion-${sha}`))
           .replace("'__PRECACHE_URLS__'", JSON.stringify(precacheUrls))
-          .replace("'__BASE__'", JSON.stringify(base))
         await fs.writeFile(swPath, stamped)
       },
     },
@@ -59,7 +69,6 @@ export default defineConfig({
     },
   },
   define: {
-    __CC_BASE__: JSON.stringify(base),
     __BUILD_SHA__: JSON.stringify(commitSha),
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
   },
