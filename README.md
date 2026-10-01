@@ -5,6 +5,10 @@ dimensions on it like a napkin sketch, export to Fusion. Older docs and the `fea
 id keep the old name on purpose (the export contract and the on-device database name never change).
 Annotated-photo caliper capture for reverse engineering small parts. Exports features.json for the Fusion 360 MCP.
 
+<img src="docs/screenshots/06-annotate-pending.png" width="300" alt="Snapkin annotate screen with two edge handles on a part photo">
+
+*Mark two edges on the photo. Type the caliper reading.*
+
 ## Develop
 
 ```sh
