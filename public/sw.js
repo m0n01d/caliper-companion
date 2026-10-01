@@ -11,14 +11,18 @@
 // on install — without this, the very first visit doesn't populate the
 // cache (the SW activates *after* the page has already fetched its
 // resources, so going offline before a second online visit leaves nothing
-// to serve).
+// to serve). The stamped entries are relative (`assets/<file>`), like every
+// URL in the build (vite.config.js uses Vite's relative base, `./`).
+//
+// The build does not know where it will be served, so nothing path-specific
+// is stamped. BASE is the folder this worker was loaded from, read at run
+// time: '/' at app.snapkin.tools, '/<repo>/' under a GitHub project-site
+// path. Every cached URL below is BASE plus a relative path, so
+// one dist/ works at any path. Unstamped (`vite dev`) BASE is '/' and the
+// precache list is empty.
 const CACHE = '__CACHE_VERSION__';
 const PRECACHE_URLS = '__PRECACHE_URLS__';
-// Served-from path, stamped at build time too (a GitHub Pages project site
-// lives under '/<repo>/'). Unstamped (`vite dev`) the placeholder doesn't
-// start with '/', so we fall back to the root.
-const RAW_BASE = '__BASE__';
-const BASE = RAW_BASE.startsWith('/') ? RAW_BASE : '/';
+const BASE = new URL('./', self.location).pathname;
 
 const APP_SHELL = [BASE, ...['manifest.json', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(f => BASE + f)];
 
@@ -34,7 +38,7 @@ self.addEventListener('install', event => {
       // precache would strand the user on an unusable generation.
       // `addAll` is all-or-nothing: a partial precache fails install, the
       // worker never reaches `waiting`, and no toast is ever offered.
-      const critical = [BASE, ...(Array.isArray(PRECACHE_URLS) ? PRECACHE_URLS : [])];
+      const critical = [BASE, ...(Array.isArray(PRECACHE_URLS) ? PRECACHE_URLS.map(u => BASE + u) : [])];
       await c.addAll(critical);
       // Icons / manifest stay tolerant: missing ones don't break the app.
       await Promise.all(

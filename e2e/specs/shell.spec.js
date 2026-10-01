@@ -59,10 +59,11 @@ test.describe('app shell', () => {
       await page.waitForFunction(() => !!navigator.serviceWorker.controller)
     }
 
-    // `install`'s critical `addAll(['/', ...])` already finished before
+    // `install`'s critical `addAll([BASE, ...])` already finished before
     // `ready` resolved (see sw.js), so this should be immediate — but wait
     // for it explicitly rather than race the offline reload against it.
-    await page.waitForFunction(async () => !!(await caches.match('/')))
+    // `./` resolves against the page, so this holds under any base path.
+    await page.waitForFunction(async () => !!(await caches.match('./')))
 
     await context.setOffline(true)
     try {

@@ -524,7 +524,9 @@ fixed; nothing in the spec itself depends on that fix, only on being able to bui
 - The scaffold assumed a root path in five places; all now derive from one `base`: Vite `base`,
   the SW's `APP_SHELL`/precache/shell-fallback (stamped `'__BASE__'` like the cache name), the
   manifest `start_url`/`scope` (`./`), and the SW registration (`Env.base`, a `@val` external that
-  Vite's `define` substitutes as `__CC_BASE__`). Hash routing needed nothing.
+  Vite's `define` substitutes as `__CC_BASE__`). Hash routing needed nothing. (Superseded
+  2026-10-01: the build has a relative base now, and `'__BASE__'`, `Env.base` and `__CC_BASE__`
+  are gone. See that entry.)
 - Verified with `scripts/pages-smoke.mjs`: SW scope is the base, page is controlled after one
   reload, and the app relaunches offline, at both `/` and `/caliper-companion/`. Full e2e still
   18/18 at `/`.
@@ -3265,3 +3267,28 @@ failed requests, no overflow. `site/` is removed here, so each repo holds only i
 docs point at `napkin-site`. The demo video's ffmpeg target is now `../napkin-site/` (sibling repos
 in `~/code`). The `add_repo` pre-check reported that a push would be refused, but the push went
 through.
+
+## 2026-10-01 — Outage fix: one build for any path (app.snapkin.tools was blank)
+
+- **The outage.** Pages now serves this repo at the root of `https://app.snapkin.tools/`, and
+  `m0n01d.github.io/caliper-companion/` 301-redirects there. `pages.yml` still builds with
+  `VITE_BASE=/caliper-companion/`, so the live `index.html` asked for
+  `/caliper-companion/assets/index.<sha>.js`, which is a 404 (`/assets/…` is a 200). The page was
+  blank. The workflow sets that value on every deploy, and agent tokens cannot edit it.
+- **The fix.** `vite.config.js` uses Vite's relative base (`base: './'`) and never reads
+  `VITE_BASE`, so the workflow's value is now inert. Every URL in `dist/index.html` is relative,
+  and hash routing keeps the document at the app root, so one `dist/` works at `/` and under
+  `/caliper-companion/`. The SW reads its base from its own URL
+  (`new URL('./', self.location).pathname`) and resolves the stamped precache list, now relative
+  (`assets/<file>`), against it. `Index.res` registers `./sw.js`. `Env.res`, the `__CC_BASE__`
+  define and the `'__BASE__'` stamp are gone.
+- **Verified here.** vitest 283 / 283. The CI build (`GITHUB_SHA=a8a3ab65cff708f8
+  VITE_BASE=/caliper-companion/ npm run build`) logs `base=./`, and `caliper-companion/` occurs in
+  `dist/` only as the features.json schema id. That one `dist/` was served by
+  `python3 -m http.server` at `/` and at `/caliper-companion/`. At both, `pages-smoke.mjs` reports
+  `controlled: true`, the served folder as the scope, `offlineOk: true` and no errors, `#/settings`
+  renders, and the SW precaches under the served folder. Chromium e2e 73 / 73. Under Vite dev the
+  SW registers at `/sw.js`. WebKit still cannot launch in this sandbox.
+- **Owner steps.** Step (1) of 2026-09-24 no longer needs the `VITE_BASE` edit to `pages.yml`. The
+  change of the trigger to `main` only still stands. The live site stays blank until this commit
+  is pushed: a push to `main` or `claude/**` redeploys Pages.

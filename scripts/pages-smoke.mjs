@@ -1,10 +1,13 @@
 // scripts/pages-smoke.mjs — prove a deployed (or previewed) build works as a
-// PWA under its base path: the service worker registers with the right
-// scope, takes control, and the app still launches with the network off.
+// PWA at the path it is served from: the service worker registers with the
+// right scope, takes control, and the app still launches with the network off.
+// The build has a relative base (vite.config.js), so one dist/ must pass at
+// the root and under a subfolder alike; VITE_BASE has no effect on it.
 //
 //   node scripts/pages-smoke.mjs [url]
-//   node scripts/pages-smoke.mjs http://localhost:3000/caliper-companion/   # after VITE_BASE=/caliper-companion/ npm run build && npx vite preview
-//   node scripts/pages-smoke.mjs https://m0n01d.github.io/caliper-companion/
+//   node scripts/pages-smoke.mjs http://localhost:3000/                    # after npm run build && npx vite preview
+//   node scripts/pages-smoke.mjs http://localhost:8000/caliper-companion/  # the same dist/ copied to <dir>/caliper-companion/, then python3 -m http.server 8000 -d <dir>
+//   node scripts/pages-smoke.mjs https://app.snapkin.tools/
 //
 // Exits non-zero when the offline reload fails or a page error was logged.
 import { chromium } from 'playwright'
