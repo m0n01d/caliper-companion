@@ -840,7 +840,9 @@ let shutterBlock = (model: model, ~chip: chip, ~dispatch: msg => unit): React.el
       {React.string(hasExisting ? "Recapture " : "Capture ")}
       {chipName(chip)}
     </p>
-    <label className="btn btn-secondary" htmlFor={"library-file-" ++ label}>
+    // Layout polish (audit #5): a full-width block capsule like New Folder
+    // (`btn-block` caps it at 400 and centres it from medium).
+    <label className="btn btn-secondary btn-block" htmlFor={"library-file-" ++ label}>
       <Icon name=Image size=20 />
       {React.string("From library")}
     </label>

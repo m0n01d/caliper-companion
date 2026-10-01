@@ -3157,3 +3157,111 @@ pushes, the A6 fit tween and the polish-pass press/release are the point of the 
 - Playwright writes WebM; `docs/demo/snapkin-demo.mp4` is that file through ffmpeg (H.264, CRF 24,
   faststart, 618 KB) because WebM does not play everywhere a demo gets pasted. The `.webm` is not
   committed.
+
+## 2026-09-24 — Brand v1, landing page, layout polish (claude/keen-cray-m75xyi)
+
+Owner: "branding now … the layout consistent … a simple product landing page" for a beta found
+through a YouTube demo. Design canvas: https://claude.ai/artifact/1MBHhjBNG21vWLwSpQmjz1 (brand
+board, landing at 1440 and 390, social card, thumbnail draft, polish before/after).
+
+- **Brand kept, not reinvented.** The m2 icon stays as shipped. New: the `snapkin` wordmark
+  (Space Grotesk 600, picked from 12 faces rendered side by side; outlined to paths so no file
+  needs the font), lockups, a `snapkin.tools` URL lockup, the brand guide `docs/brand/README.md`,
+  DESIGN.md §14. Space Grotesk is brand-only; the app keeps the system stack.
+- **Landing page at `public/beta/`**, static and zero-JS so Vite copies it and it deploys with the
+  app (`/caliper-companion/beta/`), outside the service worker's precache. The phone is a static
+  mock of Annotate; the part is the golden hinge pin drawn to scale in the `Overlay.res` styles.
+  The demo poster is a mock of the Part screen: the sandbox's ffmpeg has only a VP8 decoder, so no
+  frame of the H.264 demo could be pulled. `docs/demo/snapkin-demo.mp4` moved to `public/beta/`.
+- **Sign-up is off until the owner picks a service** (the form's button is `disabled`, with a
+  "Sign-ups open soon" note). Field names follow Kit. Checked 2026-09-24: Formspree free = 50
+  submissions a month (formspree.io, read directly); Kit free = 10,000 subscribers (third-party
+  2026 sources only — kit.com answered 403 to every fetch). Setup steps: `docs/brand/README.md`.
+- **Name check, 2026-09-24** (the owner asked mid-session; nothing renamed):
+  - Live apps named Snapkin: App Store "Snapkin: Photo Sticker Journal" (id6808989671) and
+    Google Play "Snapkin" photo calorie counter (`app.getsnapkin`). Both unrelated to CAD, both
+    "photo" apps.
+  - RDAP: snapkin.com, snapkin.app, snapkin.io, getsnapkin.app registered; snapkin.dev,
+    getsnapkin.com, trysnapkin.com, usesnapkin.com not found (likely free). snapkin.co could not
+    be checked (proxy refused). The owner already holds **snapkin.tools**.
+  - "snpkn" (owner's idea): snpkn.com/.app/.dev/.net not found, but @snpkn is taken on YouTube
+    and X, a "$NPKN / sNPKN" crypto token exists, and it is said like "Snapkin" anyway. Advised
+    against.
+  - "Snapkin Tools" as a store name (owner's idea) → advised against: **Snap-on sells digital
+    calipers** (CAL6EA, Blue-Point MCAL12A) to the same mechanics. snapkin.tools as an address
+    is fine. No Snap-on case against a "Snap-" name was found in a quick search: caution, not a
+    known conflict.
+  - Not done: a USPTO search (tmsearch.uspto.gov renders only in a browser). The owner should run
+    one, or buy a short trademark consult, before the YouTube video names the product.
+- **Open decision: the domain layout.** Proposed: `snapkin.tools` = landing, `snapkin.tools/app` =
+  the PWA (a build change: app `base` `/app/`, landing at the root). Not done without the owner:
+  it moves the installed app's URL, and on-device parts do not follow a domain change (IndexedDB is
+  per origin; GitHub is widely reported to redirect a project's github.io URL to its custom domain,
+  but its docs did not confirm that on 2026-09-24) — export first.
+- **Layout polish** (`docs/design/layout-audit-2026-09-24.md`, DESIGN.md §14.4). A measured audit
+  of all 17 phone screens and the wide ones found 22 differences from §11 (5 high). 16 are fixed
+  (CSS and markup only, no `features.json` or Store change). Before → after at 390 × 844:
+  - Nav title offset from centre: folder −29.9 → 0, folder Edit −35.7 → 0, picker +7 → 0,
+    Part −5.9 → 0. One case stays off: Part + Edit with "Norcold freezer hinge pin" is 13 px too
+    wide to centre beside "Done", so it sits 6.6 px off rather than being cut (UIKit's fallback).
+  - Timer and export status: one centred Footnote stack under Export (12 / 4 px), system face
+    with tabular figures. The timer was left-aligned mono at compact.
+  - Annotate tool strip: Snap on the left, and "2 dims" and "1.00×" on the right. The units sit
+    outside the `dimension-count` and `zoom` test ids, which e2e reads as bare numbers.
+  - Save | Clear: one row of 175 × 50 halves. Clear was a 78 × 40 button below the 844 fold.
+    Edit mode is Update | Clear | Delete in thirds on the same row. Delete on its own row failed
+    `annotate.spec.js:752`: the list moved after `scrollRowIntoView` had placed the selected row.
+  - From library, Export CSV and Re-measure: full-width block capsules, like New Folder.
+  - Also: label → control 8 px, name chips 40 px / 13 px, the picker's New folder field in a
+    card, the centred camera note, toolbar insets 17 px like the bar, Debug's user agent as its
+    group's footer, panel edges on the photo's 16 / 374, and panel and photo tops aligned at 1440.
+  - Settings copy: "Readings come from a connected caliper", because the owner's Bluetooth
+    calipers type readings like the wedge dongle did. The `wedge` tag and the schema are unchanged.
+  - Kept on purpose: the Annotate panel's 16 px rhythm and the 12 px gap under the photo, because
+    the panel must fit above the keyboard (§14.3). Open: the create form's take-over chrome (#11),
+    the four empty-state treatments (#17) and the group headers (#18).
+  - Tests: vitest 283 / 283. Chromium e2e 73 / 73, run twice (the implementing agent, then again
+    here). WebKit still cannot launch in this sandbox. `docs/screenshots/` regenerated (17 phone,
+    8 wide). Before / after pairs: `docs/shots/layout-polish/`.
+
+## 2026-09-24 — Domain split: landing at snapkin.tools, app at app.snapkin.tools (owner call)
+
+Owner: "the landing page the root, and the app is going on a subdomain". This is layout A of the
+domain-routing session (`m0n01d/caliper-companion` PR #3, and its "Snapkin Beta Address" page),
+with the landing page taking the apex.
+
+- **Why two repos.** A GitHub Pages site takes one custom domain. This repo's site becomes the app at
+  `app.snapkin.tools`. The landing page gets its own Pages repo (proposed `m0n01d/snapkin-site`)
+  for `snapkin.tools`. The app's origin then never depends on where the landing page is hosted,
+  and PouchDB storage is per origin.
+- **Done here.** `public/beta/` moved to `site/` and is out of the app build (`dist/` has no
+  `beta/`). The site stands alone: its own favicon and touch icons, `CNAME` (`snapkin.tools`),
+  `.nojekyll`, a branded `404.html` with root paths, and `og:url` / `og:image` / `canonical` on
+  `https://snapkin.tools/`. `beta.css` became `site.css`. It was rendered from its own root at 1440
+  and 390: same heights as before, no failed requests. `site/README.md` has the preview, publish
+  (`git subtree push --prefix=site …`), Pages and DNS steps.
+- **Committed with `[skip ci]`.** A `claude/**` push still deploys to the one live Pages site. This
+  commit would take `/beta/` off the live github.io site before `snapkin.tools` is serving it, so
+  the live build stays at `9920b52` for now. Unit tests (283 / 283) and `vite build` ran locally.
+- **The redirect, settled.** PR #3 measured that GitHub 301-redirects a project's github.io URLs to
+  its custom domain and keeps the path (`jekyll.github.io/jekyll/` → jekyllrb.com,
+  `mermaid-js.github.io/mermaid/` → mermaid.js.org). So parts on `m0n01d.github.io` become
+  unreachable once `app.snapkin.tools` is saved: export them first.
+- **Owner steps, in order.** (1) Apply PR #3's `pages.yml` edit (`VITE_BASE` from configure-pages'
+  `base_path`), and change the trigger to `main` only. Agent tokens here have no `workflow` scope.
+  (2) Export parts from `m0n01d.github.io`. (3) Create the site repo. The next agent can then push
+  `site/` into it. (4) Squarespace DNS: the TXT verification record, `app` CNAME and `www` CNAME to
+  `m0n01d.github.io`, and apex A / AAAA to GitHub (`site/README.md`). (5) Pages settings: the app
+  repo gets `app.snapkin.tools` (then re-run the deploy), the site repo gets `snapkin.tools`
+  (Deploy from a branch, `main`, root). Then Enforce HTTPS on both.
+
+## 2026-10-01 — The landing page is its own repo: m0n01d/napkin-site
+
+The owner created the marketing repo as `napkin-site` (the name was meant to be `snapkin-site`; the
+repo name does not affect the domain). Its first commit, `4ae5eed`, is `site/` from `903f274` at
+the repo root, plus a README (preview, deploy, DNS) and a CLAUDE.md (static only, a push to `main`
+publishes, brand and verify rules). Rendered from that root at 1440 and 390 before the push: no
+failed requests, no overflow. `site/` is removed here, so each repo holds only its own site. The
+docs point at `napkin-site`. The demo video's ffmpeg target is now `../napkin-site/` (sibling repos
+in `~/code`). The `add_repo` pre-check reported that a push would be refused, but the push went
+through.

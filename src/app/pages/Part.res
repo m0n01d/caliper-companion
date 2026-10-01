@@ -521,23 +521,6 @@ let renderFeatures = (model: model, ~part: Types.part): React.element => {
   </div>
 }
 
-let renderExport = (model: model, ~dispatch: msg => unit): React.element =>
-  <div className="stack">
-    <Ui.Button
-      variant=Ui.Button.Primary
-      block=true
-      testId="export"
-      disabled={model.exportState == Running}
-      onClick={_ => dispatch(ExportClicked)}>
-      {React.string(model.exportState == Running ? "Exporting…" : "Export")}
-    </Ui.Button>
-    {switch model.exportState {
-    | Done(msg) => <p className="t-footnote text-live"> {React.string(msg)} </p>
-    | Failed(msg) => <p className="t-footnote text-error" dataTestId="export-error"> {React.string(msg)} </p>
-    | Idle | Running => React.null
-    }}
-  </div>
-
 let renderTimer = (model: model): React.element => {
   let text = switch model.timer {
   | Some({startedAt: Some(startIso), stoppedAt: None}) =>
@@ -550,10 +533,34 @@ let renderTimer = (model: model): React.element => {
     }
   | Some(_) | None => "Timer starts at first capture"
   }
-  // `part-timer`: centred under the capped Export at medium and expanded
-  // (Part.css, SPEC §8a A17 boards); left-aligned at compact as before.
-  <p className="t-footnote mono muted part-timer" dataTestId="timer"> {React.string(text)} </p>
+  // `part-timer` (Part.css): Footnote, `text-2`, the system UI face with
+  // tabular figures so the ticking seconds don't jiggle.
+  <p className="t-footnote muted part-timer" dataTestId="timer"> {React.string(text)} </p>
 }
+
+// Layout polish (audit #2, #3): one centred Footnote stack under Export at
+// every width — Export → 12 → the export status (its own colour) → 4 → the
+// Hands-on timer. The timer was mono and left-aligned at compact, and sat
+// 24 px under a left-aligned "Downloaded …" line.
+let renderExport = (model: model, ~dispatch: msg => unit): React.element =>
+  <div className="stack">
+    <Ui.Button
+      variant=Ui.Button.Primary
+      block=true
+      testId="export"
+      disabled={model.exportState == Running}
+      onClick={_ => dispatch(ExportClicked)}>
+      {React.string(model.exportState == Running ? "Exporting…" : "Export")}
+    </Ui.Button>
+    <div className="part-export-notes">
+      {switch model.exportState {
+      | Done(msg) => <p className="t-footnote text-live"> {React.string(msg)} </p>
+      | Failed(msg) => <p className="t-footnote text-error" dataTestId="export-error"> {React.string(msg)} </p>
+      | Idle | Running => React.null
+      }}
+      {renderTimer(model)}
+    </div>
+  </div>
 
 // SPEC §8a A17 (review S3): the root is `.part-columns` — a plain
 // `.stack-lg` at compact and medium, a two-column grid at expanded
@@ -586,7 +593,6 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
         <div className="part-aside stack-lg">
           {renderFeatures(model, ~part)}
           {renderExport(model, ~dispatch)}
-          {renderTimer(model)}
         </div>
       </>
     }}

@@ -20,7 +20,7 @@ test.describe('app shell', () => {
     await page.getByRole('link', {name: 'Settings'}).click()
     await expect(page).toHaveURL(/#\/settings$/)
     await expect(page.locator('.shell-title')).toHaveText('Settings')
-    await expect(page.getByText('Readings come from a wedge dongle')).toBeVisible()
+    await expect(page.getByText('Readings come from a connected caliper')).toBeVisible()
     await page.getByRole('button', {name: 'Back'}).click()
     await expect(page).toHaveURL(/#\/?$/)
     await expect(page.locator('.shell-title')).toHaveText('Parts')

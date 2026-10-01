@@ -1,4 +1,21 @@
-# Snapkin
+<img src="docs/brand/snapkin-lockup-dark.svg#gh-light-mode-only" alt="Snapkin" height="44"><img src="docs/brand/snapkin-lockup.svg#gh-dark-mode-only" alt="Snapkin" height="44">
+
+**Calipers in. CAD out.** Photograph each face of a part, tap two edges, read your caliper, name the
+feature. Snapkin keeps every number on a dimensioned photo and exports a `features.json` and a
+`parameters.csv` for Fusion. The photo is never measured: the caliper is the only source of numbers.
+
+<p>
+<img src="docs/screenshots/12-parts-list.png" width="200" alt="Parts: folders and parts, with search">
+<img src="docs/screenshots/04-capture.png" width="200" alt="Capture: pick a face, then take the photo">
+<img src="docs/screenshots/06-annotate-pending.png" width="200" alt="Annotate: two taps and a caliper reading">
+<img src="docs/screenshots/08-part-features.png" width="200" alt="Part: faces and features, ready to export">
+</p>
+
+- **Landing page:** [`m0n01d/napkin-site`](https://github.com/m0n01d/napkin-site) → https://snapkin.tools
+- **App:** this repo's Pages site → https://app.snapkin.tools (until the domain is set up: https://m0n01d.github.io/caliper-companion/)
+- **Brand kit:** `docs/brand/` (lockups, icon, colours, voice)
+
+## About the name
 
 Repo `caliper-companion` — the product is **Snapkin** (renamed 2026-09-18): snap a photo, jot the
 dimensions on it like a napkin sketch, export to Fusion. Older docs and the `features.json` schema

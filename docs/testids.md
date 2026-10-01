@@ -269,7 +269,7 @@ stable; add to this list before you rely on a new one.
 ## Settings (`#/settings`)
 - `settings-link` — the gear in the Parts root bar's leading slot (`aria-label="Settings"`), the only way
   in from an installed app
-- `wedge-toggle` — "Readings come from a wedge dongle" checkbox
+- `wedge-toggle` — "Readings come from a connected caliper" checkbox
 - `debug-link` — the Diagnostics row (anchor inside) that opens `#/debug`; Debug's Back returns here
 - `snap-setting-toggle` — "Snap taps to edges" checkbox (SPEC §8a A5; the annotate toolbar's
   `snap-toggle` flips the same `settings.snap`)

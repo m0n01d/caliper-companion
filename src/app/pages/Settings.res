@@ -103,17 +103,17 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
     | Some(msg) => <p className="page-error"> {React.string(msg)} </p>
     | None => React.null
     }}
-    <Ui.ListGroup footer="A keyboard-wedge dongle types readings; saved dimensions are tagged `wedge`.">
+    <Ui.ListGroup footer="A Bluetooth caliper or a dongle paired as a keyboard types each reading. Saved dimensions are tagged `wedge`.">
       <div className="list-row wedge-row">
         <span className="list-row-body">
-          <span className="t-body"> {React.string("Readings come from a wedge dongle")} </span>
+          <span className="t-body"> {React.string("Readings come from a connected caliper")} </span>
         </span>
         <Ui.Toggle
           checked={model.wedge}
           disabled={!model.loaded}
           id="wedge-toggle-input"
           testId="wedge-toggle"
-          ariaLabel="Readings come from a wedge dongle"
+          ariaLabel="Readings come from a connected caliper"
           onChange={_ => dispatch(ToggleWedge)}
         />
       </div>

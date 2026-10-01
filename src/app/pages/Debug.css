@@ -33,4 +33,3 @@
 .vp-probe-fixed { bottom: 0; }
 .vp-probe-safe-top { height: 0; padding-top: env(safe-area-inset-top); }
 .vp-probe-safe-bottom { height: 0; padding-top: env(safe-area-inset-bottom); }
-.vp-ua { word-break: break-all; }

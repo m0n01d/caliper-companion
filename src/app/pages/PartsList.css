@@ -51,8 +51,10 @@
   width: 100%;
 }
 
+/* Layout polish (audit #9): no bottom padding, so the line sits the
+   stack's 12 px above its New part capsule (it was 8 + 12 = 20). */
 .parts-empty {
-  padding: var(--cc-space-3) 0 var(--cc-space-2);
+  padding: var(--cc-space-3) 0 0;
 }
 
 .page-error {
@@ -124,6 +126,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--cc-space-6);
+}
+
+/* Layout polish (audit #9): the list and the capsules under it (New part in
+   a folder, New Folder) are separate sections — 24 px, the page's 12 px
+   stack gap plus this 12. Search → first group stays the stack's 12. */
+.parts-sections + .btn,
+.parts-sections + .folder-picker-new {
+  margin-top: var(--cc-space-3);
 }
 
 /* SPEC §8a A12a — the Folder row and the picker. In the create form the
@@ -346,6 +356,14 @@
 
 .bar-action.edit-toolbar-danger {
   color: var(--cc-error);
+}
+
+/* Layout polish (audit #14): `.shell-footer`'s side padding is the nav
+   bar's 8 px now, sized for the text actions above; the confirm strip's
+   Footnote and Delete / Cancel capsules add 8 back so they stay on the
+   16 px page margin at compact (and on the column edge from medium). */
+.edit-toolbar-confirm {
+  padding-inline: var(--cc-space-2);
 }
 
 /* The inline folder-rename form replaces the section header (A12b): the

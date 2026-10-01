@@ -109,10 +109,16 @@
 .annotate-tools {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between; /* layout polish (audit #4): Snap left, the rest right */
   gap: var(--cc-space-2);
   min-height: var(--cc-tap-min);
   background: transparent;
+}
+
+.annotate-tools-end {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-2);
 }
 
 /* The panel supplies the one background; the strip's pill children stay
@@ -122,17 +128,32 @@
   border-color: transparent;
 }
 
-/* The count reads as a compact mono figure, not a full-size hint pill. */
-.annotate-tools [data-testid="dimension-count"] {
-  min-width: 20px;
-  padding: 0 var(--cc-space-2);
-  justify-content: center;
+/* The count reads as a compact mono Footnote label with its unit — "2 dims"
+   (layout polish, audit #4; it was a bare "2"). The figure alone is the
+   `dimension-count` test id; the unit is a text node beside it. */
+.annotate-count {
+  padding: 0 var(--cc-space-1);
   font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
   font-variant-numeric: tabular-nums;
+  color: var(--cc-text);
+  white-space: nowrap;
+}
+
+/* "1.00×": the readout (`zoom`, text stays the bare number) and its unit
+   as one figure — no gap between them, the pill's padding on the outside. */
+.annotate-zoom {
+  display: inline-flex;
+  align-items: center;
 }
 
 .annotate-tools [data-testid="zoom"] {
-  padding: 0 var(--cc-space-1);
+  padding: 0 0 0 var(--cc-space-1);
+}
+
+.annotate-zoom-unit {
+  padding-right: var(--cc-space-1);
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+  color: var(--cc-live);
 }
 
 /* SPEC §8a A5: the Snap toggle is a pill that is a real button, inside the
@@ -171,6 +192,11 @@
 .annotate .panel {
   flex: 1 0 auto;
   gap: var(--cc-space-4);
+  /* Layout polish (audit #16): no side strokes on the stacked sheet (it
+     runs edge to edge, so they only sat at the screen edges), so its
+     controls start at the page margin and line up with the photo — 16 /
+     374 at 390, not 17 / 373. The side-by-side rule below sets its own. */
+  border-inline-width: 0;
   padding: var(--cc-space-4) calc(var(--cc-page-x) + env(safe-area-inset-right))
     calc(var(--cc-space-4) + env(safe-area-inset-bottom))
     calc(var(--cc-page-x) + env(safe-area-inset-left));
@@ -229,6 +255,14 @@
   gap: var(--cc-space-2);
 }
 
+/* The name-suggestion chips (DESIGN.md §11.2): 40 px tall, 13 px mono —
+   layout polish, audit #15 (the shared `.chip` is 36 px / 12 px; only
+   these change). */
+.annotate-name .chip {
+  min-height: 40px;
+  font: 500 var(--cc-size-footnote) / var(--cc-leading-footnote) var(--cc-font-mono);
+}
+
 /* Kind + tolerance share a row. Tolerance narrowed 124 → 104 px (design
    review 2026-09-17 A2: "± 0.10 mm" needs ≈ 96 px) so the segmented control
    gets enough width for Ui.Segmented's base metrics (12 px padding, 4 px
@@ -266,23 +300,18 @@
 }
 
 /* ── Actions ───────────────────────────────────────────────────────── */
+/* Layout polish (audit #6): Save | Clear is the shared `.btn-row` of equal
+   50 px halves, primary left; while a saved dimension is being edited the
+   same row holds Update | Clear | Delete in equal thirds, so its height
+   never changes with the selection. The capsules take 16 px side padding
+   (the shared one is 24) so "Save dimension" fits a half on a 360 px phone. */
 .annotate-actions {
   display: flex;
   flex-direction: column;
-  gap: var(--cc-space-2);
 }
 
-.annotate-actions-row {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--cc-space-2);
-}
-
-/* Delete is the small red capsule of §6, next to the small Clear. */
-.annotate-actions-row .btn-danger {
-  min-height: 40px;
-  padding: var(--cc-space-1) var(--cc-space-4);
-  font: 600 var(--cc-size-subhead) / var(--cc-leading-subhead) var(--cc-font-ui);
+.annotate-actions .btn-row > .btn {
+  padding-inline: var(--cc-space-4);
 }
 
 /* ── Dimension list (SPEC §8a A9) ──────────────────────────────────── */
@@ -457,6 +486,10 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-left: var(--cc-page-x);
+    /* Layout polish (audit #20): the top padding is the page margin, so
+       the tools strip starts level with the photo's top edge (it was 16
+       below the bar against the photo's 24). */
+    padding-top: var(--cc-page-x);
     border-width: 0 0 0 1px;
     border-radius: 0;
     box-shadow: none;

@@ -353,3 +353,56 @@ section **overrides §2, §4, §6 and §11 where they differ**; tokens are in `s
   Always-on glass where `animation-timeline` is unsupported and under reduced motion, reduced
   transparency and `prefers-contrast: more`.
 - **Ambient light.** A third wash on the frame: 7 % of the live blue from the top-right.
+
+## 14. Brand and launch (2026-09-24)
+
+The owner asked for branding, a consistent layout and a landing page before the beta. This section
+records what changed. `docs/brand/README.md` is the full brand guide.
+
+### 14.1 Brand
+
+- The mark is the shipped icon (A14 "m2"): a ring with a ⌀ dimension. It has no colour.
+- The wordmark is `snapkin` in Space Grotesk 600, tracked −3 %. It is outlined to paths.
+- The lockup puts the ring before the word. The ring is 0.82 em and sits on the x-height.
+- Space Grotesk is for brand text only. The app keeps the system stack (§11.1).
+- The colour meanings stay the same: ivory is "tap", blue is "measured", red is "wrong".
+- The mark appears on the app icon, the README and the landing page.
+- The mark never appears in the nav bar or over the canvas.
+- The one graphic device is the app's own dimension: ticks, filled arrowheads, a value pill.
+- Use the device only to show a real number.
+
+### 14.2 Landing page
+
+- The landing page is the repo `m0n01d/napkin-site`, at `snapkin.tools`. It is static HTML and CSS, with no JavaScript.
+- The landing page and the app have separate hosts. The app is at `app.snapkin.tools`.
+- It uses the `src/theme.css` values and adds no new colour.
+- Its phone shows a static mock of Annotate. Update the mock when Annotate changes a lot.
+- The mock shows the golden fixture's hinge pin, drawn to scale with the `Overlay.res` styles.
+- The sign-up form stays disabled until the owner connects a sign-up service.
+
+### 14.3 Rhythm exceptions
+
+The layout audit (`docs/design/layout-audit-2026-09-24.md`) found 22 differences from §11.1.
+Two stay on purpose:
+
+- The Annotate panel keeps 16 px between its sections. It must fit above the keyboard.
+- The Annotate photo keeps 12 px to the panel below it, for the same reason.
+
+### 14.4 Layout rules from the polish pass
+
+Where these rules and §11 differ, these rules win.
+
+- The nav title centres on the bar. The two side columns share the free space equally.
+- A title too long to centre moves off centre to fit between the side controls.
+- A title longer than that space ends in an ellipsis.
+- Save and Clear share one row of two equal 50 px capsules, primary on the left.
+- In Annotate's edit mode, Update, Clear and Delete share that row in thirds. The row height stays the same.
+- The tool strip puts Snap on the left. The count and the zoom sit on the right.
+- The count and the zoom show units: "2 dims" and "1.00×". The units sit outside the test-id elements.
+- Under Export, the status line and the timer are one centred Footnote stack, at every width.
+- The timer uses the system face with tabular figures, not mono.
+- Secondary block capsules fill the column at compact: New Folder, From library, Export CSV, Re-measure.
+- A field label sits 8 px above its control.
+- Annotate's name chips are 40 px tall with 13 px mono text (§11.2).
+- The Parts screen puts 24 px between its two groups and before New Folder. Search keeps 12 px to the list.
+- The folder picker's New folder field sits in an inset grouped card, like the create and rename fields.

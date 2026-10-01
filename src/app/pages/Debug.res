@@ -237,20 +237,20 @@ let view = (model: model, ~dispatch: msg => unit): React.element =>
         model.rows->Array.map(renderRow)->React.array
       }}
     </Ui.ListGroup>
-    <Ui.Button variant=Ui.Button.Secondary testId="export-csv" onClick={_ => dispatch(ExportCsvClicked)}>
+    <Ui.Button variant=Ui.Button.Secondary block=true testId="export-csv" onClick={_ => dispatch(ExportCsvClicked)}>
       {React.string("Export CSV")}
     </Ui.Button>
-    <Ui.ListGroup header="Viewport" asList=true>
+    // Layout polish (audit #19): the user agent is the Viewport group's
+    // footer — 8 px under the card at the Settings footers' inset — rather
+    // than a loose mono line 24 px below it.
+    <Ui.ListGroup
+      header="Viewport" asList=true footer=?{model.viewport->Option.map(r => r.userAgent)}>
       {switch model.viewport {
       | None => <div className="list-row"> <p className="t-footnote muted"> {React.string("Measuring…")} </p> </div>
       | Some(r) => renderViewport(r)
       }}
     </Ui.ListGroup>
-    {switch model.viewport {
-    | Some(r) => <p className="t-footnote muted mono vp-ua"> {React.string(r.userAgent)} </p>
-    | None => React.null
-    }}
-    <Ui.Button variant=Ui.Button.Secondary testId="remeasure" onClick={_ => dispatch(RemeasureClicked)}>
+    <Ui.Button variant=Ui.Button.Secondary block=true testId="remeasure" onClick={_ => dispatch(RemeasureClicked)}>
       {React.string("Re-measure viewport")}
     </Ui.Button>
     {probeIds
