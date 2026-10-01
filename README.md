@@ -11,7 +11,7 @@ feature. Snapkin keeps every number on a dimensioned photo and exports a `featur
 <img src="docs/screenshots/08-part-features.png" width="200" alt="Part: faces and features, ready to export">
 </p>
 
-- **Landing page:** `site/` → https://snapkin.tools (its own Pages repo; see `site/README.md`)
+- **Landing page:** [`m0n01d/napkin-site`](https://github.com/m0n01d/napkin-site) → https://snapkin.tools
 - **App:** this repo's Pages site → https://app.snapkin.tools (until the domain is set up: https://m0n01d.github.io/caliper-companion/)
 - **Brand kit:** `docs/brand/` (lockups, icon, colours, voice)
 

@@ -373,7 +373,7 @@ records what changed. `docs/brand/README.md` is the full brand guide.
 
 ### 14.2 Landing page
 
-- `site/` is the landing page at `snapkin.tools`. It is static HTML and CSS, with no JavaScript.
+- The landing page is the repo `m0n01d/napkin-site`, at `snapkin.tools`. It is static HTML and CSS, with no JavaScript.
 - The landing page and the app have separate hosts. The app is at `app.snapkin.tools`.
 - It uses the `src/theme.css` values and adds no new colour.
 - Its phone shows a static mock of Annotate. Update the mock when Annotate changes a lot.

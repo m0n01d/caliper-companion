@@ -3254,3 +3254,14 @@ with the landing page taking the apex.
   `m0n01d.github.io`, and apex A / AAAA to GitHub (`site/README.md`). (5) Pages settings: the app
   repo gets `app.snapkin.tools` (then re-run the deploy), the site repo gets `snapkin.tools`
   (Deploy from a branch, `main`, root). Then Enforce HTTPS on both.
+
+## 2026-10-01 — The landing page is its own repo: m0n01d/napkin-site
+
+The owner created the marketing repo as `napkin-site` (the name was meant to be `snapkin-site`; the
+repo name does not affect the domain). Its first commit, `4ae5eed`, is `site/` from `903f274` at
+the repo root, plus a README (preview, deploy, DNS) and a CLAUDE.md (static only, a push to `main`
+publishes, brand and verify rules). Rendered from that root at 1440 and 390 before the push: no
+failed requests, no overflow. `site/` is removed here, so each repo holds only its own site. The
+docs point at `napkin-site`. The demo video's ffmpeg target is now `../napkin-site/` (sibling repos
+in `~/code`). The `add_repo` pre-check reported that a push would be refused, but the push went
+through.

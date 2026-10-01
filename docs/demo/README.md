@@ -11,10 +11,11 @@ ASDF_NODEJS_VERSION=22.16.0 node scripts/demo-tour.mjs               # record to
 ```
 
 The script writes `snapkin-demo.webm` (Playwright's native format); the committed
-`site/snapkin-demo.mp4` is that file through ffmpeg (H.264, CRF 24, faststart)
+`snapkin-demo.mp4` in `m0n01d/napkin-site` is that file through ffmpeg (H.264, CRF 24, faststart)
 because WebM does not play everywhere a demo gets pasted. It lives next to the landing
-page (`site/`, the demo section), so a new recording goes there:
+page (the demo section of snapkin.tools), so a new recording goes there. With the two
+repos side by side in `~/code`:
 
 ```sh
-ffmpeg -i docs/demo/snapkin-demo.webm -c:v libx264 -crf 24 -movflags +faststart site/snapkin-demo.mp4
+ffmpeg -i docs/demo/snapkin-demo.webm -c:v libx264 -crf 24 -movflags +faststart ../napkin-site/snapkin-demo.mp4
 ```
